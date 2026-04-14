@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Customers ──────────────────────────────────────────────
+
+model Customer {
+  id             String         @id @default(cuid())
+  phone          String         @unique
+  name           String?
+  address        String?
+  internalNote   String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @default(now()) @updatedAt
+  orders         Order[]
+  loyalty        LoyaltyCard?
+  otps           OTP[]
+  savedAddresses SavedAddress[]
+}
+
+model SavedAddress {
+  id         String   @id @default(cuid())
+  customer   Customer @relation(fields: [customerId], references: [id])
+  customerId String
+  alias      String
+  address    String
+  lat        Float
+  lng        Float
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([customerId, alias])
+}
+
+// ─── Products ───────────────────────────────────────────────
+
+model Product {
+  id             String            @id @default(cuid())
+  name           String
+  description    String?
+  category       Category
+  price          Int
+  emoji          String?           @default("🍗")
+  imageUrl       String?
+  active         Boolean           @default(true)
+  soldOut        Boolean           @default(false)
+  variants       Json?
+  sortOrder      Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @default(now()) @updatedAt
+  orderItems     OrderItem[]
+  modifiers      ProductModifier[]
+  promotionItems PromotionItem[]
+  loyaltyRewards LoyaltyCard[]     @relation("PendingProduct")
+}
+
+model ProductModifier {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  name      String
+  options   Json
+  required  Boolean  @default(false)
+  maxSelect Int      @default(1)
+  minSelect Int      @default(0)
+  sortOrder Int      @default(0)
+}
+
+// ─── Promotions ─────────────────────────────────────────────
+
+model Promotion {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  dayOfWeek   Int?
+  price       Int
+  active      Boolean         @default(true)
+  items       PromotionItem[]
+  createdAt   DateTime        @default(now())
+}
+
+model PromotionItem {
+  id          String    @id @default(cuid())
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id])
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  qty         Int       @default(1)
+  variant     String?
+}
+
+enum Category {
+  POLLO_FRITO
+  COMBOS
+  HAMBURGUESAS
+  SNACKS
+  FLAUTAS
+  COMPLEMENTOS
+  BEBIDAS
+}
+
+// ─── Orders ─────────────────────────────────────────────────
+
+model Order {
+  id               String           @id @default(cuid())
+  orderNumber      Int              @unique @default(autoincrement())
+  customer         Customer         @relation(fields: [customerId], references: [id])
+  customerId       String
+  status           OrderStatus      @default(PENDING_PAYMENT)
+  type             OrderType
+  paymentMethod    PayMethod        @default(CARD)
+  cashAmount       Int?
+  address          String?
+  deliveryLat      Float?
+  deliveryLng      Float?
+  deliveryZoneId   String?
+  deliveryAddress  String?
+  subtotal         Int
+  deliveryFee      Int              @default(0)
+  discountAmount   Int              @default(0)
+  total            Int
+  notes            String?
+  estimatedMinutes Int?
+  // Scheduled order fields
+  isScheduled      Boolean          @default(false)
+  scheduledFor     DateTime?
+  depositAmount    Int?
+  depositPaidAt    DateTime?
+  remainingAmount  Int?
+  coupon           Coupon?          @relation(fields: [couponId], references: [id])
+  couponId         String?
+  items            OrderItem[]
+  payment          Payment?
+  statusLog        OrderStatusLog[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+enum PayMethod {
+  CARD
+  CASH
+  TRANSFER
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  SCHEDULED
+  RECEIVED
+  PREPARING
+  READY
+  ON_THE_WAY
+  DELIVERED
+  CANCELLED
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+}
+
+model OrderItem {
+  id        String              @id @default(cuid())
+  order     Order               @relation(fields: [orderId], references: [id])
+  orderId   String
+  product   Product             @relation(fields: [productId], references: [id])
+  productId String
+  qty       Int
+  unitPrice Int
+  variant   String?
+  notes     String?
+  modifiers OrderItemModifier[]
+}
+
+model OrderItemModifier {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+  name        String
+  option      String
+  price       Int
+}
+
+model OrderStatusLog {
+  id        String      @id @default(cuid())
+  order     Order       @relation(fields: [orderId], references: [id])
+  orderId   String
+  from      OrderStatus
+  to        OrderStatus
+  note      String?
+  createdAt DateTime    @default(now())
+}
+
+// ─── Payments ───────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(cuid())
+  order           Order         @relation(fields: [orderId], references: [id])
+  orderId         String        @unique
+  provider        String        @default("mercadopago")
+  mpPrefId        String?
+  mpPaymentId     String?       @unique
+  status          PaymentStatus @default(PENDING)
+  statusDetail    String?       // e.g. cc_rejected_insufficient_amount
+  amount          Int           // Total cobrado al cliente (centavos)
+  mpFee           Int?          // Comisión de MercadoPago (centavos)
+  netAmount       Int?          // Lo que recibe Pollón (centavos)
+  paymentMethod   String?       // visa, mastercard, oxxo, spei
+  installments    Int           @default(1)
+  refundedAmount  Int           @default(0)
+  providerPayload Json?         // Respuesta completa de MP
+  paidAt          DateTime?
+  approvedAt      DateTime?
+  refundedAt      DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  mpEventId String   @unique // "payment:12345678" — evita doble procesamiento
+  eventType String   // payment, chargebacks
+  processed Boolean  @default(false)
+  payload   Json?
+  createdAt DateTime @default(now())
+}
+
+// ─── Coupons ───────────────────────────────────────────────
+
+model Coupon {
+  id             String     @id @default(cuid())
+  code           String     @unique
+  type           CouponType
+  value          Int
+  minOrderAmount Int?
+  maxUses        Int?
+  usedCount      Int        @default(0)
+  firstOrderOnly Boolean    @default(false)
+  expiresAt      DateTime?
+  active         Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  orders         Order[]
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+// ─── Loyalty (5-order count system) ────────────────────────
+
+model LoyaltyCard {
+  id                 String         @id @default(cuid())
+  customer           Customer       @relation(fields: [customerId], references: [id])
+  customerId         String         @unique
+  completedOrders    Int            @default(0)
+  freeProductsEarned Int            @default(0)
+  freeProductsUsed   Int            @default(0)
+  // Pending reward
+  pendingReward      Boolean        @default(false)
+  pendingProductId   String?
+  pendingProduct     Product?       @relation("PendingProduct", fields: [pendingProductId], references: [id])
+  rewardEarnedAt     DateTime?
+  rewardExpiresAt    DateTime?
+  // Wallet passes
+  appleSerial        String?
+  googleToken        String?
+  updatedAt          DateTime       @updatedAt
+  events             LoyaltyEvent[]
+}
+
+model LoyaltyEvent {
+  id         String      @id @default(cuid())
+  card       LoyaltyCard @relation(fields: [cardId], references: [id])
+  cardId     String
+  orderDelta Int         @default(1)
+  reason     String
+  createdAt  DateTime    @default(now())
+}
+
+// LoyaltyTier, RewardType, LoyaltyReward kept for backwards compat (unused)
+enum LoyaltyTier {
+  POLLITO
+  CRUJIENTE
+  VIP_POLLON
+}
+
+enum RewardType {
+  PERCENT_DISCOUNT
+  FIXED_DISCOUNT
+  FREE_PRODUCT
+}
+
+model LoyaltyReward {
+  id          String      @id @default(cuid())
+  tier        LoyaltyTier
+  type        RewardType
+  value       Int
+  description String
+  active      Boolean     @default(true)
+}
+
+// ─── Auth ───────────────────────────────────────────────────
+
+model OTP {
+  id        String   @id @default(cuid())
+  customer  Customer @relation(fields: [customerId], references: [id])
+  customerId String
+  code      String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+}
+
+// ─── Store Config ───────────────────────────────────────────
+
+model DeliveryZone {
+  id        String  @id @default(cuid())
+  name      String
+  minKm     Float
+  maxKm     Float
+  fee       Int
+  color     String  @default("#F07820")
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+}
+
+model StoreLocation {
+  id      String @id @default("singleton")
+  lat     Float
+  lng     Float
+  address String
+}
+
+model DailyReport {
+  id        String   @id @default(cuid())
+  date      DateTime @unique @db.Date
+  data      Json
+  createdAt DateTime @default(now())
+}
+
+model StoreConfig {
+  id             String   @id @default("singleton")
+  isOpen         Boolean  @default(true)
+  deliveryActive Boolean  @default(true)
+  acceptOrders   Boolean  @default(true)
+  closedMessage  String?
+  openTime       String   @default("14:00")
+  closeTime      String   @default("22:00")
+  openDays       Int[]    @default([4, 5, 6, 0])
+  updatedAt      DateTime @updatedAt
+  updatedBy      String?
+}

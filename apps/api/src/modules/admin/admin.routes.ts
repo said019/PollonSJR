@@ -1,0 +1,251 @@
+import { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { AdminService } from "./admin.service";
+import { OrdersService } from "../orders/orders.service";
+import { MenuService } from "../menu/menu.service";
+import { adminOnly } from "../../middlewares/admin-only";
+import { createProductSchema, updateProductSchema } from "../menu/menu.schema";
+import { updateStatusSchema } from "../orders/orders.schema";
+import { emitMenuUpdated, emitOrderStatus } from "../orders/orders.events";
+import { getStoreConfig, updateStoreConfig } from "./store-config.service";
+import { LoyaltyService } from "../loyalty/loyalty.service";
+
+const storeConfigSchema = z.object({
+  isOpen: z.boolean().optional(),
+  deliveryActive: z.boolean().optional(),
+  acceptOrders: z.boolean().optional(),
+  closedMessage: z.string().nullable().optional(),
+});
+
+const hoursSchema = z.object({
+  openTime: z.string().regex(/^\d{2}:\d{2}$/),
+  closeTime: z.string().regex(/^\d{2}:\d{2}$/),
+  openDays: z.array(z.number().int().min(0).max(6)),
+});
+
+export async function adminRoutes(app: FastifyInstance) {
+  const adminService = new AdminService(app);
+  const ordersService = new OrdersService(app);
+  const menuService = new MenuService(app);
+
+  // All admin routes require admin auth
+  app.addHook("preHandler", adminOnly);
+
+  // Dashboard is handled by reports.routes.ts
+
+  // Store config (cached)
+  app.get("/store", async () => getStoreConfig(app));
+
+  app.patch("/store", async (request, reply) => {
+    const parsed = storeConfigSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos" });
+    return adminService.updateStoreConfig(parsed.data);
+  });
+
+  app.put("/store/hours", async (request, reply) => {
+    const parsed = hoursSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos" });
+    return adminService.updateHours(parsed.data);
+  });
+
+  // Quick pause: toggle acceptOrders in 1 click
+  app.patch("/store/pause", async () => {
+    const config = await getStoreConfig(app);
+    return updateStoreConfig(app, { acceptOrders: !config.acceptOrders });
+  });
+
+  // Orders
+  app.get("/orders", async () => ordersService.getActiveOrders());
+
+  app.get("/orders/history", async (request) => {
+    const { page } = request.query as { page?: string };
+    return ordersService.getHistory(Number(page) || 1);
+  });
+
+  app.patch<{ Params: { id: string } }>("/orders/:id/status", async (request, reply) => {
+    const parsed = updateStatusSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "Status inválido" });
+
+    try {
+      return await ordersService.updateStatus(request.params.id, parsed.data.status);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // Products
+  app.post("/products", async (request, reply) => {
+    const parsed = createProductSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+
+    const product = await app.prisma.product.create({ data: parsed.data });
+    await menuService.invalidateCache();
+    emitMenuUpdated(app, product.id, true, false);
+    return reply.status(201).send(product);
+  });
+
+  app.patch<{ Params: { id: string } }>("/products/:id", async (request, reply) => {
+    const parsed = updateProductSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos" });
+
+    const product = await app.prisma.product.update({
+      where: { id: request.params.id },
+      data: parsed.data,
+    });
+
+    await menuService.invalidateCache();
+    emitMenuUpdated(app, product.id, product.active, product.soldOut);
+
+    return product;
+  });
+
+  // Customers
+  app.get("/customers", async (request) => {
+    const { page } = request.query as { page?: string };
+    return adminService.getCustomers(Number(page) || 1);
+  });
+
+  // Reports are handled by reports.routes.ts
+
+  // ─── Coupons ──────────────────────────────────────────────
+
+  app.get("/coupons", async () => {
+    return app.prisma.coupon.findMany({
+      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { orders: true } } },
+    });
+  });
+
+  app.post("/coupons", async (request, reply) => {
+    const { code, type, value, minOrderAmount, maxUses, firstOrderOnly, expiresAt } =
+      request.body as {
+        code: string; type: "PERCENT" | "FIXED"; value: number;
+        minOrderAmount?: number; maxUses?: number;
+        firstOrderOnly?: boolean; expiresAt?: string;
+      };
+
+    const coupon = await app.prisma.coupon.create({
+      data: {
+        code: code.toUpperCase().trim(),
+        type,
+        value,
+        minOrderAmount: minOrderAmount ?? null,
+        maxUses: maxUses ?? null,
+        firstOrderOnly: firstOrderOnly ?? false,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      },
+    });
+    return reply.status(201).send(coupon);
+  });
+
+  app.patch<{ Params: { id: string } }>("/coupons/:id", async (request) => {
+    const { active } = request.body as { active: boolean };
+    return app.prisma.coupon.update({
+      where: { id: request.params.id },
+      data: { active },
+    });
+  });
+
+  // ─── ETA Update ───────────────────────────────────────────
+
+  app.patch<{ Params: { id: string } }>("/orders/:id/eta", async (request, reply) => {
+    const { estimatedMinutes } = request.body as { estimatedMinutes: number };
+    if (!estimatedMinutes || estimatedMinutes < 5 || estimatedMinutes > 120) {
+      return reply.status(400).send({ error: "ETA debe ser entre 5 y 120 minutos" });
+    }
+
+    const order = await app.prisma.order.findUnique({ where: { id: request.params.id } });
+    if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
+
+    await app.prisma.order.update({
+      where: { id: order.id },
+      data: { estimatedMinutes },
+    });
+
+    // Notify customer in real time
+    app.io.to(`customer:${order.customerId}`).emit("order:status", {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status as any,
+      message: `Tiempo estimado actualizado: ~${estimatedMinutes} min`,
+      estimatedMinutes,
+    });
+
+    return { ok: true };
+  });
+
+  // ─── Confirm payment (CASH/TRANSFER) ──────────────────────
+
+  app.patch<{ Params: { id: string } }>("/orders/:id/confirm-payment", async (request, reply) => {
+    const order = await app.prisma.order.findUnique({
+      where: { id: request.params.id },
+      include: { customer: true },
+    });
+    if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
+
+    // Mark scheduled order's deposit as paid
+    if (order.isScheduled) {
+      await app.prisma.order.update({
+        where: { id: order.id },
+        data: { depositPaidAt: new Date() },
+      });
+      return { ok: true, message: "Anticipo confirmado" };
+    }
+
+    // For PENDING_PAYMENT orders (CASH/TRANSFER), move to RECEIVED
+    if (order.status === "PENDING_PAYMENT") {
+      await app.prisma.$transaction([
+        app.prisma.order.update({
+          where: { id: order.id },
+          data: { status: "RECEIVED" },
+        }),
+        app.prisma.orderStatusLog.create({
+          data: {
+            orderId: order.id,
+            from: "PENDING_PAYMENT",
+            to: "RECEIVED",
+            note: `Pago ${order.paymentMethod} confirmado por admin`,
+          },
+        }),
+      ]);
+      emitOrderStatus(app, order.customerId, order.id, "RECEIVED", {
+        orderNumber: order.orderNumber,
+      });
+    }
+
+    return { ok: true, message: "Pago confirmado" };
+  });
+
+  // ─── Loyalty admin endpoints ──────────────────────────────
+
+  app.get("/loyalty/customers", async (request) => {
+    const { page } = request.query as { page?: string };
+    const limit = 20;
+    const skip = ((Number(page) || 1) - 1) * limit;
+    const cards = await app.prisma.loyaltyCard.findMany({
+      include: {
+        customer: { select: { id: true, phone: true, name: true } },
+        pendingProduct: { select: { id: true, name: true, emoji: true } },
+      },
+      orderBy: { completedOrders: "desc" },
+      skip,
+      take: limit,
+    });
+    const total = await app.prisma.loyaltyCard.count();
+    return { cards, total, page: Number(page) || 1 };
+  });
+
+  app.patch<{ Params: { id: string } }>("/loyalty/customers/:id/adjust", async (request, reply) => {
+    const { delta, reason } = request.body as { delta: number; reason: string };
+    if (!reason?.trim()) {
+      return reply.status(400).send({ error: "reason requerido" });
+    }
+
+    const loyaltyService = new LoyaltyService(app);
+    try {
+      return await loyaltyService.adminAdjust(request.params.id, delta, reason);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+}

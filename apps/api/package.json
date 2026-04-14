@@ -1,0 +1,40 @@
+{
+  "name": "@pollon/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^4.28.0",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/cors": "^9.0.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "socket.io": "^4.7.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "redis": "^4.6.0",
+    "@prisma/client": "^5.14.0",
+    "mercadopago": "^2.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "bcrypt": "^5.1.0",
+    "node-cron": "^3.0.0",
+    "otplib": "^12.0.0",
+    "zod": "^3.23.0",
+    "pino": "^9.0.0",
+    "@pollon/types": "*",
+    "@pollon/utils": "*",
+    "@pollon/prisma": "*"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.0",
+    "tsx": "^4.10.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,119 @@
+"use client";
+
+import { useCart } from "@/hooks/useCart";
+import { formatCents } from "@pollon/utils";
+import { X, Minus, Plus, Trash2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckoutForm } from "./checkout-form";
+import { useState } from "react";
+
+interface CartDrawerProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export function CartDrawer({ open, onClose }: CartDrawerProps) {
+  const { items, updateQty, removeItem, total, clearCart } = useCart();
+  const [showCheckout, setShowCheckout] = useState(false);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black z-40"
+            onClick={onClose}
+          />
+
+          {/* Drawer */}
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 28, stiffness: 220 }}
+            className="fixed right-0 top-0 bottom-0 w-full max-w-sm bg-surface-container z-50 flex flex-col border-l border-outline-variant/10 shadow-2xl"
+          >
+            <div className="flex items-center justify-between p-5 border-b border-outline-variant/10">
+              <h2 className="text-lg font-headline font-extrabold text-tertiary">Tu carrito</h2>
+              <button onClick={onClose} className="p-1.5 text-on-surface-variant hover:text-tertiary rounded-lg hover:bg-surface-variant transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center text-on-surface-variant">
+                <p>Tu carrito está vacío</p>
+              </div>
+            ) : showCheckout ? (
+              <CheckoutForm onBack={() => setShowCheckout(false)} onSuccess={onClose} />
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                  {items.map((item) => (
+                    <div key={`${item.productId}-${item.variant}`} className="flex items-center gap-3 bg-surface-container-high rounded-xl p-3.5 border border-outline-variant/10">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-headline font-semibold text-sm text-tertiary">
+                          {item.name}
+                          {item.variant && (
+                            <span className="text-xs text-on-surface-variant/60 ml-1 font-body">({item.variant})</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-primary font-headline font-bold mt-0.5">
+                          {formatCents(item.price * item.qty)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => updateQty(item.productId, item.variant, item.qty - 1)}
+                          className="w-7 h-7 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface-variant hover:bg-outline-variant transition-colors"
+                        >
+                          <Minus size={13} />
+                        </button>
+                        <span className="text-sm font-headline font-bold w-6 text-center text-tertiary">{item.qty}</span>
+                        <button
+                          onClick={() => updateQty(item.productId, item.variant, item.qty + 1)}
+                          className="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:brightness-110 transition-all"
+                        >
+                          <Plus size={13} />
+                        </button>
+                        <button
+                          onClick={() => removeItem(item.productId, item.variant)}
+                          className="ml-1 text-on-surface-variant/40 hover:text-error transition-colors"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-outline-variant/10 p-5 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-on-surface-variant font-headline font-semibold">Total</span>
+                    <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
+                  </div>
+                  <button
+                    onClick={() => setShowCheckout(true)}
+                    className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary"
+                  >
+                    Proceder al pago
+                  </button>
+                  <button
+                    onClick={clearCart}
+                    className="w-full text-on-surface-variant/50 text-sm py-2 hover:text-error transition-colors font-medium"
+                  >
+                    Vaciar carrito
+                  </button>
+                </div>
+              </>
+            )}
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}

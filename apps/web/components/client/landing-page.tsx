@@ -1,0 +1,742 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+
+/* ────────────────────────────────────────────────────────────── */
+/*  NavBar — frosted glass with warm char tones                   */
+/* ────────────────────────────────────────────────────────────── */
+function NavBar() {
+  return (
+    <nav className="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/10">
+      <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2">
+          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center rotate-[-4deg] shadow-lg">
+            <span className="text-on-primary font-headline font-extrabold text-xs">P</span>
+          </div>
+          <span className="text-xl font-headline font-extrabold text-tertiary tracking-tight">
+            POLLÓN<span className="text-primary">.</span>
+          </span>
+        </Link>
+
+        {/* Nav links — desktop */}
+        <div className="hidden md:flex items-center gap-8 font-headline font-semibold text-sm tracking-tight">
+          <Link href="/menu" className="text-primary hover:text-primary-fixed transition-colors">
+            Menú
+          </Link>
+          <a href="#proceso" className="text-on-surface-variant hover:text-tertiary transition-colors">
+            El Proceso
+          </a>
+          <a href="#rewards" className="text-on-surface-variant hover:text-tertiary transition-colors">
+            Rewards
+          </a>
+          <a href="#location" className="text-on-surface-variant hover:text-tertiary transition-colors">
+            Ubicación
+          </a>
+        </div>
+
+        {/* CTA */}
+        <Link
+          href="/menu"
+          className="bg-primary text-on-primary px-5 py-2.5 rounded-xl font-headline font-bold text-sm tracking-tight hover:brightness-110 transition-all active:scale-95 glow-primary"
+        >
+          Ordenar Ya
+        </Link>
+      </div>
+    </nav>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Hero — diagonal cut, massive type, floating badges            */
+/* ────────────────────────────────────────────────────────────── */
+function HeroSection() {
+  return (
+    <section className="relative min-h-[100vh] flex items-end overflow-hidden">
+      {/* BG image + overlays */}
+      <div className="absolute inset-0 z-0">
+        <Image
+          src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-azXPTYSGuiyw1wSgJioC3cONnNLsmqBWnqetzwun8S_hMF-LF9RO16zDovXCIHsS6zDpa_peiwh4rpwMbMqOKM39OHpw73GeKZs6CZaRGGRAFj_idSMIgD1g6xoEHXBExu4EvYdaOfsmuCUsWfXOUrnYcDMVpIQR6JWyviU3HuBysY8Av46yCpXm8HjZFwO4uNODqH9DGpdSjnGY4ldetBTvnqnPjZOp5Yl7izXvjyTNq6pHOOhbCk8BqHOsnuzmbymQeEjkl8Vs"
+          alt="Pollo frito crujiente con especias y vapor"
+          fill
+          className="object-cover scale-105"
+          priority
+        />
+        {/* warm gradient from bottom */}
+        <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-transparent" />
+        {/* diagonal cut overlay */}
+        <div
+          className="absolute inset-0 bg-surface"
+          style={{ clipPath: "polygon(0 85%, 100% 70%, 100% 100%, 0 100%)" }}
+        />
+        {/* grain texture */}
+        <div className="absolute inset-0 grain" />
+      </div>
+
+      {/* Floating badge — top right */}
+      <div
+        className="absolute top-28 right-8 md:right-16 z-20 animate-float"
+        style={{ "--float-rotate": "6deg" } as React.CSSProperties}
+      >
+        <div className="w-24 h-24 md:w-28 md:h-28 bg-secondary rounded-full flex items-center justify-center shadow-2xl rotate-12 border-4 border-surface">
+          <span className="font-headline font-extrabold text-on-secondary text-center text-[10px] md:text-xs uppercase leading-tight">
+            Nuevo<br />Nivel<br />Crunch
+          </span>
+        </div>
+      </div>
+
+      {/* Spinning badge — mid left (desktop) */}
+      <div className="absolute top-1/3 left-6 z-20 hidden lg:block">
+        <div className="w-20 h-20 rounded-full border-2 border-dashed border-primary/40 flex items-center justify-center animate-spin-slow">
+          <span className="material-symbols-outlined text-primary text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+            local_fire_department
+          </span>
+        </div>
+      </div>
+
+      {/* Hero Content */}
+      <div className="relative z-10 max-w-7xl mx-auto w-full px-6 lg:px-12 pb-24 md:pb-32">
+        <div className="max-w-3xl">
+          {/* Badge */}
+          <div className="animate-fade-up inline-flex items-center gap-2 bg-secondary/15 border border-secondary/30 text-secondary px-4 py-1.5 rounded-full mb-6 backdrop-blur-sm">
+            <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+              verified
+            </span>
+            <span className="text-xs font-headline font-bold uppercase tracking-wider">
+              Lo Mejor de SJR
+            </span>
+          </div>
+
+          {/* Heading */}
+          <h1 className="animate-fade-up delay-100 text-6xl sm:text-8xl md:text-9xl lg:text-[10rem] font-headline font-extrabold text-tertiary uppercase leading-[0.85] tracking-tighter mb-8">
+            EL{" "}
+            <span className="text-primary text-glow">CRUNCH</span>
+            <br />
+            <span className="text-stroke">SUPREMO</span>
+          </h1>
+
+          {/* Subtext */}
+          <p className="animate-fade-up delay-200 text-lg md:text-xl font-body text-on-surface-variant max-w-lg leading-relaxed mb-10">
+            El bocado más fuerte de San Juan del Río. Doble empanizado, especias
+            de alto voltaje, cero compromisos.
+          </p>
+
+          {/* CTAs */}
+          <div className="animate-fade-up delay-300 flex flex-wrap gap-4">
+            <Link
+              href="/menu"
+              className="group relative bg-primary text-on-primary px-8 py-4 rounded-2xl font-headline font-bold text-lg shadow-2xl hover:scale-105 transition-all active:scale-95 animate-pulse-glow"
+            >
+              Prueba el Sabor
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full animate-ping" />
+            </Link>
+            <Link
+              href="/menu"
+              className="bg-surface-container-high/80 backdrop-blur text-tertiary px-8 py-4 rounded-2xl font-headline font-bold text-lg border border-outline-variant/30 hover:border-primary/40 hover:bg-surface-variant transition-all"
+            >
+              Ver Menú
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Marquee Strip — scrolling text between sections               */
+/* ────────────────────────────────────────────────────────────── */
+function MarqueeStrip() {
+  const words = "CRUNCH · POLLO · SABOR · FUEGO · SJR · CRUNCH · POLLO · SABOR · FUEGO · SJR · ";
+  return (
+    <div className="overflow-hidden bg-primary py-3 -rotate-1 scale-x-105 relative z-10">
+      <div className="animate-marquee whitespace-nowrap flex">
+        <span className="font-headline font-extrabold text-on-primary text-sm tracking-[0.3em] uppercase mx-4">
+          {words}{words}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Menu Highlights — bento grid with overlapping cards           */
+/* ────────────────────────────────────────────────────────────── */
+function MenuHighlights() {
+  return (
+    <section className="py-24 px-6 lg:px-12 max-w-7xl mx-auto relative">
+      {/* Section header */}
+      <div className="flex justify-between items-end mb-14">
+        <div>
+          <span className="text-xs font-headline font-bold text-primary uppercase tracking-[0.3em] mb-2 block">
+            Nuestros Favoritos
+          </span>
+          <h2 className="text-4xl md:text-6xl font-headline font-extrabold text-tertiary uppercase tracking-tighter leading-none">
+            Lo Esencial
+          </h2>
+        </div>
+        <Link
+          href="/menu"
+          className="group hidden md:flex items-center gap-2 text-on-surface-variant font-headline font-bold text-sm uppercase tracking-wider hover:text-primary transition-colors"
+        >
+          Menú Completo
+          <span className="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">
+            arrow_forward
+          </span>
+        </Link>
+      </div>
+
+      {/* Bento Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5">
+        {/* Large Card */}
+        <div className="md:col-span-7 group relative rounded-3xl overflow-hidden min-h-[420px] cursor-pointer">
+          <Image
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrVdJT_Vm_viC56F7SX_-tk7Frnn6HGH4lliZE5fwJPR6mVwpVRf98L0HyjvLSSg9GWM_IETihO7gCkuzpL-5DnA8Wce1dRmxOX-_pn1enGSsGBAZZqOBnvPWN_VB0irqd0DKEQipsk8A5xXC-HyzFeQ0AXkPcVa2UNASenlYd38sfsK3wDJ8x5AFhd_mUnqbPiFDcP2rH6HNXbCJeR8EW8xK5i6U4WbVhAfwtx4_FLxQTW_17pI8VMLizxNZFa4aaGA7hCdwpgU96"
+            alt="Festín de pollo frito con papas y salsas"
+            fill
+            className="object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          {/* Price sticker */}
+          <div className="absolute top-5 right-5 bg-secondary text-on-secondary px-3 py-1.5 rounded-full font-headline font-extrabold text-lg shadow-lg rotate-3">
+            $549
+          </div>
+          <div className="absolute bottom-0 left-0 p-7 md:p-9">
+            <span className="bg-primary/20 text-primary border border-primary/30 backdrop-blur-sm px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full mb-3 inline-block">
+              Mejor Precio
+            </span>
+            <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-white uppercase tracking-tighter leading-none mb-2">
+              El Combo Familiar
+            </h3>
+            <p className="text-white/70 font-body text-sm max-w-sm">
+              12 piezas, 3 guarniciones y 4 salsas de alto voltaje.
+            </p>
+          </div>
+        </div>
+
+        {/* Tall Vertical Card */}
+        <div className="md:col-span-5 group relative rounded-3xl overflow-hidden min-h-[420px] cursor-pointer">
+          <Image
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBa_BqDUl_9A0Eo0Utu3Msb8-Qa-khZ2PE_0mS2s87KFb5QioB_qw5uTS42n969vsHkgqw9n-xSHtsvDJxfZo66TUPPVs4AdjRUJfAii8piZ1rDfk1SuGzMGK0v_BxghzUrAj4D-JfCzXH9kIZ5lnD8EyHDNCs8f8JTKUMMba020XylxCrg-yRDOWBminpNu3os1_VmMfLZhXOZq1mhdqD4k1EtN9lL0S-dahzoVy0mbO9rKua80Xp2KBdYGhjEQfkjN6oR2iK4r3Pj"
+            alt="Nuggets con salsa"
+            fill
+            className="object-cover transition-transform duration-700 group-hover:scale-110"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/30 to-transparent" />
+          <div className="absolute bottom-0 left-0 p-7">
+            <h3 className="text-2xl font-headline font-extrabold text-tertiary uppercase tracking-tighter mb-2">
+              Caja 6 Piezas
+            </h3>
+            <p className="text-on-surface-variant text-sm mb-4">
+              Original o Extra Picante.
+            </p>
+            <Link
+              href="/menu"
+              className="bg-primary text-on-primary w-11 h-11 rounded-full inline-flex items-center justify-center hover:scale-110 transition-transform shadow-lg"
+            >
+              <span className="material-symbols-outlined text-lg">add_shopping_cart</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Wide Card */}
+        <div className="md:col-span-5 group relative rounded-3xl overflow-hidden min-h-[320px] cursor-pointer">
+          <Image
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuASVLj1jqwiUFPh3JVOjraJ0QZ8nYmyjtMRYmIrldBONn4Tu4I40AFVrNqdqO3Ir4yxw52Rrv2G-6ZyHCrgX65SmH481l_k_HUkuJFn12mCAQ-lK7hhMHLKYglI3uP9GLYszGjePZuS41GwBz7CcbToRTLWfMs4YcRQixq1l0JFQ9UCIB0Wx447p4LYzwDpdqAuuxucZem_K1I00oVxvm3z5NCOgSJIK69Z7SPXmahjM1AlGtKuYJl_Oqj_7DZdMet9iccaaMEKKShe"
+            alt="Hamburguesa de pollo con chile y limón"
+            fill
+            className="object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+          <div className="absolute inset-0 bg-black/50 group-hover:bg-black/30 transition-colors duration-500" />
+          <div className="absolute inset-0 flex flex-col justify-center items-center text-center p-8">
+            <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-tertiary uppercase tracking-tighter leading-none mb-3">
+              Burger Chile-Limón
+            </h3>
+            <div className="h-1 w-10 bg-primary rounded-full mb-3" />
+            <p className="text-tertiary/80 font-body text-sm">
+              Ácida, picante y peligrosamente crujiente.
+            </p>
+          </div>
+        </div>
+
+        {/* Promo Card (no image) */}
+        <div className="md:col-span-7 relative rounded-3xl overflow-hidden bg-gradient-to-br from-primary via-primary-dim to-primary-container p-8 md:p-10 flex flex-col justify-between min-h-[320px] group grain">
+          <div className="relative z-10">
+            <span className="text-on-primary/60 text-xs font-headline font-bold uppercase tracking-[0.3em] block mb-2">
+              Próxima Semana
+            </span>
+            <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-on-primary uppercase tracking-tighter mb-4 leading-tight">
+              Ghost Pepper<br />Glaze Series
+            </h3>
+            <p className="text-on-primary/80 font-body max-w-sm">
+              Edición limitada solo en SJR Centro. Prepárate para el fuego.
+            </p>
+          </div>
+          <div className="relative z-10 flex items-end justify-between mt-6">
+            <span className="text-7xl md:text-8xl font-headline font-extrabold text-on-primary/10 uppercase leading-none">
+              LTD
+            </span>
+            <span className="material-symbols-outlined text-on-primary/30 text-5xl group-hover:rotate-12 transition-transform duration-500" style={{ fontVariationSettings: "'FILL' 1" }}>
+              whatshot
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile link */}
+      <div className="mt-8 md:hidden text-center">
+        <Link
+          href="/menu"
+          className="inline-flex items-center gap-2 text-primary font-headline font-bold text-sm uppercase tracking-wider"
+        >
+          Ver Menú Completo
+          <span className="material-symbols-outlined text-sm">arrow_forward</span>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Secret Process — numbered timeline steps                      */
+/* ────────────────────────────────────────────────────────────── */
+function SecretProcess() {
+  const steps = [
+    {
+      num: "01",
+      title: "Marinada 24h",
+      desc: "Combinación secreta de especias y hierbas durante un día entero.",
+      icon: "schedule",
+      img: "https://lh3.googleusercontent.com/aida-public/AB6AXuCAU7GyKHGXXaTDIt4oGPFOf9fncerxl9QK0HDS3FwcYcIThLxKPp54o4Z5h6BplA9rhROEIAReVicS6kwqEaqgZVZ4XuWn6mu5k7bxWWkXGHOpXqhmImV0ILwlYvYcNQB4lBpT8-Rc5zAF8DIyh-8YdM8rXXXVlQ70--v2DqwoBop3PKR1z9wLfx2SvVSzjIQBnCJYWlyja36d-34ypiaHndAsac4LeVHl_xGXPKA5FA99ycxt9zEuEQnZq_zgohBTb1engWNzjBMI",
+    },
+    {
+      num: "02",
+      title: "Doble Empanizado",
+      desc: "Mezcla propia de 11 especias secretas y trigo selecto para las Crestas Crujientes.",
+      icon: "texture",
+      img: "https://lh3.googleusercontent.com/aida-public/AB6AXuA-GHz1f7jQS9j8DOS3qvEEOSNq7rKqi9_iiY_6in4K7WqhUl2Fbc_jJasoA2eUDYSuW_Hyq1Uk9Ykp6ciT8qyHWuMAWX1YjIFAnT7oKSD69zg4qOGPJT_jK0DXNwP6yDdI_Rgbjkx2LQnaADHf_aYLLFSXQ36iX9dkyJkgesPMkTWifPPudHqV4Yfy-2fYZk506s1SHXrnkU3prUsUOkVlrsH_QkmHqLQSUBmSW_MCNEHyU0ZtFghmxKImDdP0z4eWHZ9_W_qXBdI9",
+    },
+    {
+      num: "03",
+      title: "Calor de Precisión",
+      desc: "Monitoreo constante para asegurar 0% aguado, 100% crujiente.",
+      icon: "thermostat",
+      img: "https://lh3.googleusercontent.com/aida-public/AB6AXuDfCDvXSGAMVc1zekZgE-87RPkdoFbsh-zqT6kQaRSuHHcRTHhpZRe6-WNxlQhTNhpxh_nZJVuaseYRHwNEdDJh9hBnJJgMOsLBPZ0Im5yz6dCo76uL5PvC6sINHfzGQKp35bkxe91ODuyQcToBNYmq-cFV5LQwwaqlHUatVF_U0yejs3ANLHQaSrPpIX5up_ABP7nmGMR8KBGhzxeoqFhZgiX-pfZz5DclJJvajlV4qmpwqfviTQnf7I3Z87lQxnYk1-f2wuTckDN0",
+    },
+  ];
+
+  return (
+    <section id="proceso" className="py-28 relative overflow-hidden">
+      {/* Warm surface background */}
+      <div className="absolute inset-0 bg-surface-container-low" />
+      <div className="absolute inset-0 grain" />
+
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12">
+        {/* Header */}
+        <div className="text-center mb-20">
+          <span className="text-xs font-headline font-bold text-primary uppercase tracking-[0.3em] mb-2 block">
+            Nuestro Ritual
+          </span>
+          <h2 className="text-5xl md:text-7xl lg:text-8xl font-headline font-extrabold text-tertiary uppercase leading-none tracking-tighter">
+            EL{" "}
+            <span className="text-stroke">SECRETO</span>
+            <br />
+            DEL CRUNCH
+          </h2>
+        </div>
+
+        {/* Steps */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+          {steps.map((step) => (
+            <div
+              key={step.num}
+              className="group relative bg-surface-container rounded-3xl overflow-hidden border border-outline-variant/15 hover:border-primary/30 transition-all duration-500"
+            >
+              {/* Image */}
+              <div className="aspect-[4/3] relative overflow-hidden">
+                <Image
+                  src={step.img}
+                  alt={step.title}
+                  fill
+                  className="object-cover transition-transform duration-700 group-hover:scale-110"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-surface-container to-transparent" />
+                {/* Step number */}
+                <div className="absolute top-4 left-4 font-headline font-extrabold text-5xl text-white/10">
+                  {step.num}
+                </div>
+              </div>
+              {/* Text */}
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-primary text-lg">
+                      {step.icon}
+                    </span>
+                  </div>
+                  <h3 className="font-headline font-bold text-tertiary text-lg uppercase tracking-tight">
+                    {step.title}
+                  </h3>
+                </div>
+                <p className="text-on-surface-variant font-body text-sm leading-relaxed">
+                  {step.desc}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Loyalty Section — VIP club with metallic card                 */
+/* ────────────────────────────────────────────────────────────── */
+function LoyaltySection() {
+  return (
+    <section id="rewards" className="py-28 px-6 lg:px-12">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-gradient-to-br from-[#1C1917] to-[#0C0A09] rounded-[2rem] overflow-hidden border border-outline-variant/10 shadow-2xl">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            {/* Left — text */}
+            <div className="p-10 lg:p-16 flex flex-col justify-center">
+              <span className="text-xs font-headline font-bold text-secondary uppercase tracking-[0.3em] mb-3 block">
+                El Club del Crunch
+              </span>
+              <h2 className="text-4xl lg:text-6xl font-headline font-extrabold text-tertiary uppercase tracking-tighter mb-6 leading-none">
+                VIP<br />POLLÓN
+              </h2>
+              <p className="text-on-surface-variant text-base lg:text-lg mb-10 max-w-md leading-relaxed">
+                Únete y convierte cada bocado en moneda. Desbloquea drops
+                secretos, sáltate la fila y gana Crunch Coins con cada pedido.
+              </p>
+
+              {/* Stats */}
+              <div className="grid grid-cols-2 gap-6 mb-10">
+                <div className="bg-surface-container rounded-2xl p-5 border border-outline-variant/10">
+                  <div className="text-primary text-3xl font-headline font-extrabold mb-1">10%</div>
+                  <div className="text-on-surface-variant text-xs font-headline font-semibold uppercase tracking-wider">
+                    De vuelta en cada caja
+                  </div>
+                </div>
+                <div className="bg-surface-container rounded-2xl p-5 border border-outline-variant/10">
+                  <div className="text-secondary text-3xl font-headline font-extrabold mb-1">GRATIS</div>
+                  <div className="text-on-surface-variant text-xs font-headline font-semibold uppercase tracking-wider">
+                    Balde de cumpleaños
+                  </div>
+                </div>
+              </div>
+
+              <Link
+                href="/loyalty"
+                className="inline-flex items-center justify-center gap-3 bg-tertiary text-surface px-7 py-3.5 rounded-2xl font-headline font-bold text-sm hover:brightness-95 transition-all active:scale-95 w-fit"
+              >
+                <span className="material-symbols-outlined text-lg">loyalty</span>
+                Ver Mis Puntos
+              </Link>
+            </div>
+
+            {/* Right — card mockup */}
+            <div className="relative p-10 lg:p-16 flex items-center justify-center overflow-hidden">
+              {/* Subtle radial glow behind card */}
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(249,115,22,0.08)_0%,transparent_70%)]" />
+              <div className="absolute inset-0 grain" />
+
+              {/* Card */}
+              <div className="relative z-10 w-full max-w-xs aspect-[3/4.5] bg-gradient-to-br from-[#292524] via-[#1C1917] to-[#0C0A09] rounded-[1.75rem] p-7 shadow-2xl border border-outline-variant/20">
+                {/* Card header */}
+                <div className="flex justify-between items-start mb-10">
+                  <span className="text-primary font-headline font-extrabold text-lg tracking-tight">
+                    POLLÓN<span className="text-secondary">.</span>
+                  </span>
+                  <span className="material-symbols-outlined text-outline/30 text-xl">contactless</span>
+                </div>
+
+                {/* Member level */}
+                <div className="mb-8">
+                  <div className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.2em] mb-1">
+                    Nivel de Miembro
+                  </div>
+                  <div className="text-secondary font-headline font-extrabold text-2xl uppercase tracking-tight">
+                    EXTRA CRISPY
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className="space-y-5">
+                  <div className="flex justify-between items-center border-b border-outline-variant/15 pb-3">
+                    <span className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.15em]">
+                      Crunch Coins
+                    </span>
+                    <span className="text-tertiary font-headline font-extrabold text-lg">2,450</span>
+                  </div>
+                  <div className="flex justify-between items-center border-b border-outline-variant/15 pb-3">
+                    <span className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.15em]">
+                      Próxima Recompensa
+                    </span>
+                    <span className="text-tertiary font-headline font-bold text-sm">
+                      Sliders Picantes
+                    </span>
+                  </div>
+                </div>
+
+                {/* QR placeholder */}
+                <div className="absolute bottom-7 left-1/2 -translate-x-1/2 w-20 h-20 bg-tertiary rounded-xl flex items-center justify-center shadow-lg">
+                  <div className="grid grid-cols-3 gap-0.5 w-12 h-12">
+                    {[1,0,1,0,1,0,1,0,1].map((v, i) => (
+                      <div key={i} className={`w-full h-full rounded-sm ${v ? "bg-surface" : "bg-transparent"}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Location Section — map + delivery estimator                   */
+/* ────────────────────────────────────────────────────────────── */
+function LocationSection() {
+  return (
+    <section
+      id="location"
+      className="py-28 px-6 lg:px-12 max-w-7xl mx-auto"
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+        {/* Text + Estimator */}
+        <div className="lg:col-span-4 flex flex-col justify-center">
+          <span className="text-xs font-headline font-bold text-primary uppercase tracking-[0.3em] mb-2 block">
+            Encuéntranos
+          </span>
+          <h2 className="text-4xl md:text-5xl font-headline font-extrabold text-tertiary uppercase tracking-tighter mb-6 leading-none">
+            ESTAMOS<br />EN LA{" "}
+            <span className="text-primary">ZONA</span>
+          </h2>
+          <p className="text-on-surface-variant mb-8 leading-relaxed">
+            Los más rápidos de San Juan del Río. Encuéntranos o recibe tu pedido
+            en tu puerta en tiempo récord.
+          </p>
+
+          {/* Delivery Estimator */}
+          <div className="bg-surface-container rounded-2xl p-6 border border-outline-variant/15">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+                <span className="material-symbols-outlined text-primary text-lg">speed</span>
+              </div>
+              <h4 className="font-headline font-bold text-sm uppercase tracking-tight">
+                Estimador de Entrega
+              </h4>
+            </div>
+            <div className="space-y-3">
+              <input
+                className="w-full bg-surface-container-highest rounded-xl p-3.5 text-sm text-on-surface border border-outline-variant/15 focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-all placeholder:text-on-surface-variant/40"
+                placeholder="Ingresa tu calle..."
+                type="text"
+              />
+              <button className="w-full bg-primary text-on-primary py-3 rounded-xl font-headline font-bold text-sm uppercase tracking-wider hover:brightness-110 transition-all active:scale-[0.98]">
+                Calcular Tiempo
+              </button>
+            </div>
+            <div className="mt-4 flex justify-between text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">
+              <span>Carga actual: ALTA</span>
+              <span>Promedio: 22 MIN</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Map */}
+        <div className="lg:col-span-8 aspect-[16/10] rounded-3xl overflow-hidden border border-outline-variant/15 relative group">
+          <Image
+            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDBMerO8HsC1BqrWG7qH9TN1LbC8Ufy8ifZa_VxJ5efmeJ-m2Cb_PHrC0bIItFtbgPgDD6U5Z9FEjYTYZk7t4dm1ECWbocSW_sh7WbBGlEWyQkN0Llc3_ZVBVZ-QOv_fJId_qCM_BmZZ0tQjP5_KVuEBqibP0cEWtyg1AmzXgS5aH1opQMiVG2EJ6FhdZ7dXESTm8kzk1YtGVeouuTAHWka0cFUj-4C3B1M1ZrP6bBdb85ja5EYmCW0fVVYDOX4LFtUdpNOgBN51fGc"
+            alt="Mapa de San Juan del Río"
+            fill
+            className="object-cover grayscale opacity-40 group-hover:opacity-50 transition-opacity duration-500"
+          />
+          {/* Pin */}
+          <div className="absolute top-1/3 left-1/3">
+            <div className="relative">
+              <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center shadow-2xl animate-pulse-glow">
+                <span
+                  className="material-symbols-outlined text-on-primary text-lg"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  location_on
+                </span>
+              </div>
+              {/* Tooltip on hover */}
+              <div className="absolute top-12 left-0 bg-surface-container border border-outline-variant/20 px-4 py-2.5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl">
+                <p className="text-xs font-headline font-bold uppercase text-tertiary whitespace-nowrap">
+                  POLLÓN HQ — CENTRO
+                </p>
+                <p className="text-[10px] text-on-surface-variant">
+                  San Juan del Río, QRO
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Footer — minimal + large watermark typography                 */
+/* ────────────────────────────────────────────────────────────── */
+function Footer() {
+  return (
+    <footer className="relative overflow-hidden border-t border-outline-variant/10 bg-surface">
+      {/* Large watermark */}
+      <div className="absolute bottom-0 left-0 right-0 text-center pointer-events-none select-none">
+        <span className="font-headline font-extrabold text-[12rem] md:text-[18rem] text-outline-variant/5 uppercase leading-none block -mb-12 md:-mb-16">
+          POLLÓN
+        </span>
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-12 py-16">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-12">
+          {/* Brand */}
+          <div className="md:col-span-4">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center rotate-[-4deg]">
+                <span className="text-on-primary font-headline font-extrabold text-xs">P</span>
+              </div>
+              <span className="text-lg font-headline font-extrabold text-tertiary tracking-tight">
+                POLLÓN<span className="text-primary">.</span>
+              </span>
+            </div>
+            <p className="text-on-surface-variant/60 font-body text-sm leading-relaxed max-w-xs">
+              Nacidos en San Juan del Río. Criados para el crunch. Herencia de
+              alto voltaje servida fresca a diario.
+            </p>
+          </div>
+
+          {/* Links */}
+          <div className="md:col-span-2">
+            <h5 className="text-xs font-headline font-bold text-tertiary uppercase tracking-[0.2em] mb-5">
+              Explorar
+            </h5>
+            <ul className="space-y-3">
+              <li>
+                <Link href="/menu" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Menú
+                </Link>
+              </li>
+              <li>
+                <a href="#rewards" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Rewards
+                </a>
+              </li>
+              <li>
+                <a href="#location" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Ubicación
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="md:col-span-2">
+            <h5 className="text-xs font-headline font-bold text-tertiary uppercase tracking-[0.2em] mb-5">
+              Legal
+            </h5>
+            <ul className="space-y-3">
+              <li>
+                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Privacidad
+                </a>
+              </li>
+              <li>
+                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Términos
+                </a>
+              </li>
+              <li>
+                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Alérgenos
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="md:col-span-2">
+            <h5 className="text-xs font-headline font-bold text-tertiary uppercase tracking-[0.2em] mb-5">
+              Contacto
+            </h5>
+            <ul className="space-y-3">
+              <li>
+                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  Instagram
+                </a>
+              </li>
+              <li>
+                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  TikTok
+                </a>
+              </li>
+              <li>
+                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                  WhatsApp
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          {/* SJR badge */}
+          <div className="md:col-span-2 flex md:justify-end items-start">
+            <div className="text-right">
+              <div className="text-outline-variant/30 font-headline font-extrabold text-5xl uppercase leading-none mb-2">
+                SJR
+              </div>
+              <p className="text-on-surface-variant/30 text-[10px] font-bold uppercase tracking-wider">
+                &copy;2025 POLLÓN SJR
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Floating Order CTA — glowing pulse (mobile)                   */
+/* ────────────────────────────────────────────────────────────── */
+function FloatingCartButton() {
+  return (
+    <Link
+      href="/menu"
+      className="fixed bottom-6 right-6 z-50 bg-primary w-14 h-14 rounded-2xl flex items-center justify-center text-on-primary shadow-2xl hover:scale-110 active:scale-90 transition-transform lg:hidden animate-pulse-glow"
+    >
+      <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+        shopping_basket
+      </span>
+    </Link>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Export                                                        */
+/* ────────────────────────────────────────────────────────────── */
+export function LandingPage() {
+  return (
+    <>
+      <NavBar />
+      <main>
+        <HeroSection />
+        <MarqueeStrip />
+        <MenuHighlights />
+        <SecretProcess />
+        <LoyaltySection />
+        <LocationSection />
+      </main>
+      <Footer />
+      <FloatingCartButton />
+    </>
+  );
+}

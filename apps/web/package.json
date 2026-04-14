@@ -1,0 +1,40 @@
+{
+  "name": "@pollon/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.6.0",
+    "@pollon/types": "*",
+    "@pollon/utils": "*",
+    "@tanstack/react-query": "^5.40.0",
+    "@types/leaflet": "^1.9.21",
+    "framer-motion": "^11.2.0",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.380.0",
+    "mercadopago": "^2.0.0",
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-hook-form": "^7.51.0",
+    "react-leaflet": "^5.0.0",
+    "socket.io-client": "^4.7.0",
+    "tailwindcss": "^3.4.0",
+    "zod": "^3.23.0",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "typescript": "^5.4.0"
+  }
+}

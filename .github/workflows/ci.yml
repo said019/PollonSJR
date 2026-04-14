@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-types:
+    name: Lint y tipos
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema=packages/prisma/schema.prisma
+
+      - name: TypeScript check (API)
+        run: npx tsc --noEmit
+        working-directory: apps/api
+
+      - name: Build (Web)
+        run: npx next build
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001
