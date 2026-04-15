@@ -22,6 +22,7 @@ import { startScheduler } from "./jobs/scheduler";
 import { getStoreConfig, isAcceptingOrders } from "./modules/admin/store-config.service";
 import { startNotificationWorker } from "./modules/notifications/queue";
 import { sendWhatsApp } from "./modules/notifications/whatsapp.service";
+import { evolutionRoutes, evolutionWebhookRoutes } from "./modules/notifications/evolution.routes";
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -65,6 +66,8 @@ async function bootstrap() {
   app.register(notificationsRoutes, { prefix: "/api/notifications" });
   app.register(adminRoutes, { prefix: "/api/admin" });
   app.register(reportsRoutes, { prefix: "/api/admin" });
+  app.register(evolutionRoutes, { prefix: "/api/evolution" });
+  app.register(evolutionWebhookRoutes, { prefix: "/api/webhook/evolution" });
   app.register(deliveryRoutes, { prefix: "/api/delivery" });
   app.register(adminDeliveryRoutes, { prefix: "/api/admin/delivery" });
 
