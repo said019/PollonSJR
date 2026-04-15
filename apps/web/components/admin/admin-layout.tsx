@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Users, BarChart3, Settings, LogOut, Truck } from "lucide-react";
 import { getAdminToken, removeAdminToken } from "@/lib/auth";
@@ -55,8 +56,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-surface-container">
       {/* Sidebar */}
       <aside className="w-64 bg-surface-container-high border-r hidden md:flex flex-col">
-        <div className="p-4 border-b">
-          <h1 className="text-xl font-bold text-primary">POLLÓN Admin</h1>
+        <div className="p-4 border-b flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg overflow-hidden border border-primary/20 flex-shrink-0">
+            <Image
+              src="/pollon-logo.jpg"
+              alt="Pollón SJR"
+              width={40}
+              height={40}
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <h1 className="text-lg font-headline font-bold text-primary">POLLÓN Admin</h1>
         </div>
         <nav className="flex-1 p-4 space-y-1">
           {NAV_ITEMS.map((item) => {
@@ -90,7 +100,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile header */}
       <div className="md:hidden fixed top-0 left-0 right-0 bg-surface-container-high border-b z-30 p-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold text-primary">POLLÓN</h1>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg overflow-hidden border border-primary/20">
+              <Image
+                src="/pollon-logo.jpg"
+                alt="Pollón SJR"
+                width={32}
+                height={32}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <h1 className="text-base font-headline font-bold text-primary">POLLÓN</h1>
+          </div>
           <div className="flex gap-3 overflow-x-auto">
             {NAV_ITEMS.slice(0, 4).map((item) => (
               <Link

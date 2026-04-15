@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { saveTokens } from "@/lib/auth";
 import { Lock, Mail, Phone, User, Loader2, Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
 
 interface AuthModalProps {
   open: boolean;
@@ -111,10 +112,16 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
       />
 
       <div className="relative bg-surface-container rounded-2xl p-6 w-full max-w-sm mx-4 border border-outline-variant/20 shadow-2xl">
-        {/* Header with tabs */}
+        {/* Header with logo */}
         <div className="text-center mb-5">
-          <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-3">
-            <Lock size={22} className="text-primary" />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden mx-auto mb-3 border-2 border-primary/30 shadow-lg">
+            <Image
+              src="/pollon-logo.jpg"
+              alt="Pollón SJR"
+              width={64}
+              height={64}
+              className="w-full h-full object-cover"
+            />
           </div>
           <h2 className="text-xl font-headline font-bold text-on-surface">
             {mode === "login" ? "Bienvenido de vuelta" : "Crea tu cuenta"}

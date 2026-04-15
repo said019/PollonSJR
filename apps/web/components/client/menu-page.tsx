@@ -12,6 +12,7 @@ import { ShoppingCart, ArrowLeft, User, LogOut } from "lucide-react";
 import { StoreStatusBanner } from "./store-status-banner";
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { getToken, clearTokens } from "@/lib/auth";
 
 export function MenuPage() {
@@ -49,14 +50,25 @@ export function MenuPage() {
             <Link href="/" className="text-on-surface-variant hover:text-primary transition-colors p-1">
               <ArrowLeft size={18} />
             </Link>
-            <div>
-              <h1 className="text-lg font-headline font-extrabold text-tertiary tracking-tight">
-                POLLÓN<span className="text-primary">.</span>
-              </h1>
-              <p className="text-[10px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">
-                Pedidos en línea
-              </p>
-            </div>
+            <Link href="/" className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-lg overflow-hidden border border-primary/20">
+                <Image
+                  src="/pollon-logo.jpg"
+                  alt="Pollón SJR"
+                  width={36}
+                  height={36}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div>
+                <h1 className="text-base font-headline font-extrabold text-tertiary tracking-tight leading-tight">
+                  POLLÓN<span className="text-primary">.</span>
+                </h1>
+                <p className="text-[9px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">
+                  Pedidos en línea
+                </p>
+              </div>
+            </Link>
           </div>
           <div className="flex items-center gap-2">
             {authed ? (

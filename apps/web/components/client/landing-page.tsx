@@ -11,9 +11,15 @@ function NavBar() {
     <nav className="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/10">
       <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center rotate-[-4deg] shadow-lg">
-            <span className="text-on-primary font-headline font-extrabold text-xs">P</span>
+        <Link href="/" className="flex items-center gap-2.5">
+          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-primary/20">
+            <Image
+              src="/pollon-logo.jpg"
+              alt="Pollón SJR"
+              width={40}
+              height={40}
+              className="w-full h-full object-cover"
+            />
           </div>
           <span className="text-xl font-headline font-extrabold text-tertiary tracking-tight">
             POLLÓN<span className="text-primary">.</span>

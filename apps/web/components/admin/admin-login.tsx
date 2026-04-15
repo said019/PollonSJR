@@ -4,7 +4,8 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { setAdminToken } from "@/lib/auth";
 import { useRouter } from "next/navigation";
-import { Lock, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import Image from "next/image";
 
 export function AdminLogin() {
   const router = useRouter();
@@ -33,10 +34,16 @@ export function AdminLogin() {
     <div className="min-h-screen flex items-center justify-center bg-surface p-4">
       <form onSubmit={handleSubmit} className="bg-surface-container-high rounded-2xl p-8 w-full max-w-sm shadow-lg">
         <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-primary rounded-full flex items-center justify-center mx-auto mb-3">
-            <Lock size={24} className="text-on-primary" />
+          <div className="w-20 h-20 rounded-2xl overflow-hidden mx-auto mb-4 border-2 border-primary/30 shadow-lg">
+            <Image
+              src="/pollon-logo.jpg"
+              alt="Pollón SJR"
+              width={80}
+              height={80}
+              className="w-full h-full object-cover"
+            />
           </div>
-          <h1 className="text-xl font-bold">Admin POLLÓN</h1>
+          <h1 className="text-xl font-headline font-bold">Admin POLLÓN</h1>
           <p className="text-sm text-on-surface-variant">Ingresa tus credenciales</p>
         </div>
 
