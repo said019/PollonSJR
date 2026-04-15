@@ -9,10 +9,9 @@ export const DeliveryMap = dynamic(
     ssr: false,
     loading: () => (
       <div
-        className="w-full bg-gray-100 rounded-xl flex items-center justify-center"
-        style={{ height: "280px" }}
+        className="flex h-[220px] w-full items-center justify-center rounded-lg bg-surface-container-high sm:h-[240px]"
       >
-        <Loader2 size={24} className="animate-spin text-gray-400" />
+        <Loader2 size={24} className="animate-spin text-on-surface-variant" />
       </div>
     ),
   }

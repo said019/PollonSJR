@@ -90,7 +90,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex-1 flex flex-col p-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-full flex-col p-4 pb-6">
       <button type="button" onClick={onBack} className="flex items-center gap-1 text-on-surface-variant mb-4">
         <ArrowLeft size={16} /> Volver al carrito
       </button>
@@ -100,7 +100,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
       {/* Order type */}
       <div className="mb-4">
         <label className="text-sm font-medium mb-2 block text-on-surface">Tipo de pedido</label>
-        <div className="flex gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <label className="flex-1">
             <input type="radio" value="PICKUP" {...register("type")} className="sr-only peer" />
             <div className="border-2 border-outline-variant rounded-xl p-3 text-center cursor-pointer peer-checked:border-primary peer-checked:bg-primary/10 transition-colors">
@@ -151,7 +151,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
       {error && <p className="text-error text-sm mb-3">{error}</p>}
 
-      <div className="mt-auto">
+      <div className="mt-auto pt-2">
         <button
           type="submit"
           disabled={loading || (orderType === "DELIVERY" && !delivery.available)}

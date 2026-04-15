@@ -25,6 +25,86 @@ const STORE_POS: [number, number] = [
   parseFloat(process.env.NEXT_PUBLIC_STORE_LAT || "20.5881"),
   parseFloat(process.env.NEXT_PUBLIC_STORE_LNG || "-99.9953"),
 ];
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+const GOOGLE_MAPS_SCRIPT_ID = "pollon-google-maps";
+
+type GoogleMapPosition = { lat: number; lng: number };
+type GoogleLatLng = { lat: () => number; lng: () => number };
+type GoogleMapMouseEvent = { latLng?: GoogleLatLng };
+type GoogleGeocoderStatus = string;
+
+interface GoogleAddressComponent {
+  long_name: string;
+  short_name: string;
+  types: string[];
+}
+
+interface GoogleGeocoderResult {
+  address_components?: GoogleAddressComponent[];
+  formatted_address: string;
+  geometry: {
+    location: GoogleLatLng;
+  };
+  place_id?: string;
+}
+
+interface GoogleGeocodeRequest {
+  address?: string;
+  componentRestrictions?: { country: string };
+  location?: GoogleMapPosition;
+  region?: string;
+}
+
+interface GoogleMapInstance {
+  addListener: (
+    eventName: string,
+    handler: (event: GoogleMapMouseEvent) => void
+  ) => unknown;
+  panTo: (position: GoogleMapPosition) => void;
+  setCenter: (position: GoogleMapPosition) => void;
+  setZoom: (zoom: number) => void;
+}
+
+interface GoogleMarkerInstance {
+  addListener: (
+    eventName: string,
+    handler: (event?: GoogleMapMouseEvent) => void
+  ) => unknown;
+  getPosition: () => GoogleLatLng | null;
+  setMap: (map: GoogleMapInstance | null) => void;
+  setPosition: (position: GoogleMapPosition) => void;
+}
+
+interface GoogleGeocoderInstance {
+  geocode: (
+    request: GoogleGeocodeRequest,
+    callback: (
+      results: GoogleGeocoderResult[] | null,
+      status: GoogleGeocoderStatus
+    ) => void
+  ) => void;
+}
+
+interface GoogleMapsApi {
+  maps: {
+    event: {
+      clearInstanceListeners: (instance: unknown) => void;
+    };
+    Geocoder: new () => GoogleGeocoderInstance;
+    Map: new (
+      element: HTMLElement,
+      options: Record<string, unknown>
+    ) => GoogleMapInstance;
+    Marker: new (options: Record<string, unknown>) => GoogleMarkerInstance;
+  };
+}
+
+declare global {
+  interface Window {
+    __pollonGoogleMapsPromise?: Promise<GoogleMapsApi>;
+    google?: GoogleMapsApi;
+  }
+}
 
 interface DeliveryResult {
   available: boolean;
@@ -38,9 +118,9 @@ interface DeliveryResult {
 }
 
 interface AddressSuggestion {
-  place_id: number;
-  lat: string;
-  lon: string;
+  place_id: number | string;
+  lat: number | string;
+  lon: number | string;
   display_name: string;
   address?: {
     road?: string;
@@ -54,6 +134,7 @@ interface AddressSuggestion {
     municipality?: string;
     state?: string;
   };
+  source?: "google" | "osm";
 }
 
 interface Props {
@@ -74,9 +155,85 @@ function suggestionTitle(suggestion: AddressSuggestion) {
 
 function suggestionSubtitle(suggestion: AddressSuggestion) {
   const a = suggestion.address;
+  if (!a) {
+    return suggestion.display_name.split(",").slice(1, 4).join(",").trim();
+  }
   const zone = a?.suburb || a?.neighbourhood || a?.city_district;
   const city = a?.city || a?.town || a?.village || a?.municipality;
   return [zone, city, a?.state].filter(Boolean).join(", ");
+}
+
+function loadGoogleMaps() {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return Promise.reject(new Error("Google Maps API key is not configured"));
+  }
+
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Google Maps only loads in the browser"));
+  }
+
+  if (window.google?.maps) {
+    return Promise.resolve(window.google);
+  }
+
+  if (window.__pollonGoogleMapsPromise) {
+    return window.__pollonGoogleMapsPromise;
+  }
+
+  window.__pollonGoogleMapsPromise = new Promise<GoogleMapsApi>((resolve, reject) => {
+    const existingScript = document.getElementById(
+      GOOGLE_MAPS_SCRIPT_ID
+    ) as HTMLScriptElement | null;
+
+    const handleLoad = () => {
+      if (window.google?.maps) {
+        resolve(window.google);
+      } else {
+        reject(new Error("Google Maps did not initialize"));
+      }
+    };
+    const handleError = () => reject(new Error("Google Maps could not load"));
+
+    if (existingScript) {
+      existingScript.addEventListener("load", handleLoad, { once: true });
+      existingScript.addEventListener("error", handleError, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = GOOGLE_MAPS_SCRIPT_ID;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+      GOOGLE_MAPS_API_KEY
+    )}&language=es&region=MX&v=weekly`;
+    script.async = true;
+    script.defer = true;
+    script.addEventListener("load", handleLoad, { once: true });
+    script.addEventListener("error", handleError, { once: true });
+    document.head.appendChild(script);
+  });
+
+  return window.__pollonGoogleMapsPromise;
+}
+
+function geocodeWithGoogle(
+  geocoder: GoogleGeocoderInstance,
+  request: GoogleGeocodeRequest
+) {
+  return new Promise<GoogleGeocoderResult[]>((resolve, reject) => {
+    geocoder.geocode(request, (results, status) => {
+      if (status === "OK") {
+        resolve(results || []);
+        return;
+      }
+
+      if (status === "ZERO_RESULTS") {
+        resolve([]);
+        return;
+      }
+
+      reject(new Error(`Google geocoder failed with status ${status}`));
+    });
+  });
 }
 
 function AddressAliasIcon({ alias }: { alias: string }) {
@@ -108,6 +265,10 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const googleApiRef = useRef<GoogleMapsApi | null>(null);
+  const googleMapRef = useRef<GoogleMapInstance | null>(null);
+  const googleMarkerRef = useRef<GoogleMarkerInstance | null>(null);
+  const googleGeocoderRef = useRef<GoogleGeocoderInstance | null>(null);
   const onDeliveryChangeRef = useRef(onDeliveryChange);
   const handleMoveRef = useRef<(lat: number, lng: number) => void>(() => {});
   const deliveryRequestRef = useRef(0);
@@ -150,6 +311,27 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     const requestId = ++addressRequestRef.current;
+
+    try {
+      const geocoder = googleGeocoderRef.current;
+
+      if (geocoder) {
+        const results = await geocodeWithGoogle(geocoder, {
+          location: { lat, lng },
+          region: "mx",
+        });
+        const bestMatch = results[0];
+
+        if (requestId === addressRequestRef.current) {
+          updateSelectedAddress(
+            bestMatch?.formatted_address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+          );
+        }
+        return;
+      }
+    } catch {
+      // Fall through to OpenStreetMap if Google cannot reverse geocode this point.
+    }
 
     try {
       const res = await fetch(
@@ -208,6 +390,40 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
 
   const placeMarker = useCallback((lat: number, lng: number, centerMap = false) => {
     setSelectedLocation({ lat, lng });
+    const googleApi = googleApiRef.current;
+    const googleMap = googleMapRef.current;
+
+    if (googleApi && googleMap) {
+      const position = { lat, lng };
+
+      if (!googleMarkerRef.current) {
+        const marker = new googleApi.maps.Marker({
+          draggable: true,
+          map: googleMap,
+          position,
+          title: "Tu ubicación de entrega",
+        });
+
+        marker.addListener("dragend", () => {
+          const point = marker.getPosition();
+          if (!point) return;
+          handleMoveRef.current(point.lat(), point.lng());
+        });
+
+        googleMarkerRef.current = marker;
+      } else {
+        googleMarkerRef.current.setPosition(position);
+      }
+
+      if (centerMap) {
+        googleMap.setCenter(position);
+        googleMap.setZoom(17);
+      } else {
+        googleMap.panTo(position);
+      }
+      return;
+    }
+
     const map = mapRef.current;
     if (!map) return;
 
@@ -253,23 +469,81 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
   }, [handleMove]);
 
   useEffect(() => {
-    if (mapRef.current || !mapContainerRef.current) return;
+    if (mapRef.current || googleMapRef.current || !mapContainerRef.current) return;
 
-    const map = L.map(mapContainerRef.current).setView(STORE_POS, 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+    let cancelled = false;
+    let invalidateTimer: number | null = null;
+    let leafletMap: L.Map | null = null;
 
-    map.on("click", (event: L.LeafletMouseEvent) => {
-      handleMoveRef.current(event.latlng.lat, event.latlng.lng);
-    });
+    const initLeafletMap = () => {
+      if (cancelled || mapRef.current || !mapContainerRef.current) return;
 
-    mapRef.current = map;
-    const invalidateTimer = window.setTimeout(() => map.invalidateSize(), 0);
+      const map = L.map(mapContainerRef.current).setView(STORE_POS, 15);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      map.on("click", (event: L.LeafletMouseEvent) => {
+        handleMoveRef.current(event.latlng.lat, event.latlng.lng);
+      });
+
+      mapRef.current = map;
+      leafletMap = map;
+      invalidateTimer = window.setTimeout(() => map.invalidateSize(), 0);
+    };
+
+    if (GOOGLE_MAPS_API_KEY) {
+      void loadGoogleMaps()
+        .then((googleApi) => {
+          if (cancelled || !mapContainerRef.current) return;
+
+          const initialPosition = { lat: STORE_POS[0], lng: STORE_POS[1] };
+          const map = new googleApi.maps.Map(mapContainerRef.current, {
+            center: initialPosition,
+            clickableIcons: false,
+            fullscreenControl: false,
+            mapTypeControl: false,
+            streetViewControl: false,
+            zoom: 15,
+          });
+
+          map.addListener("click", (event: GoogleMapMouseEvent) => {
+            const point = event.latLng;
+            if (!point) return;
+            handleMoveRef.current(point.lat(), point.lng());
+          });
+
+          googleApiRef.current = googleApi;
+          googleMapRef.current = map;
+          googleGeocoderRef.current = new googleApi.maps.Geocoder();
+          invalidateTimer = window.setTimeout(() => map.setCenter(initialPosition), 0);
+        })
+        .catch(() => initLeafletMap());
+    } else {
+      initLeafletMap();
+    }
 
     return () => {
-      window.clearTimeout(invalidateTimer);
-      map.remove();
+      cancelled = true;
+      if (invalidateTimer) {
+        window.clearTimeout(invalidateTimer);
+      }
+
+      if (googleApiRef.current) {
+        if (googleMarkerRef.current) {
+          googleApiRef.current.maps.event.clearInstanceListeners(googleMarkerRef.current);
+          googleMarkerRef.current.setMap(null);
+        }
+        if (googleMapRef.current) {
+          googleApiRef.current.maps.event.clearInstanceListeners(googleMapRef.current);
+        }
+      }
+
+      leafletMap?.remove();
+      googleApiRef.current = null;
+      googleMapRef.current = null;
+      googleMarkerRef.current = null;
+      googleGeocoderRef.current = null;
       mapRef.current = null;
       markerRef.current = null;
     };
@@ -289,16 +563,55 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
       setAddressError("");
 
       try {
-        const params = new URLSearchParams({
-          q: buildSearchQuery(query),
-          format: "json",
-          addressdetails: "1",
-          limit: "6",
-          countrycodes: "mx",
-          "accept-language": "es",
-        });
-        const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
-        const data = (await response.json()) as AddressSuggestion[];
+        let geocoder = googleGeocoderRef.current;
+        let data: AddressSuggestion[] = [];
+        let shouldSearchOpenStreetMap = false;
+
+        if (!geocoder && GOOGLE_MAPS_API_KEY) {
+          try {
+            const googleApi = await loadGoogleMaps();
+            googleApiRef.current = googleApi;
+            geocoder = new googleApi.maps.Geocoder();
+            googleGeocoderRef.current = geocoder;
+          } catch {
+            geocoder = null;
+          }
+        }
+
+        if (geocoder) {
+          try {
+            const googleResults = await geocodeWithGoogle(geocoder, {
+              address: buildSearchQuery(query),
+              componentRestrictions: { country: "MX" },
+              region: "mx",
+            });
+
+            data = googleResults.slice(0, 6).map((item, index) => ({
+              display_name: item.formatted_address,
+              lat: item.geometry.location.lat(),
+              lon: item.geometry.location.lng(),
+              place_id: item.place_id || `${item.formatted_address}-${index}`,
+              source: "google",
+            }));
+          } catch {
+            shouldSearchOpenStreetMap = true;
+          }
+        } else {
+          shouldSearchOpenStreetMap = true;
+        }
+
+        if (shouldSearchOpenStreetMap) {
+          const params = new URLSearchParams({
+            q: buildSearchQuery(query),
+            format: "json",
+            addressdetails: "1",
+            limit: "6",
+            countrycodes: "mx",
+            "accept-language": "es",
+          });
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+          data = (await response.json()) as AddressSuggestion[];
+        }
 
         setSuggestions(data);
         if (!data.length) {
@@ -585,7 +898,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
           Busca tu dirección
         </label>
         <div className="flex gap-2">
-          <div className="relative flex-1">
+          <div className="relative min-w-0 flex-1">
             <Search
               size={16}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
@@ -608,7 +921,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
             type="button"
             onClick={() => void handleAddressSearch()}
             disabled={searchingAddress}
-            className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-on-primary disabled:opacity-50"
+            className="shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-on-primary disabled:opacity-50"
           >
             {searchingAddress ? <Loader2 size={16} className="animate-spin" /> : "Buscar"}
           </button>
@@ -656,8 +969,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
 
       <div
         ref={mapContainerRef}
-        style={{ height: "280px", borderRadius: "10px" }}
-        className="z-0 w-full overflow-hidden"
+        className="z-0 h-[220px] w-full overflow-hidden rounded-lg sm:h-[240px]"
       />
 
       {address && (
