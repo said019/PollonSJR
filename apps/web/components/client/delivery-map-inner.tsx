@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Loader2 } from "lucide-react";
@@ -39,59 +38,49 @@ interface Props {
   onDeliveryChange: (result: DeliveryResult, lat: number, lng: number) => void;
 }
 
-function DraggablePin({
-  position,
-  onMove,
-}: {
-  position: [number, number] | null;
-  onMove: (lat: number, lng: number) => void;
-}) {
-  useMapEvents({
-    click(e) {
-      onMove(e.latlng.lat, e.latlng.lng);
-    },
-  });
-
-  if (!position) return null;
-
-  return (
-    <Marker
-      position={position}
-      icon={CLIENT_ICON}
-      draggable
-      eventHandlers={{
-        dragend(e) {
-          const p = e.target.getLatLng();
-          onMove(p.lat, p.lng);
-        },
-      }}
-    />
-  );
-}
-
 export function DeliveryMapInner({ onDeliveryChange }: Props) {
-  const [markerPos, setMarkerPos] = useState<[number, number] | null>(null);
   const [loading, setLoading] = useState(false);
   const [address, setAddress] = useState("");
   const [result, setResult] = useState<DeliveryResult | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
+  const onDeliveryChangeRef = useRef(onDeliveryChange);
+  const handleMoveRef = useRef<(lat: number, lng: number) => void>(() => {});
+  const deliveryRequestRef = useRef(0);
+  const addressRequestRef = useRef(0);
 
   useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => {
-        const p: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        setMarkerPos(p);
-        calculate(p[0], p[1]);
-      },
-      () => {
-        setMarkerPos(STORE_POS);
-        calculate(STORE_POS[0], STORE_POS[1]);
+    onDeliveryChangeRef.current = onDeliveryChange;
+  }, [onDeliveryChange]);
+
+  const reverseGeocode = useCallback(async (lat: number, lng: number) => {
+    const requestId = ++addressRequestRef.current;
+
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`
+      );
+      const data = await res.json();
+      const a = data.address;
+      const addr = [a?.road, a?.house_number, a?.suburb || a?.city_district]
+        .filter(Boolean)
+        .join(" ");
+
+      if (requestId === addressRequestRef.current) {
+        setAddress(addr || data.display_name || "");
       }
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    } catch {
+      if (requestId === addressRequestRef.current) {
+        setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+    }
   }, []);
 
-  async function calculate(lat: number, lng: number) {
+  const calculate = useCallback(async (lat: number, lng: number) => {
+    const requestId = ++deliveryRequestRef.current;
     setLoading(true);
+
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || ""}/api/delivery/calculate`,
@@ -102,48 +91,123 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
         }
       );
       const data: DeliveryResult = await res.json();
+
+      if (requestId !== deliveryRequestRef.current) return;
+
       setResult(data);
-      onDeliveryChange(data, lat, lng);
-      reverseGeocode(lat, lng);
+      if (typeof onDeliveryChangeRef.current === "function") {
+        onDeliveryChangeRef.current(data, lat, lng);
+      }
+      void reverseGeocode(lat, lng);
     } catch {
-      setResult(null);
+      if (requestId === deliveryRequestRef.current) {
+        setResult(null);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === deliveryRequestRef.current) {
+        setLoading(false);
+      }
     }
-  }
+  }, [reverseGeocode]);
 
-  async function reverseGeocode(lat: number, lng: number) {
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=es`
-      );
-      const data = await res.json();
-      const a = data.address;
-      const addr = [a?.road, a?.house_number, a?.suburb || a?.city_district]
-        .filter(Boolean)
-        .join(" ");
-      setAddress(addr || data.display_name || "");
-    } catch {
-      setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+  const placeMarker = useCallback((lat: number, lng: number, centerMap = false) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const position: [number, number] = [lat, lng];
+
+    if (!markerRef.current) {
+      const marker = L.marker(position, {
+        icon: CLIENT_ICON,
+        draggable: true,
+      }).addTo(map);
+
+      marker.on("dragend", () => {
+        const point = marker.getLatLng();
+        handleMoveRef.current(point.lat, point.lng);
+      });
+
+      markerRef.current = marker;
+    } else {
+      markerRef.current.setLatLng(position);
     }
-  }
 
-  function handleMove(lat: number, lng: number) {
-    setMarkerPos([lat, lng]);
-    calculate(lat, lng);
-  }
+    if (centerMap) {
+      map.setView(position, 15);
+    } else {
+      map.panTo(position);
+    }
+  }, []);
+
+  const handleMove = useCallback(
+    (lat: number, lng: number) => {
+      placeMarker(lat, lng);
+      void calculate(lat, lng);
+    },
+    [calculate, placeMarker]
+  );
+
+  useEffect(() => {
+    handleMoveRef.current = handleMove;
+  }, [handleMove]);
+
+  useEffect(() => {
+    if (mapRef.current || !mapContainerRef.current) return;
+
+    const map = L.map(mapContainerRef.current).setView(STORE_POS, 15);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+
+    map.on("click", (event: L.LeafletMouseEvent) => {
+      handleMoveRef.current(event.latlng.lat, event.latlng.lng);
+    });
+
+    mapRef.current = map;
+    const invalidateTimer = window.setTimeout(() => map.invalidateSize(), 0);
+
+    return () => {
+      window.clearTimeout(invalidateTimer);
+      map.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const selectLocation = (lat: number, lng: number) => {
+      if (cancelled) return;
+      placeMarker(lat, lng, true);
+      void calculate(lat, lng);
+    };
+
+    if (!navigator.geolocation) {
+      selectLocation(STORE_POS[0], STORE_POS[1]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => selectLocation(pos.coords.latitude, pos.coords.longitude),
+      () => selectLocation(STORE_POS[0], STORE_POS[1]),
+      { enableHighAccuracy: true, maximumAge: 60_000, timeout: 8_000 }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calculate, placeMarker]);
 
   return (
     <div className="space-y-3">
-      <MapContainer
-        center={markerPos || STORE_POS}
-        zoom={15}
+      <div
+        ref={mapContainerRef}
         style={{ height: "280px", borderRadius: "10px" }}
-        className="z-0"
-      >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <DraggablePin position={markerPos} onMove={handleMove} />
-      </MapContainer>
+        className="z-0 w-full overflow-hidden"
+      />
 
       {address && (
         <p className="text-xs text-on-surface-variant bg-surface-container-high p-2 rounded-lg truncate">
