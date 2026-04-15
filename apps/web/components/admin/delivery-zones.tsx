@@ -1,5 +1,6 @@
 "use client";
 
+import "leaflet/dist/leaflet.css";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
@@ -104,7 +105,6 @@ function AdminDeliveryPageInner() {
     initializedRef.current = true;
 
     const L = require("leaflet");
-    require("leaflet/dist/leaflet.css");
 
     const map = L.map(mapContainerRef.current).setView([storeLat, storeLng], 13);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
