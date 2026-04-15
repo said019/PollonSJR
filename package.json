@@ -14,9 +14,13 @@
     "db:migrate": "npm run migrate --workspace=packages/prisma",
     "db:seed": "npm run seed --workspace=packages/prisma"
   },
+  "dependencies": {
+    "tsx": "^4.10.0"
+  },
   "devDependencies": {
     "turbo": "^2.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "prisma": "^5.14.0"
   },
   "engines": {
     "node": ">=20.0.0"
