@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { getAdminToken } from "@/lib/auth";
 import { formatCents } from "@pollon/utils";
 import { CATEGORY_LABELS } from "@pollon/utils";
 import { Plus, Pencil, ToggleLeft, ToggleRight, Loader2 } from "lucide-react";
@@ -22,19 +22,19 @@ interface Product {
 }
 
 export function MenuManager() {
-  const token = getToken();
+  const token = getAdminToken();
   const qc = useQueryClient();
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["admin-products"],
-    queryFn: () => api.get<Product[]>("/api/admin/menu", token || undefined),
+    queryFn: () => api.get<Product[]>("/api/admin/products", token || undefined),
   });
 
   const toggleMut = useMutation({
     mutationFn: ({ id, field, value }: { id: string; field: string; value: boolean }) =>
-      api.patch(`/api/admin/menu/${id}`, { [field]: value }, token || undefined),
+      api.patch(`/api/admin/products/${id}`, { [field]: value }, token || undefined),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-products"] }),
   });
 
@@ -157,7 +157,7 @@ function ProductFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const token = getToken();
+  const token = getAdminToken();
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(product?.name || "");
   const [description, setDescription] = useState(product?.description || "");
@@ -178,9 +178,9 @@ function ProductFormModal({
       };
 
       if (product) {
-        await api.patch(`/api/admin/menu/${product.id}`, body, token || undefined);
+        await api.patch(`/api/admin/products/${product.id}`, body, token || undefined);
       } else {
-        await api.post("/api/admin/menu", body, token || undefined);
+        await api.post("/api/admin/products", body, token || undefined);
       }
       onSaved();
     } catch {

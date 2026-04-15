@@ -74,6 +74,13 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Products
+  app.get("/products", async () => {
+    return app.prisma.product.findMany({
+      orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
+      include: { modifiers: true },
+    });
+  });
+
   app.post("/products", async (request, reply) => {
     const parsed = createProductSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });

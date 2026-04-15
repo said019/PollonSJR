@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken, getAdminToken } from "@/lib/auth";
+import { getAdminToken } from "@/lib/auth";
 import { useSocket } from "@/hooks/useSocket";
 import type { OrderSummary, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
@@ -27,14 +27,13 @@ const NEXT_STATUS: Record<string, OrderStatusType | null> = {
 };
 
 export function OrdersKanban() {
-  const token = getToken();
   const adminToken = getAdminToken();
   const qc = useQueryClient();
   const socketAuth = { token: adminToken || undefined, role: "admin" as const };
 
   const { data: orders = [] } = useQuery({
     queryKey: ["admin-active-orders"],
-    queryFn: () => api.get<OrderSummary[]>("/api/admin/orders/active", token || undefined),
+    queryFn: () => api.get<OrderSummary[]>("/api/admin/orders", adminToken || undefined),
     refetchInterval: 15000,
   });
 
@@ -49,7 +48,7 @@ export function OrdersKanban() {
 
   const advanceMut = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: OrderStatusType }) =>
-      api.patch(`/api/orders/${orderId}/status`, { status }, token || undefined),
+      api.patch(`/api/admin/orders/${orderId}/status`, { status }, adminToken || undefined),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-active-orders"] }),
   });
 

@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { getAdminToken } from "@/lib/auth";
 import type { OrderSummary } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState } from "react";
@@ -28,14 +28,14 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function OrdersHistory() {
-  const token = getToken();
+  const token = getAdminToken();
   const [page, setPage] = useState(1);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-orders-history", page],
     queryFn: () =>
       api.get<{ orders: OrderSummary[]; total: number; pages: number }>(
-        `/api/admin/orders?page=${page}&limit=20`,
+        `/api/admin/orders/history?page=${page}`,
         token || undefined
       ),
   });
