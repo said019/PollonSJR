@@ -1,5 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { MercadoPagoConfig, Preference, Payment as MpPayment } from "mercadopago";
+import type { CardPaymentPayload, CreateCardPaymentResponse } from "@pollon/types";
+import { getRejectMessage } from "../../utils/payment-messages";
 // getRejectMessage is used for frontend-facing reject codes (exported from utils)
 
 export class PaymentsService {
@@ -96,6 +98,153 @@ export class PaymentsService {
     return {
       preferenceId: result.id!,
       checkoutUrl,
+    };
+  }
+
+  /**
+   * Crea un pago con Card Payment Brick.
+   * La tarjeta se tokeniza en MercadoPago; el backend solo recibe el token.
+   * El webhook sigue siendo la fuente de verdad para activar el pedido.
+   */
+  async createCardPayment(
+    customerId: string,
+    data: CardPaymentPayload
+  ): Promise<CreateCardPaymentResponse> {
+    if (!process.env.MP_ACCESS_TOKEN) {
+      throw new Error("MercadoPago no está configurado");
+    }
+
+    const order = await this.app.prisma.order.findUnique({
+      where: { id: data.orderId },
+      include: { items: { include: { product: true } }, customer: true, payment: true },
+    });
+
+    if (!order) throw new Error("Pedido no encontrado");
+    if (order.customerId !== customerId) throw new Error("No puedes pagar este pedido");
+    if (order.paymentMethod !== "CARD") {
+      throw new Error("Este pedido no usa pago con tarjeta");
+    }
+    if (order.status !== "PENDING_PAYMENT") {
+      throw new Error("El pedido ya fue procesado");
+    }
+    if (order.payment?.status === "APPROVED") {
+      throw new Error("Este pedido ya tiene un pago aprobado");
+    }
+
+    const submittedAmount = data.transactionAmount
+      ? Math.round(data.transactionAmount * 100)
+      : order.total;
+    if (Math.abs(submittedAmount - order.total) > 1) {
+      throw new Error("El monto del pago no coincide con el pedido");
+    }
+
+    const mpPayment = new MpPayment(this.mp);
+    const apiUrl = process.env.API_URL || "http://localhost:3001";
+    const fallbackEmail = order.customer.email || `cliente-${order.customer.phone}@pollon.mx`;
+    const issuerId =
+      typeof data.issuerId === "number" ? data.issuerId : Number(data.issuerId);
+
+    const result = await mpPayment.create({
+      body: {
+        transaction_amount: order.total / 100,
+        token: data.token,
+        description: `Pedido #${order.orderNumber} - Pollón SJR`,
+        installments: data.installments || 1,
+        payment_method_id: data.paymentMethodId,
+        issuer_id: Number.isFinite(issuerId) ? issuerId : undefined,
+        payer: {
+          email: data.payer?.email || fallbackEmail,
+          identification: data.payer?.identification,
+          first_name: order.customer.name || undefined,
+          phone: { number: order.customer.phone },
+        },
+        external_reference: order.id,
+        notification_url: `${apiUrl}/api/payments/webhook`,
+        statement_descriptor: "POLLON SJR",
+        metadata: {
+          order_id: order.id,
+          order_number: order.orderNumber,
+        },
+        additional_info: {
+          items: order.items.map((item) => ({
+            id: item.productId,
+            title: item.variant
+              ? `${item.product.name} (${item.variant})`
+              : item.product.name,
+            quantity: item.qty,
+            unit_price: item.unitPrice / 100,
+          })),
+          payer: {
+            first_name: order.customer.name || undefined,
+            phone: { number: order.customer.phone },
+          },
+        },
+      },
+      requestOptions: {
+        idempotencyKey:
+          data.idempotencyKey || `pollon-card-${order.id}-${data.token.slice(0, 12)}`,
+      },
+    });
+
+    const mpStatus = result.status || "pending";
+    const status = this.mapMpStatus(mpStatus);
+    const statusDetail = result.status_detail || null;
+    const mpFee = Math.round((result.fee_details?.[0]?.amount ?? 0) * 100);
+    const netAmount = Math.round(
+      (result.transaction_details?.net_received_amount ?? 0) * 100
+    );
+
+    await this.app.prisma.payment.upsert({
+      where: { orderId: order.id },
+      create: {
+        orderId: order.id,
+        mpPaymentId: result.id ? String(result.id) : null,
+        status,
+        statusDetail,
+        amount: order.total,
+        mpFee,
+        netAmount,
+        paymentMethod: result.payment_method_id || data.paymentMethodId,
+        installments: result.installments || data.installments || 1,
+        providerPayload: result as any,
+        approvedAt: mpStatus === "approved" ? new Date() : null,
+      },
+      update: {
+        mpPaymentId: result.id ? String(result.id) : undefined,
+        status,
+        statusDetail,
+        mpFee,
+        netAmount,
+        paymentMethod: result.payment_method_id || data.paymentMethodId,
+        installments: result.installments || data.installments || 1,
+        providerPayload: result as any,
+        approvedAt: mpStatus === "approved" ? new Date() : undefined,
+      },
+    });
+
+    if (mpStatus === "rejected") {
+      const { message, action } = getRejectMessage(statusDetail || "");
+      return {
+        orderId: order.id,
+        paymentId: result.id ? String(result.id) : undefined,
+        status,
+        mpStatus,
+        statusDetail,
+        message,
+        action,
+      };
+    }
+
+    return {
+      orderId: order.id,
+      paymentId: result.id ? String(result.id) : undefined,
+      status,
+      mpStatus,
+      statusDetail,
+      message:
+        mpStatus === "approved"
+          ? "Pago recibido. Estamos confirmando tu pedido."
+          : "Tu pago está en revisión. Te avisaremos cuando quede confirmado.",
     };
   }
 

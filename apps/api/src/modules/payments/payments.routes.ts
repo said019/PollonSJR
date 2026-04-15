@@ -3,6 +3,28 @@ import { PaymentsService } from "./payments.service";
 import { authenticate } from "../../middlewares/authenticate";
 import { adminOnly } from "../../middlewares/admin-only";
 import crypto from "crypto";
+import { z } from "zod";
+
+const cardPaymentSchema = z.object({
+  orderId: z.string().min(1),
+  token: z.string().min(1),
+  paymentMethodId: z.string().min(1),
+  issuerId: z.union([z.string(), z.number()]).optional(),
+  installments: z.number().int().min(1).max(24).optional(),
+  transactionAmount: z.number().positive().optional(),
+  idempotencyKey: z.string().max(120).optional(),
+  payer: z
+    .object({
+      email: z.string().email().optional(),
+      identification: z
+        .object({
+          type: z.string().optional(),
+          number: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+});
 
 export async function paymentsRoutes(app: FastifyInstance) {
   const service = new PaymentsService(app);
@@ -16,6 +38,24 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
     try {
       return await service.createPreference(orderId);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // Crear pago directo con Card Payment Brick
+  app.post("/card", { preHandler: [authenticate] }, async (request, reply) => {
+    const parsed = cardPaymentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: "Datos de pago inválidos",
+        details: parsed.error.flatten(),
+      });
+    }
+
+    const user = request.user as { id: string };
+    try {
+      return await service.createCardPayment(user.id, parsed.data);
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
     }

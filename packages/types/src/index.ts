@@ -133,6 +133,33 @@ export interface CreatePaymentResponse {
   checkoutUrl: string;
 }
 
+export interface CardPaymentPayload {
+  orderId: string;
+  token: string;
+  paymentMethodId: string;
+  issuerId?: string | number;
+  installments?: number;
+  transactionAmount?: number;
+  idempotencyKey?: string;
+  payer?: {
+    email?: string;
+    identification?: {
+      type?: string;
+      number?: string;
+    };
+  };
+}
+
+export interface CreateCardPaymentResponse {
+  orderId: string;
+  paymentId?: string;
+  status: PaymentStatusType;
+  mpStatus?: string;
+  statusDetail?: string | null;
+  message: string;
+  action?: "retry" | "alternate" | "bank" | "none";
+}
+
 export interface CreateOrderResponse {
   orderId: string;
   orderNumber: number;
