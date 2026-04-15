@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapPin, Loader2 } from "lucide-react";
+import { Briefcase, Crosshair, Home, Loader2, MapPin, Search, Star, Trash2 } from "lucide-react";
+import { api } from "@/lib/api";
+import { getToken } from "@/lib/auth";
+import type { CreateSavedAddressPayload, SavedAddressPublic } from "@pollon/types";
 
 const CLIENT_ICON = L.divIcon({
   html: `<div style="
@@ -34,12 +37,72 @@ interface DeliveryResult {
   reason?: string;
 }
 
-interface Props {
-  onDeliveryChange: (result: DeliveryResult, lat: number, lng: number) => void;
+interface AddressSuggestion {
+  place_id: number;
+  lat: string;
+  lon: string;
+  display_name: string;
+  address?: {
+    road?: string;
+    house_number?: string;
+    suburb?: string;
+    neighbourhood?: string;
+    city_district?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    municipality?: string;
+    state?: string;
+  };
 }
 
-export function DeliveryMapInner({ onDeliveryChange }: Props) {
+interface Props {
+  onDeliveryChange: (result: DeliveryResult, lat: number, lng: number) => void;
+  onAddressChange?: (address: string) => void;
+}
+
+function buildSearchQuery(query: string) {
+  if (/san juan|quer[eé]taro|qro/i.test(query)) return query;
+  return `${query}, San Juan del Rio, Queretaro, Mexico`;
+}
+
+function suggestionTitle(suggestion: AddressSuggestion) {
+  const a = suggestion.address;
+  const title = [a?.road, a?.house_number].filter(Boolean).join(" ");
+  return title || suggestion.display_name.split(",")[0] || "Ubicación encontrada";
+}
+
+function suggestionSubtitle(suggestion: AddressSuggestion) {
+  const a = suggestion.address;
+  const zone = a?.suburb || a?.neighbourhood || a?.city_district;
+  const city = a?.city || a?.town || a?.village || a?.municipality;
+  return [zone, city, a?.state].filter(Boolean).join(", ");
+}
+
+function AddressAliasIcon({ alias }: { alias: string }) {
+  const normalized = alias.trim().toLowerCase();
+  if (normalized.includes("casa")) return <Home size={15} />;
+  if (normalized.includes("trabajo") || normalized.includes("oficina")) {
+    return <Briefcase size={15} />;
+  }
+  return <MapPin size={15} />;
+}
+
+export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [searchingAddress, setSearchingAddress] = useState(false);
+  const [loadingSavedAddresses, setLoadingSavedAddresses] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [saveAddressError, setSaveAddressError] = useState("");
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddressPublic[]>([]);
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [saveAlias, setSaveAlias] = useState("");
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressError, setAddressError] = useState("");
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [address, setAddress] = useState("");
   const [result, setResult] = useState<DeliveryResult | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -53,6 +116,37 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
   useEffect(() => {
     onDeliveryChangeRef.current = onDeliveryChange;
   }, [onDeliveryChange]);
+
+  const loadSavedAddresses = useCallback(async () => {
+    const token = getToken();
+    if (!token) return;
+
+    setLoadingSavedAddresses(true);
+    try {
+      const addresses = await api.get<SavedAddressPublic[]>(
+        "/api/customers/me/addresses",
+        token
+      );
+      setSavedAddresses(addresses);
+      setSaveAsDefault(addresses.length === 0);
+    } catch {
+      setSaveAddressError("No pude cargar tus direcciones guardadas.");
+    } finally {
+      setLoadingSavedAddresses(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSavedAddresses();
+  }, [loadSavedAddresses]);
+
+  const updateSelectedAddress = useCallback(
+    (nextAddress: string) => {
+      setAddress(nextAddress);
+      onAddressChange?.(nextAddress);
+    },
+    [onAddressChange]
+  );
 
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
     const requestId = ++addressRequestRef.current;
@@ -68,16 +162,16 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
         .join(" ");
 
       if (requestId === addressRequestRef.current) {
-        setAddress(addr || data.display_name || "");
+        updateSelectedAddress(addr || data.display_name || "");
       }
     } catch {
       if (requestId === addressRequestRef.current) {
-        setAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        updateSelectedAddress(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
       }
     }
-  }, []);
+  }, [updateSelectedAddress]);
 
-  const calculate = useCallback(async (lat: number, lng: number) => {
+  const calculate = useCallback(async (lat: number, lng: number, shouldReverseGeocode = true) => {
     const requestId = ++deliveryRequestRef.current;
     setLoading(true);
 
@@ -98,7 +192,9 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
       if (typeof onDeliveryChangeRef.current === "function") {
         onDeliveryChangeRef.current(data, lat, lng);
       }
-      void reverseGeocode(lat, lng);
+      if (shouldReverseGeocode) {
+        void reverseGeocode(lat, lng);
+      }
     } catch {
       if (requestId === deliveryRequestRef.current) {
         setResult(null);
@@ -111,6 +207,7 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
   }, [reverseGeocode]);
 
   const placeMarker = useCallback((lat: number, lng: number, centerMap = false) => {
+    setSelectedLocation({ lat, lng });
     const map = mapRef.current;
     if (!map) return;
 
@@ -141,6 +238,10 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
 
   const handleMove = useCallback(
     (lat: number, lng: number) => {
+      setSuggestions([]);
+      setAddressError("");
+      setSaveAddressError("");
+      setSelectedSavedAddressId(null);
       placeMarker(lat, lng);
       void calculate(lat, lng);
     },
@@ -174,35 +275,385 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const handleAddressSearch = useCallback(
+    async () => {
+      const query = addressQuery.trim();
 
-    const selectLocation = (lat: number, lng: number) => {
-      if (cancelled) return;
+      if (query.length < 5) {
+        setAddressError("Escribe calle, número o colonia para buscar.");
+        setSuggestions([]);
+        return;
+      }
+
+      setSearchingAddress(true);
+      setAddressError("");
+
+      try {
+        const params = new URLSearchParams({
+          q: buildSearchQuery(query),
+          format: "json",
+          addressdetails: "1",
+          limit: "6",
+          countrycodes: "mx",
+          "accept-language": "es",
+        });
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+        const data = (await response.json()) as AddressSuggestion[];
+
+        setSuggestions(data);
+        if (!data.length) {
+          setAddressError("No encontré esa dirección. Prueba con calle, número y colonia.");
+        }
+      } catch {
+        setSuggestions([]);
+        setAddressError("No pude buscar la dirección. Intenta de nuevo.");
+      } finally {
+        setSearchingAddress(false);
+      }
+    },
+    [addressQuery]
+  );
+
+  const selectSuggestion = useCallback(
+    (suggestion: AddressSuggestion) => {
+      const lat = Number(suggestion.lat);
+      const lng = Number(suggestion.lon);
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        setAddressError("Esa dirección no tiene coordenadas válidas.");
+        return;
+      }
+
+      setSuggestions([]);
+      setAddressError("");
+      setSaveAddressError("");
+      setSelectedSavedAddressId(null);
+      setAddressQuery(suggestionTitle(suggestion));
+      updateSelectedAddress(suggestion.display_name);
       placeMarker(lat, lng, true);
-      void calculate(lat, lng);
-    };
+      void calculate(lat, lng, false);
+    },
+    [calculate, placeMarker, updateSelectedAddress]
+  );
 
-    if (!navigator.geolocation) {
-      selectLocation(STORE_POS[0], STORE_POS[1]);
-      return () => {
-        cancelled = true;
-      };
+  const selectSavedAddress = useCallback(
+    (savedAddress: SavedAddressPublic) => {
+      setSelectedSavedAddressId(savedAddress.id);
+      setSuggestions([]);
+      setAddressError("");
+      setSaveAddressError("");
+      setAddressQuery(savedAddress.alias);
+      updateSelectedAddress(savedAddress.address);
+      placeMarker(savedAddress.lat, savedAddress.lng, true);
+      void calculate(savedAddress.lat, savedAddress.lng, false);
+    },
+    [calculate, placeMarker, updateSelectedAddress]
+  );
+
+  const handleSaveCurrentAddress = useCallback(async () => {
+    const token = getToken();
+    const alias = saveAlias.trim();
+
+    if (!token) {
+      setSaveAddressError("Inicia sesión para guardar direcciones.");
+      return;
     }
 
+    if (!selectedLocation || !address) {
+      setSaveAddressError("Primero busca tu dirección o mueve el pin.");
+      return;
+    }
+
+    if (alias.length < 2) {
+      setSaveAddressError("Ponle un alias, por ejemplo Casa o Trabajo.");
+      return;
+    }
+
+    setSavingAddress(true);
+    setSaveAddressError("");
+
+    try {
+      const payload: CreateSavedAddressPayload = {
+        alias,
+        address,
+        lat: selectedLocation.lat,
+        lng: selectedLocation.lng,
+        isDefault: saveAsDefault || savedAddresses.length === 0,
+      };
+      const saved = await api.post<SavedAddressPublic>(
+        "/api/customers/me/addresses",
+        payload,
+        token
+      );
+
+      setSavedAddresses((current) => {
+        const next = payload.isDefault
+          ? current.map((item) => ({ ...item, isDefault: false }))
+          : current;
+        return [...next, saved].sort((a, b) => {
+          if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+      });
+      setSelectedSavedAddressId(saved.id);
+      setSaveAlias("");
+      setSaveAsDefault(false);
+    } catch (error) {
+      setSaveAddressError(
+        error instanceof Error ? error.message : "No pude guardar la dirección."
+      );
+    } finally {
+      setSavingAddress(false);
+    }
+  }, [address, saveAlias, saveAsDefault, savedAddresses.length, selectedLocation]);
+
+  const handleDeleteSavedAddress = useCallback(
+    async (savedAddress: SavedAddressPublic) => {
+      const token = getToken();
+      if (!token) return;
+
+      const shouldDelete = window.confirm(`¿Borrar la dirección "${savedAddress.alias}"?`);
+      if (!shouldDelete) return;
+
+      try {
+        await api.delete<{ ok: boolean }>(
+          `/api/customers/me/addresses/${savedAddress.id}`,
+          token
+        );
+        setSavedAddresses((current) =>
+          current.filter((item) => item.id !== savedAddress.id)
+        );
+        if (selectedSavedAddressId === savedAddress.id) {
+          setSelectedSavedAddressId(null);
+        }
+        void loadSavedAddresses();
+      } catch (error) {
+        setSaveAddressError(
+          error instanceof Error ? error.message : "No pude borrar la dirección."
+        );
+      }
+    },
+    [loadSavedAddresses, selectedSavedAddressId]
+  );
+
+  const handleMakeDefaultAddress = useCallback(
+    async (savedAddress: SavedAddressPublic) => {
+      const token = getToken();
+      if (!token || savedAddress.isDefault) return;
+
+      try {
+        const updated = await api.patch<SavedAddressPublic>(
+          `/api/customers/me/addresses/${savedAddress.id}`,
+          { isDefault: true },
+          token
+        );
+        setSavedAddresses((current) =>
+          current
+            .map((item) => ({
+              ...item,
+              isDefault: item.id === updated.id,
+            }))
+            .sort((a, b) => {
+              if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+              return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            })
+        );
+      } catch (error) {
+        setSaveAddressError(
+          error instanceof Error ? error.message : "No pude cambiar la predeterminada."
+        );
+      }
+    },
+    []
+  );
+
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setAddressError("Tu navegador no permite usar ubicación actual.");
+      return;
+    }
+
+    setLocating(true);
+    setAddressError("");
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => selectLocation(pos.coords.latitude, pos.coords.longitude),
-      () => selectLocation(STORE_POS[0], STORE_POS[1]),
+      (pos) => {
+        setLocating(false);
+        setSuggestions([]);
+        setSelectedSavedAddressId(null);
+        setSaveAddressError("");
+        placeMarker(pos.coords.latitude, pos.coords.longitude, true);
+        void calculate(pos.coords.latitude, pos.coords.longitude);
+      },
+      () => {
+        setLocating(false);
+        setAddressError("No pude obtener tu ubicación. Busca tu calle o colonia.");
+      },
       { enableHighAccuracy: true, maximumAge: 60_000, timeout: 8_000 }
     );
-
-    return () => {
-      cancelled = true;
-    };
   }, [calculate, placeMarker]);
 
   return (
     <div className="space-y-3">
+      {(loadingSavedAddresses || savedAddresses.length > 0) && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+              Mis direcciones
+            </p>
+            <span className="text-xs text-on-surface-variant">
+              {savedAddresses.length}/3
+            </span>
+          </div>
+
+          {loadingSavedAddresses ? (
+            <div className="flex items-center gap-2 rounded-lg border border-outline-variant bg-surface-container-high px-3 py-2 text-xs text-on-surface-variant">
+              <Loader2 size={13} className="animate-spin" />
+              Cargando direcciones...
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {savedAddresses.map((savedAddress) => {
+                const selected = selectedSavedAddressId === savedAddress.id;
+                return (
+                  <div
+                    key={savedAddress.id}
+                    className={`flex items-stretch gap-2 rounded-lg border p-2 ${
+                      selected
+                        ? "border-primary bg-primary/10"
+                        : "border-outline-variant bg-surface-container-high"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => selectSavedAddress(savedAddress)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          selected
+                            ? "bg-primary text-on-primary"
+                            : "bg-surface text-primary"
+                        }`}
+                      >
+                        <AddressAliasIcon alias={savedAddress.alias} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1 text-sm font-semibold text-on-surface">
+                          {savedAddress.alias}
+                          {savedAddress.isDefault && (
+                            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase text-primary">
+                              Default
+                            </span>
+                          )}
+                        </span>
+                        <span className="block truncate text-xs text-on-surface-variant">
+                          {savedAddress.address}
+                        </span>
+                      </span>
+                    </button>
+
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void handleMakeDefaultAddress(savedAddress)}
+                        disabled={savedAddress.isDefault}
+                        title="Hacer predeterminada"
+                        className="rounded-lg p-2 text-on-surface-variant hover:bg-surface disabled:opacity-40"
+                      >
+                        <Star size={14} className={savedAddress.isDefault ? "fill-current text-primary" : ""} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteSavedAddress(savedAddress)}
+                        title="Borrar dirección"
+                        className="rounded-lg p-2 text-on-surface-variant hover:bg-surface hover:text-error"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-on-surface">
+          Busca tu dirección
+        </label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
+            />
+            <input
+              value={addressQuery}
+              onChange={(event) => setAddressQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleAddressSearch();
+                }
+              }}
+              placeholder="Calle, número, colonia"
+              autoComplete="street-address"
+              className="w-full rounded-lg border border-outline-variant bg-surface-container-high py-2.5 pl-9 pr-3 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleAddressSearch()}
+            disabled={searchingAddress}
+            className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-on-primary disabled:opacity-50"
+          >
+            {searchingAddress ? <Loader2 size={16} className="animate-spin" /> : "Buscar"}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleUseCurrentLocation}
+          disabled={locating}
+          className="inline-flex items-center gap-1 text-xs font-medium text-primary disabled:opacity-50"
+        >
+          {locating ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : (
+            <Crosshair size={13} />
+          )}
+          Usar mi ubicación actual
+        </button>
+
+        {addressError && <p className="text-xs text-error">{addressError}</p>}
+
+        {suggestions.length > 0 && (
+          <div className="max-h-44 overflow-y-auto rounded-lg border border-outline-variant bg-surface shadow-sm">
+            {suggestions.map((suggestion) => {
+              const subtitle = suggestionSubtitle(suggestion);
+              return (
+                <button
+                  key={suggestion.place_id}
+                  type="button"
+                  onClick={() => selectSuggestion(suggestion)}
+                  className="block w-full border-b border-outline-variant/70 px-3 py-2 text-left last:border-b-0 hover:bg-surface-container-high"
+                >
+                  <span className="block text-sm font-semibold text-on-surface">
+                    {suggestionTitle(suggestion)}
+                  </span>
+                  <span className="block truncate text-xs text-on-surface-variant">
+                    {subtitle || suggestion.display_name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div
         ref={mapContainerRef}
         style={{ height: "280px", borderRadius: "10px" }}
@@ -217,8 +668,64 @@ export function DeliveryMapInner({ onDeliveryChange }: Props) {
       )}
 
       <p className="text-xs text-on-surface-variant">
-        Arrastra el pin o haz clic en tu puerta exacta
+        Busca tu dirección, elige una sugerencia y ajusta el pin en tu puerta exacta.
       </p>
+
+      {selectedLocation && address && (
+        <div className="rounded-lg border border-outline-variant bg-surface-container-high p-3">
+          {selectedSavedAddressId ? (
+            <p className="text-xs font-medium text-on-surface-variant">
+              Usando una dirección guardada. Mueve el pin para ajustar y guardarla como otra dirección.
+            </p>
+          ) : savedAddresses.length >= 3 ? (
+            <p className="text-xs font-medium text-on-surface-variant">
+              Ya tienes 3 direcciones guardadas. Borra una para guardar esta.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                Guardar esta dirección
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={saveAlias}
+                  onChange={(event) => setSaveAlias(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleSaveCurrentAddress();
+                    }
+                  }}
+                  placeholder="Alias: Casa, Trabajo..."
+                  maxLength={30}
+                  className="min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSaveCurrentAddress()}
+                  disabled={savingAddress}
+                  className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-on-primary disabled:opacity-50"
+                >
+                  {savingAddress ? <Loader2 size={16} className="animate-spin" /> : "Guardar"}
+                </button>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-on-surface-variant">
+                <input
+                  type="checkbox"
+                  checked={saveAsDefault}
+                  onChange={(event) => setSaveAsDefault(event.target.checked)}
+                  className="h-4 w-4 rounded border-outline-variant text-primary"
+                />
+                Usar como predeterminada
+              </label>
+            </div>
+          )}
+
+          {saveAddressError && (
+            <p className="mt-2 text-xs text-error">{saveAddressError}</p>
+          )}
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-sm text-primary">

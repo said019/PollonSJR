@@ -31,7 +31,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { register, handleSubmit, watch } = useForm<CheckoutData>({
+  const { register, handleSubmit, watch, setValue } = useForm<CheckoutData>({
     resolver: zodResolver(checkoutSchema),
     defaultValues: { type: "PICKUP" },
   });
@@ -121,14 +121,19 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
       {/* Delivery map & address */}
       {orderType === "DELIVERY" && (
         <div className="mb-4 space-y-3">
-          <DeliveryMap onDeliveryChange={onDeliveryChange} />
+          <DeliveryMap
+            onDeliveryChange={onDeliveryChange}
+            onAddressChange={(nextAddress) =>
+              setValue("address", nextAddress, { shouldDirty: true })
+            }
+          />
           <div>
-            <label className="text-sm font-medium mb-1 block text-on-surface">Dirección (detalles)</label>
+            <label className="text-sm font-medium mb-1 block text-on-surface">Dirección y referencias</label>
             <textarea
               {...register("address")}
-              placeholder="Calle, número, referencias..."
+              placeholder="Calle, número, colonia, casa/depto, referencias..."
               className="w-full border border-outline-variant bg-surface-container-high text-on-surface rounded-xl p-3 text-sm resize-none placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary focus:border-primary"
-              rows={2}
+              rows={3}
             />
           </div>
         </div>

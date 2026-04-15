@@ -148,6 +148,32 @@ export interface StoreLocationPublic {
   address: string;
 }
 
+export interface SavedAddressPublic {
+  id: string;
+  alias: string;
+  address: string;
+  lat: number;
+  lng: number;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface CreateSavedAddressPayload {
+  alias: string;
+  address: string;
+  lat: number;
+  lng: number;
+  isDefault?: boolean;
+}
+
+export interface UpdateSavedAddressPayload {
+  alias?: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  isDefault?: boolean;
+}
+
 // ─── Product Types ──────────────────────────────────────────
 
 export type CategoryType =

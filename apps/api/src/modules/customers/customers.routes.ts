@@ -8,6 +8,19 @@ const updateProfileSchema = z.object({
   address: z.string().min(1).max(300).optional(),
 });
 
+const savedAddressSchema = z.object({
+  alias: z.string().trim().min(1).max(30),
+  address: z.string().trim().min(1).max(500),
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  isDefault: z.boolean().optional(),
+});
+
+const updateSavedAddressSchema = savedAddressSchema.partial().refine(
+  (data) => Object.keys(data).length > 0,
+  { message: "Debes enviar al menos un campo." }
+);
+
 export async function customersRoutes(app: FastifyInstance) {
   const service = new CustomersService(app);
 
@@ -42,33 +55,111 @@ export async function customersRoutes(app: FastifyInstance) {
 
   app.post("/me/addresses", { preHandler: [authenticate] }, async (request, reply) => {
     const user = request.user as { id: string };
-    const { alias, address, lat, lng, isDefault } = request.body as {
-      alias: string; address: string; lat: number; lng: number; isDefault?: boolean;
-    };
+    const parsed = savedAddressSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+
+    const { alias, address, lat, lng } = parsed.data;
 
     const count = await app.prisma.savedAddress.count({ where: { customerId: user.id } });
     if (count >= 3) {
       return reply.status(400).send({ error: "Solo puedes guardar hasta 3 direcciones." });
     }
 
-    if (isDefault) {
-      await app.prisma.savedAddress.updateMany({
-        where: { customerId: user.id },
-        data: { isDefault: false },
-      });
+    const duplicate = await app.prisma.savedAddress.findFirst({
+      where: {
+        customerId: user.id,
+        alias: { equals: alias, mode: "insensitive" },
+      },
+    });
+    if (duplicate) {
+      return reply.status(409).send({ error: "Ya tienes una dirección con ese alias." });
     }
 
-    const saved = await app.prisma.savedAddress.create({
-      data: { customerId: user.id, alias, address, lat, lng, isDefault: isDefault ?? false },
+    const makeDefault = parsed.data.isDefault ?? count === 0;
+    const saved = await app.prisma.$transaction(async (tx) => {
+      if (makeDefault) {
+        await tx.savedAddress.updateMany({
+          where: { customerId: user.id },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.savedAddress.create({
+        data: { customerId: user.id, alias, address, lat, lng, isDefault: makeDefault },
+      });
     });
     return reply.status(201).send(saved);
   });
 
-  app.delete<{ Params: { id: string } }>("/me/addresses/:id", { preHandler: [authenticate] }, async (request) => {
+  app.patch<{ Params: { id: string } }>("/me/addresses/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const user = request.user as { id: string };
-    await app.prisma.savedAddress.deleteMany({
+    const parsed = updateSavedAddressSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+
+    const existing = await app.prisma.savedAddress.findFirst({
       where: { id: request.params.id, customerId: user.id },
     });
+    if (!existing) return reply.status(404).send({ error: "Dirección no encontrada." });
+
+    if (parsed.data.alias) {
+      const duplicate = await app.prisma.savedAddress.findFirst({
+        where: {
+          customerId: user.id,
+          id: { not: request.params.id },
+          alias: { equals: parsed.data.alias, mode: "insensitive" },
+        },
+      });
+      if (duplicate) {
+        return reply.status(409).send({ error: "Ya tienes una dirección con ese alias." });
+      }
+    }
+
+    const updated = await app.prisma.$transaction(async (tx) => {
+      if (parsed.data.isDefault) {
+        await tx.savedAddress.updateMany({
+          where: { customerId: user.id },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.savedAddress.update({
+        where: { id: request.params.id },
+        data: parsed.data,
+      });
+    });
+
+    return updated;
+  });
+
+  app.delete<{ Params: { id: string } }>("/me/addresses/:id", { preHandler: [authenticate] }, async (request) => {
+    const user = request.user as { id: string };
+
+    await app.prisma.$transaction(async (tx) => {
+      const existing = await tx.savedAddress.findFirst({
+        where: { id: request.params.id, customerId: user.id },
+      });
+      if (!existing) return;
+
+      await tx.savedAddress.delete({ where: { id: existing.id } });
+
+      if (existing.isDefault) {
+        const nextDefault = await tx.savedAddress.findFirst({
+          where: { customerId: user.id },
+          orderBy: { createdAt: "asc" },
+        });
+        if (nextDefault) {
+          await tx.savedAddress.update({
+            where: { id: nextDefault.id },
+            data: { isDefault: true },
+          });
+        }
+      }
+    });
+
     return { ok: true };
   });
 }
