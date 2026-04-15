@@ -6,15 +6,25 @@ import { X, Minus, Plus, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
 import { useState } from "react";
+import { getToken } from "@/lib/auth";
 
 interface CartDrawerProps {
   open: boolean;
   onClose: () => void;
+  onRequireAuth?: () => void;
 }
 
-export function CartDrawer({ open, onClose }: CartDrawerProps) {
+export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
   const { items, updateQty, removeItem, total, clearCart } = useCart();
   const [showCheckout, setShowCheckout] = useState(false);
+
+  const handleCheckout = () => {
+    if (!getToken()) {
+      onRequireAuth?.();
+      return;
+    }
+    setShowCheckout(true);
+  };
 
   return (
     <AnimatePresence>
@@ -97,7 +107,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
                     <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
                   </div>
                   <button
-                    onClick={() => setShowCheckout(true)}
+                    onClick={handleCheckout}
                     className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary"
                   >
                     Proceder al pago
