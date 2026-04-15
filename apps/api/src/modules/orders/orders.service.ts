@@ -289,6 +289,18 @@ export class OrdersService {
       orderNumber: order.orderNumber,
       status: order.status as OrderStatusType,
       type: order.type as any,
+      paymentMethod: order.paymentMethod as any,
+      cashAmount: order.cashAmount,
+      transferInfo:
+        order.paymentMethod === "TRANSFER"
+          ? {
+              clabe: process.env.STORE_CLABE || "",
+              bank: process.env.STORE_BANK || "BBVA",
+              accountHolder: process.env.STORE_ACCOUNT_HOLDER || "Pollón SJR",
+              amount: order.total / 100,
+              concept: `Pedido #${order.orderNumber}`,
+            }
+          : null,
       total: order.total,
       subtotal: order.subtotal,
       deliveryFee: order.deliveryFee,

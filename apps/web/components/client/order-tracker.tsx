@@ -7,7 +7,7 @@ import { useSocket } from "@/hooks/useSocket";
 import type { OrderDetail, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState, useEffect } from "react";
-import { CheckCircle, Clock, ChefHat, Package, Truck } from "lucide-react";
+import { Banknote, CheckCircle, ChefHat, CreditCard, Landmark, Package, Truck } from "lucide-react";
 import { motion } from "framer-motion";
 
 const STATUS_STEPS: { status: OrderStatusType; label: string; icon: React.ReactNode }[] = [
@@ -17,6 +17,12 @@ const STATUS_STEPS: { status: OrderStatusType; label: string; icon: React.ReactN
   { status: "ON_THE_WAY", label: "En camino", icon: <Truck size={20} /> },
   { status: "DELIVERED", label: "Entregado", icon: <CheckCircle size={20} /> },
 ];
+
+const PAYMENT_LABELS = {
+  CARD: "Pago con tarjeta",
+  CASH: "Efectivo",
+  TRANSFER: "Transferencia",
+} as const;
 
 export function OrderTracker({ orderId }: { orderId: string }) {
   const token = getToken();
@@ -64,6 +70,67 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6">
+        {order.paymentMethod && (
+          <div className="bg-surface-container-high rounded-xl p-5 mb-6 border border-outline-variant/20">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                {order.paymentMethod === "CARD" ? (
+                  <CreditCard size={19} />
+                ) : order.paymentMethod === "TRANSFER" ? (
+                  <Landmark size={19} />
+                ) : (
+                  <Banknote size={19} />
+                )}
+              </div>
+              <div>
+                <h2 className="font-headline font-bold text-on-surface">
+                  {PAYMENT_LABELS[order.paymentMethod]}
+                </h2>
+                <p className="text-sm text-on-surface-variant">
+                  {order.paymentMethod === "TRANSFER"
+                    ? "Usa estos datos para completar tu pago."
+                    : order.paymentMethod === "CASH"
+                      ? order.type === "PICKUP"
+                        ? "Paga en sucursal al recoger."
+                        : "Paga en efectivo al recibir."
+                      : "Tu pago se procesa con tarjeta."}
+                </p>
+              </div>
+            </div>
+
+            {order.paymentMethod === "TRANSFER" && order.transferInfo && (
+              <div className="mt-4 grid gap-2 rounded-lg bg-surface p-3 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-on-surface-variant">Banco</span>
+                  <span className="font-semibold text-on-surface">{order.transferInfo.bank}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-on-surface-variant">Titular</span>
+                  <span className="text-right font-semibold text-on-surface">
+                    {order.transferInfo.accountHolder}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-on-surface-variant">CLABE</span>
+                  <span className="font-mono font-semibold text-on-surface">
+                    {order.transferInfo.clabe || "Configurar CLABE"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-on-surface-variant">Concepto</span>
+                  <span className="font-semibold text-on-surface">{order.transferInfo.concept}</span>
+                </div>
+                <div className="flex justify-between gap-3 border-t border-outline-variant/20 pt-2">
+                  <span className="text-on-surface-variant">Monto</span>
+                  <span className="font-headline font-bold text-primary">
+                    {formatCents(Math.round(order.transferInfo.amount * 100))}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Status tracker */}
         {currentStatus !== "PENDING_PAYMENT" && currentStatus !== "CANCELLED" && (
           <div className="bg-surface-container-high rounded-xl p-6 mb-6 border border-outline-variant/20">

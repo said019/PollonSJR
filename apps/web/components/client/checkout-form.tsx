@@ -7,13 +7,14 @@ import { useCart } from "@/hooks/useCart";
 import { useDelivery } from "@/hooks/useDelivery";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
-import type { CreatePaymentResponse } from "@pollon/types";
-import { useState } from "react";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import type { CreateOrderResponse, CreatePaymentResponse, PaymentMethodType } from "@pollon/types";
+import { useState, type ReactNode } from "react";
+import { ArrowLeft, Banknote, CreditCard, Landmark, Loader2 } from "lucide-react";
 import { DeliveryMap } from "./delivery-map";
 
 const checkoutSchema = z.object({
   type: z.enum(["DELIVERY", "PICKUP"]),
+  paymentMethod: z.enum(["CARD", "CASH", "TRANSFER"]),
   address: z.string().optional(),
   notes: z.string().max(500).optional(),
 });
@@ -25,6 +26,33 @@ interface CheckoutFormProps {
   onSuccess: () => void;
 }
 
+const PAYMENT_METHODS: Array<{
+  value: PaymentMethodType;
+  title: string;
+  description: (orderType: CheckoutData["type"]) => string;
+  icon: ReactNode;
+}> = [
+  {
+    value: "CARD",
+    title: "Pago con tarjeta",
+    description: () => "Tarjeta de crédito o débito",
+    icon: <CreditCard size={17} />,
+  },
+  {
+    value: "CASH",
+    title: "Efectivo",
+    description: (orderType) =>
+      orderType === "PICKUP" ? "Paga en sucursal al recoger" : "Paga al recibir tu pedido",
+    icon: <Banknote size={17} />,
+  },
+  {
+    value: "TRANSFER",
+    title: "Transferencia",
+    description: () => "Te damos CLABE y concepto del pedido",
+    icon: <Landmark size={17} />,
+  },
+];
+
 export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const { items, clearCart } = useCart();
   const { delivery, onDeliveryChange } = useDelivery();
@@ -33,10 +61,19 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
   const { register, handleSubmit, watch, setValue } = useForm<CheckoutData>({
     resolver: zodResolver(checkoutSchema),
-    defaultValues: { type: "PICKUP" },
+    defaultValues: { type: "PICKUP", paymentMethod: "CARD" },
   });
 
   const orderType = watch("type");
+  const paymentMethod = watch("paymentMethod");
+  const submitLabel =
+    paymentMethod === "CARD"
+      ? "Pagar con tarjeta"
+      : paymentMethod === "TRANSFER"
+        ? "Confirmar transferencia"
+        : orderType === "PICKUP"
+          ? "Confirmar y pagar en sucursal"
+          : "Confirmar pedido en efectivo";
 
   const onSubmit = async (data: CheckoutData) => {
     const token = getToken();
@@ -54,10 +91,11 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
     setError(null);
 
     try {
-      const { orderId } = await api.post<{ orderId: string }>(
+      const order = await api.post<CreateOrderResponse>(
         "/api/orders",
         {
           type: data.type,
+          paymentMethod: data.paymentMethod,
           address: data.address || delivery.zoneName,
           deliveryLat: delivery.lat,
           deliveryLng: delivery.lng,
@@ -74,14 +112,20 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         token
       );
 
-      const payment = await api.post<CreatePaymentResponse>(
-        "/api/payments/create",
-        { orderId },
-        token
-      );
+      if (data.paymentMethod === "CARD") {
+        const payment = await api.post<CreatePaymentResponse>(
+          "/api/payments/create",
+          { orderId: order.orderId },
+          token
+        );
+
+        clearCart();
+        window.location.href = payment.checkoutUrl;
+        return;
+      }
 
       clearCart();
-      window.location.href = payment.checkoutUrl;
+      window.location.href = `/order/${order.orderId}`;
     } catch (err: any) {
       setError(err.message || "Error al procesar el pedido");
     } finally {
@@ -116,6 +160,40 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
             </div>
           </label>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <label className="text-sm font-medium mb-2 block text-on-surface">Forma de pago</label>
+        <div className="grid gap-2">
+          {PAYMENT_METHODS.map((method) => (
+            <label key={method.value}>
+              <input
+                type="radio"
+                value={method.value}
+                {...register("paymentMethod")}
+                className="sr-only peer"
+              />
+              <div className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-outline-variant p-3 transition-colors peer-checked:border-primary peer-checked:bg-primary/10">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-primary">
+                  {method.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-on-surface">
+                    {method.title}
+                  </span>
+                  <span className="block text-xs text-on-surface-variant">
+                    {method.description(orderType)}
+                  </span>
+                </span>
+              </div>
+            </label>
+          ))}
+        </div>
+        {paymentMethod === "TRANSFER" && (
+          <p className="mt-2 rounded-lg bg-surface-container-high p-2 text-xs text-on-surface-variant">
+            Al confirmar te mostraremos banco, CLABE, monto y concepto para transferir.
+          </p>
+        )}
       </div>
 
       {/* Delivery map & address */}
@@ -162,7 +240,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               <Loader2 size={18} className="animate-spin" /> Procesando...
             </>
           ) : (
-            "Pagar con Mercado Pago"
+            submitLabel
           )}
         </button>
       </div>

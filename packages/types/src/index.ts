@@ -43,12 +43,22 @@ export type OrderStatusType =
   | "CANCELLED";
 
 export type OrderTypeType = "DELIVERY" | "PICKUP";
+export type PaymentMethodType = "CARD" | "CASH" | "TRANSFER";
+
+export interface TransferInfo {
+  clabe: string;
+  bank: string;
+  accountHolder: string;
+  amount: number;
+  concept: string;
+}
 
 export interface OrderSummary {
   id: string;
   orderNumber: number;
   status: OrderStatusType;
   type: OrderTypeType;
+  paymentMethod?: PaymentMethodType;
   total: number;
   customerName: string | null;
   customerPhone: string;
@@ -58,6 +68,9 @@ export interface OrderSummary {
 
 export interface OrderDetail extends OrderSummary {
   address: string | null;
+  paymentMethod?: PaymentMethodType;
+  cashAmount?: number | null;
+  transferInfo?: TransferInfo | null;
   subtotal: number;
   deliveryFee: number;
   notes: string | null;
@@ -88,6 +101,8 @@ export interface CartItem {
 
 export interface CreateOrderPayload {
   type: OrderTypeType;
+  paymentMethod?: PaymentMethodType;
+  cashAmount?: number;
   address?: string;
   deliveryLat?: number;
   deliveryLng?: number;
@@ -116,6 +131,16 @@ export interface PaymentInfo {
 export interface CreatePaymentResponse {
   preferenceId: string;
   checkoutUrl: string;
+}
+
+export interface CreateOrderResponse {
+  orderId: string;
+  orderNumber: number;
+  paymentMethod: PaymentMethodType;
+  checkoutUrl?: string;
+  transferInfo?: TransferInfo;
+  change?: string | null;
+  message?: string;
 }
 
 // ─── Delivery Types ─────────────────────────────────────────

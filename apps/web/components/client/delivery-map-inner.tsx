@@ -25,7 +25,7 @@ const STORE_POS: [number, number] = [
   parseFloat(process.env.NEXT_PUBLIC_STORE_LAT || "20.5881"),
   parseFloat(process.env.NEXT_PUBLIC_STORE_LNG || "-99.9953"),
 ];
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+const STATIC_GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
 const GOOGLE_MAPS_SCRIPT_ID = "pollon-google-maps";
 
 type GoogleMapPosition = { lat: number; lng: number };
@@ -102,6 +102,7 @@ interface GoogleMapsApi {
 declare global {
   interface Window {
     __pollonGoogleMapsPromise?: Promise<GoogleMapsApi>;
+    __pollonGoogleMapsKey?: string;
     google?: GoogleMapsApi;
   }
 }
@@ -163,8 +164,21 @@ function suggestionSubtitle(suggestion: AddressSuggestion) {
   return [zone, city, a?.state].filter(Boolean).join(", ");
 }
 
-function loadGoogleMaps() {
-  if (!GOOGLE_MAPS_API_KEY) {
+async function getGoogleMapsApiKey() {
+  if (STATIC_GOOGLE_MAPS_API_KEY) return STATIC_GOOGLE_MAPS_API_KEY;
+
+  try {
+    const response = await fetch("/api/public-config", { cache: "no-store" });
+    if (!response.ok) return "";
+    const data = (await response.json()) as { googleMapsApiKey?: string };
+    return data.googleMapsApiKey || "";
+  } catch {
+    return "";
+  }
+}
+
+function loadGoogleMaps(apiKey: string) {
+  if (!apiKey) {
     return Promise.reject(new Error("Google Maps API key is not configured"));
   }
 
@@ -176,10 +190,17 @@ function loadGoogleMaps() {
     return Promise.resolve(window.google);
   }
 
-  if (window.__pollonGoogleMapsPromise) {
+  if (window.__pollonGoogleMapsPromise && window.__pollonGoogleMapsKey === apiKey) {
     return window.__pollonGoogleMapsPromise;
   }
 
+  const staleScript = document.getElementById(GOOGLE_MAPS_SCRIPT_ID);
+  if (staleScript && window.__pollonGoogleMapsKey !== apiKey) {
+    staleScript.remove();
+    window.__pollonGoogleMapsPromise = undefined;
+  }
+
+  window.__pollonGoogleMapsKey = apiKey;
   window.__pollonGoogleMapsPromise = new Promise<GoogleMapsApi>((resolve, reject) => {
     const existingScript = document.getElementById(
       GOOGLE_MAPS_SCRIPT_ID
@@ -203,7 +224,7 @@ function loadGoogleMaps() {
     const script = document.createElement("script");
     script.id = GOOGLE_MAPS_SCRIPT_ID;
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-      GOOGLE_MAPS_API_KEY
+      apiKey
     )}&language=es&region=MX&v=weekly`;
     script.async = true;
     script.defer = true;
@@ -269,6 +290,8 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
   const googleMapRef = useRef<GoogleMapInstance | null>(null);
   const googleMarkerRef = useRef<GoogleMarkerInstance | null>(null);
   const googleGeocoderRef = useRef<GoogleGeocoderInstance | null>(null);
+  const googleMapsApiKeyRef = useRef(STATIC_GOOGLE_MAPS_API_KEY);
+  const [mapProvider, setMapProvider] = useState<"loading" | "google" | "osm">("loading");
   const onDeliveryChangeRef = useRef(onDeliveryChange);
   const handleMoveRef = useRef<(lat: number, lng: number) => void>(() => {});
   const deliveryRequestRef = useRef(0);
@@ -477,6 +500,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
 
     const initLeafletMap = () => {
       if (cancelled || mapRef.current || !mapContainerRef.current) return;
+      setMapProvider("osm");
 
       const map = L.map(mapContainerRef.current).setView(STORE_POS, 15);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -492,8 +516,16 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
       invalidateTimer = window.setTimeout(() => map.invalidateSize(), 0);
     };
 
-    if (GOOGLE_MAPS_API_KEY) {
-      void loadGoogleMaps()
+    void getGoogleMapsApiKey().then((apiKey) => {
+      if (cancelled) return;
+      googleMapsApiKeyRef.current = apiKey;
+
+      if (!apiKey) {
+        initLeafletMap();
+        return;
+      }
+
+      void loadGoogleMaps(apiKey)
         .then((googleApi) => {
           if (cancelled || !mapContainerRef.current) return;
 
@@ -516,12 +548,11 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
           googleApiRef.current = googleApi;
           googleMapRef.current = map;
           googleGeocoderRef.current = new googleApi.maps.Geocoder();
+          setMapProvider("google");
           invalidateTimer = window.setTimeout(() => map.setCenter(initialPosition), 0);
         })
         .catch(() => initLeafletMap());
-    } else {
-      initLeafletMap();
-    }
+    });
 
     return () => {
       cancelled = true;
@@ -567,9 +598,27 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
         let data: AddressSuggestion[] = [];
         let shouldSearchOpenStreetMap = false;
 
-        if (!geocoder && GOOGLE_MAPS_API_KEY) {
+        if (!geocoder) {
+          const apiKey =
+            googleMapsApiKeyRef.current ||
+            (await getGoogleMapsApiKey());
+          googleMapsApiKeyRef.current = apiKey;
+
+          if (apiKey) {
+            try {
+              const googleApi = await loadGoogleMaps(apiKey);
+              googleApiRef.current = googleApi;
+              geocoder = new googleApi.maps.Geocoder();
+              googleGeocoderRef.current = geocoder;
+            } catch {
+              geocoder = null;
+            }
+          }
+        }
+
+        if (!geocoder && STATIC_GOOGLE_MAPS_API_KEY) {
           try {
-            const googleApi = await loadGoogleMaps();
+            const googleApi = await loadGoogleMaps(STATIC_GOOGLE_MAPS_API_KEY);
             googleApiRef.current = googleApi;
             geocoder = new googleApi.maps.Geocoder();
             googleGeocoderRef.current = geocoder;
@@ -971,6 +1020,17 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
         ref={mapContainerRef}
         className="z-0 h-[220px] w-full overflow-hidden rounded-lg sm:h-[240px]"
       />
+      <p
+        className={`text-[11px] font-medium ${
+          mapProvider === "google" ? "text-green-600" : "text-on-surface-variant"
+        }`}
+      >
+        {mapProvider === "google"
+          ? "Google Maps activo"
+          : mapProvider === "osm"
+            ? "Mapa alterno activo"
+            : "Cargando mapa..."}
+      </p>
 
       {address && (
         <p className="text-xs text-on-surface-variant bg-surface-container-high p-2 rounded-lg truncate">
