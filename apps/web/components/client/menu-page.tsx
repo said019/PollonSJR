@@ -2,19 +2,146 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { MenuByCategory, ProductPublic } from "@pollon/types";
+import type { MenuByCategory, ProductPublic, LoyaltyInfo } from "@pollon/types";
 import { ProductCard } from "./product-card";
 import { CartDrawer } from "./cart-drawer";
 import { AuthModal } from "./auth-modal";
 import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
-import { ShoppingCart, ArrowLeft, User, Search } from "lucide-react";
+import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star } from "lucide-react";
 import { StoreStatusBanner } from "./store-status-banner";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { getToken } from "@/lib/auth";
 import { CATEGORY_IMAGES, CATEGORY_EMOJI, resolveProductImage } from "@/lib/product-images";
+import { motion } from "framer-motion";
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Loyalty mini-bar — shown to logged-in users in header         */
+/* ────────────────────────────────────────────────────────────── */
+function LoyaltyMiniBar({ token }: { token: string }) {
+  const { data: info } = useQuery({
+    queryKey: ["loyalty"],
+    queryFn: () => api.get<LoyaltyInfo>("/api/loyalty/me", token),
+    staleTime: 60_000,
+  });
+
+  if (!info) return null;
+
+  const target = info.target || 5;
+  const progress = Math.min(info.pendingReward ? target : info.progress, target);
+  const pct = Math.round((progress / target) * 100);
+
+  if (info.pendingReward) {
+    return (
+      <Link
+        href="/loyalty"
+        className="flex items-center gap-2 rounded-xl border border-secondary/40 bg-secondary/15 px-3 py-1.5 text-secondary transition-all hover:bg-secondary/25"
+      >
+        <Star size={12} className="fill-secondary" />
+        <span className="font-headline text-[11px] font-extrabold uppercase tracking-wider">
+          ¡Premio listo!
+        </span>
+      </Link>
+    );
+  }
+
+  return (
+    <Link
+      href="/loyalty"
+      className="group hidden items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-1.5 transition-all hover:border-secondary/40 sm:flex"
+    >
+      <Star size={12} className="text-secondary" />
+      <div className="min-w-0">
+        <span className="font-headline text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/70">
+          {progress}/{target} compras
+        </span>
+        <div className="mt-0.5 h-1 w-16 overflow-hidden rounded-full bg-surface-variant">
+          <motion.div
+            className="h-full rounded-full bg-secondary"
+            initial={{ width: 0 }}
+            animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+          />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Promo countdown — Wed/Thu/Fri weekly promotions               */
+/* ────────────────────────────────────────────────────────────── */
+function PromoCountdown() {
+  const [timeStr, setTimeStr] = useState<string | null>(null);
+  const [isPromoDay, setIsPromoDay] = useState(false);
+
+  useEffect(() => {
+    function update() {
+      const now = new Date();
+      const day = now.getDay(); // 0=Sun, 1=Mon ... 3=Wed, 4=Thu, 5=Fri
+      const isPromo = day === 3 || day === 4 || day === 5;
+      setIsPromoDay(isPromo);
+
+      if (isPromo) {
+        // Count down to midnight (end of promo day)
+        const midnight = new Date(now);
+        midnight.setHours(24, 0, 0, 0);
+        const diff = midnight.getTime() - now.getTime();
+        const h = Math.floor(diff / 3_600_000);
+        const m = Math.floor((diff % 3_600_000) / 60_000);
+        const s = Math.floor((diff % 60_000) / 1_000);
+        setTimeStr(`${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`);
+      } else {
+        // Count down to next Wednesday
+        const daysUntilWed = ((3 - day + 7) % 7) || 7;
+        const nextWed = new Date(now);
+        nextWed.setDate(now.getDate() + daysUntilWed);
+        nextWed.setHours(0, 0, 0, 0);
+        const diff = nextWed.getTime() - now.getTime();
+        const d = Math.floor(diff / 86_400_000);
+        const h = Math.floor((diff % 86_400_000) / 3_600_000);
+        const m = Math.floor((diff % 3_600_000) / 60_000);
+        setTimeStr(`${d}d ${h}h ${String(m).padStart(2, "0")}m`);
+      }
+    }
+
+    update();
+    const id = setInterval(update, 1_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (!timeStr) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 ${
+        isPromoDay
+          ? "border-error/30 bg-error/10"
+          : "border-outline-variant/15 bg-surface-container"
+      }`}
+    >
+      <Flame size={15} className={isPromoDay ? "text-error" : "text-on-surface-variant/60"} />
+      <div>
+        <p className={`font-headline text-[10px] font-extrabold uppercase tracking-widest ${isPromoDay ? "text-error" : "text-on-surface-variant/60"}`}>
+          {isPromoDay ? "¡Promos activas hoy!" : "Próximas promos"}
+        </p>
+        <p className={`font-mono text-sm font-bold ${isPromoDay ? "text-error" : "text-on-surface-variant"}`}>
+          {isPromoDay ? `Termina en ${timeStr}` : `Empiezan en ${timeStr}`}
+        </p>
+      </div>
+      {isPromoDay && (
+        <span className="ml-1 inline-flex items-center rounded-full bg-error/20 px-2 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-error">
+          Miér–Vie
+        </span>
+      )}
+    </motion.div>
+  );
+}
 
 /* ────────────────────────────────────────────────────────────── */
 /*  Featured hero — shows the top product of the menu             */
@@ -397,6 +524,9 @@ export function MenuPage() {
           </div>
 
           <div className="flex flex-shrink-0 items-center gap-2">
+            {/* Loyalty mini-bar for logged-in users */}
+            {authed && getToken() && <LoyaltyMiniBar token={getToken()!} />}
+
             {authed ? (
               <Link
                 href="/profile"
@@ -465,6 +595,13 @@ export function MenuPage() {
             />
 
             <div className="min-w-0 flex-1">
+              {/* Promo countdown — always visible at top */}
+              {!searchQuery && (
+                <div className="mb-6">
+                  <PromoCountdown />
+                </div>
+              )}
+
               {/* Featured hero — shown when not searching */}
               {!searchQuery && featured && <FeaturedHero product={featured} />}
 

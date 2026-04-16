@@ -2,10 +2,11 @@
 
 import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
-import { X, Minus, Plus, Trash2 } from "lucide-react";
+import { X, Minus, Plus, Trash2, ShoppingBag, Bike } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
 import { UpsellRecommendations } from "./upsell-recommendations";
+import { EmptyCartSuggestions } from "./empty-cart-suggestions";
 import { useState } from "react";
 import { getToken } from "@/lib/auth";
 
@@ -56,8 +57,18 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
             </div>
 
             {items.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-on-surface-variant">
-                <p>Tu carrito está vacío</p>
+              /* ─── Empty cart: quick suggestions ─── */
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="flex flex-col items-center px-5 pt-8 pb-4 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-primary mb-3">
+                    <ShoppingBag size={28} />
+                  </div>
+                  <h3 className="font-headline text-lg font-extrabold text-tertiary">Tu carrito está vacío</h3>
+                  <p className="mt-1 text-sm text-on-surface-variant/70">
+                    ¿Qué se te antoja hoy?
+                  </p>
+                </div>
+                <EmptyCartSuggestions onClose={onClose} />
               </div>
             ) : showCheckout ? (
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -110,9 +121,16 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
 
                   <div className="space-y-3 border-t border-outline-variant/10 p-5">
                     <div className="flex justify-between items-center">
-                      <span className="text-on-surface-variant font-headline font-semibold">Total</span>
+                      <span className="text-on-surface-variant font-headline font-semibold">Subtotal</span>
                       <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
                     </div>
+
+                    {/* Delivery fee hint */}
+                    <div className="flex items-center gap-2 rounded-lg bg-surface-container-high px-3 py-2 text-[11px] text-on-surface-variant/70">
+                      <Bike size={13} className="text-primary flex-shrink-0" />
+                      <span>Envío a domicilio desde <strong className="text-primary">$25</strong> · Gratis en combos grandes</span>
+                    </div>
+
                     <button
                       onClick={handleCheckout}
                       className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary"

@@ -26,6 +26,8 @@ import {
   X,
   Package,
   Receipt,
+  RotateCcw,
+  Loader2,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -35,6 +37,8 @@ import type {
   SavedAddressPublic,
   OrderStatusType,
 } from "@pollon/types";
+import { useCart } from "@/hooks/useCart";
+import { resolveProductImage } from "@/lib/product-images";
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  Local types                                                    */
@@ -652,6 +656,82 @@ function aliasIcon(alias: string) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
+/*  ReorderButton — one-tap reorder from history                   */
+/* ═══════════════════════════════════════════════════════════════ */
+
+interface RepeatItem {
+  productId: string;
+  name: string;
+  currentPrice: number;
+  qty: number;
+  variant: string | null;
+  notes: string | null;
+  available: boolean;
+}
+
+interface RepeatResponse {
+  items: RepeatItem[];
+  unavailableCount: number;
+  warning: string | null;
+}
+
+function ReorderButton({ orderId, token }: { orderId: string; token: string }) {
+  const { addItem } = useCart();
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const handleReorder = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      const res = await api.get<RepeatResponse>(`/api/orders/${orderId}/repeat`, token);
+      const available = res.items.filter((i) => i.available);
+      available.forEach((item) => {
+        addItem({
+          productId: item.productId,
+          name: item.name,
+          price: item.currentPrice,
+          qty: item.qty,
+          variant: item.variant,
+          notes: item.notes ?? "",
+          imageUrl: resolveProductImage(item.name, null),
+        });
+      });
+      setDone(true);
+      setTimeout(() => setDone(false), 2500);
+    } catch {
+      // silently ignore — user can retry
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.button
+      onClick={handleReorder}
+      whileTap={{ scale: 0.9 }}
+      disabled={loading}
+      aria-label="Repetir pedido"
+      className={`flex flex-shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-headline text-[10px] font-bold uppercase tracking-wider transition-all disabled:opacity-60 ${
+        done
+          ? "border-green-500/40 bg-green-500/15 text-green-400"
+          : "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+      }`}
+    >
+      {loading ? (
+        <Loader2 size={11} className="animate-spin" />
+      ) : done ? (
+        <Check size={11} />
+      ) : (
+        <RotateCcw size={11} />
+      )}
+      {done ? "Agregado" : "Repetir"}
+    </motion.button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
 /*  OrdersTab — paginated order history                            */
 /* ═══════════════════════════════════════════════════════════════ */
 
@@ -771,13 +851,18 @@ function OrdersTab({ token }: { token: string }) {
                       </p>
                     </div>
 
-                    <div className="text-right">
+                    <div className="flex flex-col items-end gap-2">
                       <p className="font-headline text-base font-extrabold text-primary">
                         {formatCents(order.total)}
                       </p>
-                      <p className="mt-0.5 text-[9px] font-headline font-bold uppercase tracking-wider text-on-surface-variant/50 transition-colors group-hover:text-primary">
-                        Ver detalle →
-                      </p>
+                      {order.status === "DELIVERED" && (
+                        <ReorderButton orderId={order.id} token={token} />
+                      )}
+                      {order.status !== "DELIVERED" && (
+                        <p className="text-[9px] font-headline font-bold uppercase tracking-wider text-on-surface-variant/50 transition-colors group-hover:text-primary">
+                          Ver detalle →
+                        </p>
+                      )}
                     </div>
                   </Link>
                 </motion.li>

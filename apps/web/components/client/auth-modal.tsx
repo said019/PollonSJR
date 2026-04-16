@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { saveTokens } from "@/lib/auth";
-import { Lock, Mail, Phone, User, Loader2, Eye, EyeOff } from "lucide-react";
+import { Lock, Mail, Phone, User, Loader2, Eye, EyeOff, Users, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 
 interface AuthModalProps {
@@ -126,6 +126,15 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           <h2 className="text-xl font-headline font-bold text-on-surface">
             {mode === "login" ? "Bienvenido de vuelta" : "Crea tu cuenta"}
           </h2>
+
+          {/* Social proof trust signal */}
+          <div className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-surface-container-high px-3 py-2">
+            <Users size={11} className="text-primary flex-shrink-0" />
+            <span className="text-[11px] text-on-surface-variant/70">
+              +2,500 clientes activos en San Juan del Río
+            </span>
+            <ShieldCheck size={11} className="text-secondary flex-shrink-0" />
+          </div>
         </div>
 
         {/* Tabs */}

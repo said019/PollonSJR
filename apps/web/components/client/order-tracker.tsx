@@ -20,6 +20,9 @@ import {
   Sparkles,
   Truck,
   X,
+  Star,
+  RotateCcw,
+  MessageCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -277,6 +280,75 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               })}
             </div>
           </motion.button>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/*  Post-delivery celebration — shown when DELIVERED       */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        {isDelivered && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.1 }}
+            className="mb-5 overflow-hidden rounded-3xl border border-secondary/30 bg-gradient-to-br from-surface-container-high to-surface-container"
+          >
+            {/* Confetti top stripe */}
+            <div className="h-1.5 w-full bg-[linear-gradient(90deg,#F97316,#FACC15,#22c55e,#F97316)]" />
+
+            <div className="px-5 py-6 text-center">
+              <motion.div
+                initial={{ scale: 0.5, rotate: -10 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", damping: 10, stiffness: 200, delay: 0.2 }}
+                className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-secondary/30 to-secondary/10 text-3xl"
+              >
+                🎉
+              </motion.div>
+
+              <h2 className="font-headline text-2xl font-extrabold uppercase tracking-tighter text-tertiary">
+                ¡Buen provecho!
+              </h2>
+              <p className="mt-1 text-sm text-on-surface-variant/80">
+                Tu pedido fue entregado. Esperamos que lo disfrutes mucho.
+              </p>
+
+              {/* Rating strip */}
+              <div className="mt-4 flex items-center justify-center gap-1.5">
+                <span className="text-xs text-on-surface-variant/60">¿Qué tal estuvo?</span>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <motion.button
+                    key={n}
+                    whileTap={{ scale: 0.8 }}
+                    whileHover={{ scale: 1.2 }}
+                    aria-label={`${n} estrellas`}
+                    className="text-on-surface-variant/30 transition-colors hover:text-secondary"
+                  >
+                    <Star size={20} />
+                  </motion.button>
+                ))}
+              </div>
+
+              {/* CTAs */}
+              <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+                <Link
+                  href="/menu"
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98]"
+                >
+                  <RotateCcw size={15} />
+                  Pedir de nuevo
+                </Link>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent("¡Hola! Acabo de recibir mi pedido de Pollón SJR y estuvo increíble 🍗🔥")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-tertiary transition-all hover:border-primary/40 active:scale-[0.98]"
+                >
+                  <MessageCircle size={15} />
+                  Compartir
+                </a>
+              </div>
+            </div>
+          </motion.div>
         )}
 
         {/* Cancelled banner */}

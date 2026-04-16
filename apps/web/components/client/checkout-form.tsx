@@ -15,7 +15,7 @@ import type {
 } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Banknote, CreditCard, Landmark, Loader2 } from "lucide-react";
+import { ArrowLeft, Banknote, CreditCard, Landmark, Loader2, ShieldCheck, Lock } from "lucide-react";
 import { CardPayment, initMercadoPago } from "@mercadopago/sdk-react";
 import type {
   ICardPaymentBrickPayer,
@@ -44,25 +44,29 @@ const PAYMENT_METHODS: Array<{
   value: PaymentMethodType;
   title: string;
   description: (orderType: CheckoutData["type"]) => string;
+  badge?: string;
   icon: ReactNode;
 }> = [
   {
     value: "CARD",
-    title: "Pago con tarjeta",
-    description: () => "Tarjeta de crédito o débito",
+    title: "Tarjeta de crédito / débito",
+    description: () => "Encriptado 256-bit · Sin comisión extra · Mercado Pago",
+    badge: "Recomendado",
     icon: <CreditCard size={17} />,
   },
   {
     value: "CASH",
     title: "Efectivo",
     description: (orderType) =>
-      orderType === "PICKUP" ? "Paga en sucursal al recoger" : "Paga al recibir tu pedido",
+      orderType === "PICKUP"
+        ? "Paga en sucursal al recoger · Sin cargos extra"
+        : "Paga al recibir tu pedido · Sin cargos extra",
     icon: <Banknote size={17} />,
   },
   {
     value: "TRANSFER",
-    title: "Transferencia",
-    description: () => "Te damos CLABE y concepto del pedido",
+    title: "Transferencia bancaria",
+    description: () => "CLABE + concepto · Sin comisión · SPEI 24/7",
     icon: <Landmark size={17} />,
   },
 ];
@@ -292,8 +296,15 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
                   {method.icon}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-on-surface">
-                    {method.title}
+                  <span className="flex items-center gap-2">
+                    <span className="block text-sm font-semibold text-on-surface">
+                      {method.title}
+                    </span>
+                    {method.badge && (
+                      <span className="inline-flex items-center rounded-full bg-secondary/20 px-1.5 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-secondary">
+                        {method.badge}
+                      </span>
+                    )}
                   </span>
                   <span className="block text-xs text-on-surface-variant">
                     {method.description(orderType)}
@@ -418,6 +429,11 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               submitLabel
             )}
           </button>
+          <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-on-surface-variant/50">
+            <span className="flex items-center gap-1"><Lock size={9} /> Conexión segura</span>
+            <span>·</span>
+            <span className="flex items-center gap-1"><ShieldCheck size={9} /> Datos protegidos</span>
+          </div>
         </div>
       )}
     </div>

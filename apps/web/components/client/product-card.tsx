@@ -3,10 +3,51 @@
 import type { ProductPublic } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useCart } from "@/hooks/useCart";
-import { Plus } from "lucide-react";
+import { Plus, Flame, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import Image from "next/image";
 import { resolveProductImage } from "@/lib/product-images";
+
+// Social proof — these are the crowd-pleasers that sell fastest.
+// Showing a badge activates herd-behaviour (Cialdini social proof).
+const MOST_ORDERED = new Set([
+  "Combo Familiar",
+  "Pollo Frito",
+  "Boneless",
+  "Malteada",
+  "Papas a la Francesa",
+  "Nuggets x6",
+  "Soda Italiana",
+]);
+
+const POPULAR = new Set([
+  "Combo Duo",
+  "Bisquet",
+  "Hamburguesa Doble",
+  "Hamburguesa de Arrachera",
+  "Aros de Cebolla",
+  "Tiras de Pollo",
+]);
+
+function SocialProofBadge({ name }: { name: string }) {
+  if (MOST_ORDERED.has(name)) {
+    return (
+      <span className="absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-0.5 rounded-full bg-error/80 px-2 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-white backdrop-blur-md">
+        <Flame size={9} className="fill-white" />
+        Más pedido
+      </span>
+    );
+  }
+  if (POPULAR.has(name)) {
+    return (
+      <span className="absolute right-2.5 top-2.5 z-10 inline-flex items-center gap-0.5 rounded-full bg-secondary/80 px-2 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-on-secondary backdrop-blur-md">
+        <TrendingUp size={9} />
+        Popular
+      </span>
+    );
+  }
+  return null;
+}
 
 type Variant = "row" | "grid" | "hero";
 
@@ -75,6 +116,9 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
             <span className="absolute left-4 top-4 rounded-full bg-secondary px-3 py-1 text-[10px] font-headline font-extrabold uppercase tracking-[0.18em] text-on-secondary shadow-lg">
               Favorito
             </span>
+          )}
+          {!featured && !product.soldOut && (MOST_ORDERED.has(product.name) || POPULAR.has(product.name)) && (
+            <SocialProofBadge name={product.name} />
           )}
           {product.soldOut && (
             <span className="absolute right-4 top-4 rounded-full bg-error/90 px-3 py-1 text-[10px] font-headline font-extrabold uppercase tracking-[0.18em] text-on-error shadow-lg">
@@ -161,7 +205,10 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
               Agotado
             </span>
           )}
-          {product.variants && product.variants.length > 0 && (
+          {!product.soldOut && (MOST_ORDERED.has(product.name) || POPULAR.has(product.name)) && (
+            <SocialProofBadge name={product.name} />
+          )}
+          {!product.soldOut && product.variants && product.variants.length > 0 && !MOST_ORDERED.has(product.name) && !POPULAR.has(product.name) && (
             <span className="absolute left-2.5 top-2.5 rounded-full bg-surface/70 px-2.5 py-0.5 text-[9px] font-headline font-bold uppercase tracking-wider text-tertiary backdrop-blur-md">
               Opciones
             </span>
