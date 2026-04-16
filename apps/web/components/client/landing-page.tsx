@@ -110,8 +110,8 @@ function HeroSection() {
       {/* BG image + overlays */}
       <div className="absolute inset-0 z-0">
         <Image
-          src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-azXPTYSGuiyw1wSgJioC3cONnNLsmqBWnqetzwun8S_hMF-LF9RO16zDovXCIHsS6zDpa_peiwh4rpwMbMqOKM39OHpw73GeKZs6CZaRGGRAFj_idSMIgD1g6xoEHXBExu4EvYdaOfsmuCUsWfXOUrnYcDMVpIQR6JWyviU3HuBysY8Av46yCpXm8HjZFwO4uNODqH9DGpdSjnGY4ldetBTvnqnPjZOp5Yl7izXvjyTNq6pHOOhbCk8BqHOsnuzmbymQeEjkl8Vs"
-          alt="Pollo frito crujiente con especias y vapor"
+          src="/menu/hero-spread.jpeg"
+          alt="Mesa llena de pollo frito, hamburguesas, snacks y bebidas de Pollón SJR"
           fill
           className="object-cover scale-105"
           priority
@@ -245,8 +245,8 @@ function MenuHighlights() {
         {/* Large Card */}
         <div className="md:col-span-7 group relative rounded-3xl overflow-hidden min-h-[420px] cursor-pointer">
           <Image
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrVdJT_Vm_viC56F7SX_-tk7Frnn6HGH4lliZE5fwJPR6mVwpVRf98L0HyjvLSSg9GWM_IETihO7gCkuzpL-5DnA8Wce1dRmxOX-_pn1enGSsGBAZZqOBnvPWN_VB0irqd0DKEQipsk8A5xXC-HyzFeQ0AXkPcVa2UNASenlYd38sfsK3wDJ8x5AFhd_mUnqbPiFDcP2rH6HNXbCJeR8EW8xK5i6U4WbVhAfwtx4_FLxQTW_17pI8VMLizxNZFa4aaGA7hCdwpgU96"
-            alt="Festín de pollo frito con papas y salsas"
+            src="/menu/combo-familiar.jpeg"
+            alt="Combo Familiar: pollo frito con bisquets, ensalada, puré de papa y pasta"
             fill
             className="object-cover transition-transform duration-700 group-hover:scale-105"
           />
@@ -271,18 +271,18 @@ function MenuHighlights() {
         {/* Tall Vertical Card */}
         <div className="md:col-span-5 group relative rounded-3xl overflow-hidden min-h-[420px] cursor-pointer">
           <Image
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuBa_BqDUl_9A0Eo0Utu3Msb8-Qa-khZ2PE_0mS2s87KFb5QioB_qw5uTS42n969vsHkgqw9n-xSHtsvDJxfZo66TUPPVs4AdjRUJfAii8piZ1rDfk1SuGzMGK0v_BxghzUrAj4D-JfCzXH9kIZ5lnD8EyHDNCs8f8JTKUMMba020XylxCrg-yRDOWBminpNu3os1_VmMfLZhXOZq1mhdqD4k1EtN9lL0S-dahzoVy0mbO9rKua80Xp2KBdYGhjEQfkjN6oR2iK4r3Pj"
-            alt="Nuggets con salsa"
+            src="/menu/boneless-dip.jpeg"
+            alt="Boneless crujiente sumergido en salsa BBQ"
             fill
             className="object-cover transition-transform duration-700 group-hover:scale-110"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-surface via-surface/30 to-transparent" />
           <div className="absolute bottom-0 left-0 p-7">
             <h3 className="text-2xl font-headline font-extrabold text-tertiary uppercase tracking-tighter mb-2">
-              Caja 6 Piezas
+              Boneless
             </h3>
             <p className="text-on-surface-variant text-sm mb-4">
-              Original o Extra Picante.
+              Trozos sin hueso con salsa BBQ.
             </p>
             <Link
               href="/menu"
@@ -296,19 +296,19 @@ function MenuHighlights() {
         {/* Wide Card */}
         <div className="md:col-span-5 group relative rounded-3xl overflow-hidden min-h-[320px] cursor-pointer">
           <Image
-            src="https://lh3.googleusercontent.com/aida-public/AB6AXuASVLj1jqwiUFPh3JVOjraJ0QZ8nYmyjtMRYmIrldBONn4Tu4I40AFVrNqdqO3Ir4yxw52Rrv2G-6ZyHCrgX65SmH481l_k_HUkuJFn12mCAQ-lK7hhMHLKYglI3uP9GLYszGjePZuS41GwBz7CcbToRTLWfMs4YcRQixq1l0JFQ9UCIB0Wx447p4LYzwDpdqAuuxucZem_K1I00oVxvm3z5NCOgSJIK69Z7SPXmahjM1AlGtKuYJl_Oqj_7DZdMet9iccaaMEKKShe"
-            alt="Hamburguesa de pollo con chile y limón"
+            src="/menu/hamburguesa-arrachera.jpeg"
+            alt="Hamburguesa Arrachera con papas a la francesa"
             fill
             className="object-cover transition-transform duration-700 group-hover:scale-105"
           />
           <div className="absolute inset-0 bg-black/50 group-hover:bg-black/30 transition-colors duration-500" />
           <div className="absolute inset-0 flex flex-col justify-center items-center text-center p-8">
             <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-tertiary uppercase tracking-tighter leading-none mb-3">
-              Burger Chile-Limón
+              Hamburguesa<br />Arrachera
             </h3>
             <div className="h-1 w-10 bg-primary rounded-full mb-3" />
             <p className="text-tertiary/80 font-body text-sm">
-              Ácida, picante y peligrosamente crujiente.
+              100% carne, jalapeños y queso derretido.
             </p>
           </div>
         </div>
@@ -361,21 +361,21 @@ function SecretProcess() {
       title: "Marinada 24h",
       desc: "Combinación secreta de especias y hierbas durante un día entero.",
       icon: "schedule",
-      img: "https://lh3.googleusercontent.com/aida-public/AB6AXuCAU7GyKHGXXaTDIt4oGPFOf9fncerxl9QK0HDS3FwcYcIThLxKPp54o4Z5h6BplA9rhROEIAReVicS6kwqEaqgZVZ4XuWn6mu5k7bxWWkXGHOpXqhmImV0ILwlYvYcNQB4lBpT8-Rc5zAF8DIyh-8YdM8rXXXVlQ70--v2DqwoBop3PKR1z9wLfx2SvVSzjIQBnCJYWlyja36d-34ypiaHndAsac4LeVHl_xGXPKA5FA99ycxt9zEuEQnZq_zgohBTb1engWNzjBMI",
+      img: "/menu/pollo-frito.jpeg",
     },
     {
       num: "02",
       title: "Doble Empanizado",
       desc: "Mezcla propia de 11 especias secretas y trigo selecto para las Crestas Crujientes.",
       icon: "texture",
-      img: "https://lh3.googleusercontent.com/aida-public/AB6AXuA-GHz1f7jQS9j8DOS3qvEEOSNq7rKqi9_iiY_6in4K7WqhUl2Fbc_jJasoA2eUDYSuW_Hyq1Uk9Ykp6ciT8qyHWuMAWX1YjIFAnT7oKSD69zg4qOGPJT_jK0DXNwP6yDdI_Rgbjkx2LQnaADHf_aYLLFSXQ36iX9dkyJkgesPMkTWifPPudHqV4Yfy-2fYZk506s1SHXrnkU3prUsUOkVlrsH_QkmHqLQSUBmSW_MCNEHyU0ZtFghmxKImDdP0z4eWHZ9_W_qXBdI9",
+      img: "/menu/nuggets.jpeg",
     },
     {
       num: "03",
       title: "Calor de Precisión",
       desc: "Monitoreo constante para asegurar 0% aguado, 100% crujiente.",
       icon: "thermostat",
-      img: "https://lh3.googleusercontent.com/aida-public/AB6AXuDfCDvXSGAMVc1zekZgE-87RPkdoFbsh-zqT6kQaRSuHHcRTHhpZRe6-WNxlQhTNhpxh_nZJVuaseYRHwNEdDJh9hBnJJgMOsLBPZ0Im5yz6dCo76uL5PvC6sINHfzGQKp35bkxe91ODuyQcToBNYmq-cFV5LQwwaqlHUatVF_U0yejs3ANLHQaSrPpIX5up_ABP7nmGMR8KBGhzxeoqFhZgiX-pfZz5DclJJvajlV4qmpwqfviTQnf7I3Z87lQxnYk1-f2wuTckDN0",
+      img: "/menu/boneless-dip.jpeg",
     },
   ];
 
