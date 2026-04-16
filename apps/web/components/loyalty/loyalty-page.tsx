@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,54 +10,97 @@ import { useSocket } from "@/hooks/useSocket";
 import type { LoyaltyEventItem, LoyaltyInfo } from "@pollon/types";
 import {
   ArrowLeft,
-  Award,
   CheckCircle2,
   Clock3,
   Gift,
   Loader2,
+  Plus,
+  QrCode,
   ShoppingBag,
+  Smartphone,
   Sparkles,
-  TimerReset,
+  Wallet,
 } from "lucide-react";
 
 const FALLBACK_TARGET = 5;
+
+type WalletProvider = "apple" | "google";
+type WalletStatus = { tone: "info" | "success" | "error"; message: string } | null;
+type WalletPassResponse = {
+  url?: string;
+  passUrl?: string;
+  addUrl?: string;
+  message?: string;
+};
 
 function formatDate(date: string | null) {
   if (!date) return null;
 
   return new Intl.DateTimeFormat("es-MX", {
     day: "numeric",
-    month: "long",
+    month: "short",
     year: "numeric",
   }).format(new Date(date));
 }
 
 function getHistoryLabel(reason: string) {
-  if (reason.startsWith("order:#")) {
-    return `Compra ${reason.replace("order:", "")}`;
-  }
-
-  if (reason.startsWith("admin:")) {
-    return reason.replace("admin:", "Ajuste: ");
-  }
-
-  if (reason.startsWith("expire:")) {
-    return "Recompensa vencida";
-  }
-
+  if (reason.startsWith("order:#")) return `Compra ${reason.replace("order:", "")}`;
+  if (reason.startsWith("admin:")) return reason.replace("admin:", "Ajuste: ");
+  if (reason.startsWith("expire:")) return "Recompensa vencida";
   return reason;
 }
 
 function getRewardTitle(info: LoyaltyInfo) {
-  if (!info.pendingReward) return "Tu próxima recompensa";
+  if (!info.pendingReward) return "Producto gratis";
   if (!info.pendingProduct) return "Producto gratis listo";
   return `${info.pendingProduct.emoji ?? ""} ${info.pendingProduct.name} gratis`.trim();
+}
+
+function WalletButton({
+  provider,
+  loading,
+  onClick,
+}: {
+  provider: WalletProvider;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  const isApple = provider === "apple";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className={`flex min-h-14 items-center justify-center gap-3 rounded-lg px-4 py-3 text-left transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-70 ${
+        isApple
+          ? "border border-tertiary/20 bg-tertiary text-surface hover:bg-tertiary-dim"
+          : "border border-outline-variant/30 bg-surface-container-high text-tertiary hover:border-primary/40 hover:bg-surface-bright"
+      }`}
+    >
+      {loading ? (
+        <Loader2 size={20} className="animate-spin" />
+      ) : (
+        <Plus size={20} className={isApple ? "text-surface" : "text-primary"} />
+      )}
+      <span className="leading-tight">
+        <span className="block text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">
+          Agregar a
+        </span>
+        <span className="block font-headline text-base font-extrabold">
+          {isApple ? "Apple Wallet" : "Google Wallet"}
+        </span>
+      </span>
+    </button>
+  );
 }
 
 export function LoyaltyPage() {
   const queryClient = useQueryClient();
   const [token, setToken] = useState<string | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [walletLoading, setWalletLoading] = useState<WalletProvider | null>(null);
+  const [walletStatus, setWalletStatus] = useState<WalletStatus>(null);
 
   useEffect(() => {
     setToken(getToken());
@@ -97,7 +141,41 @@ export function LoyaltyPage() {
     role: token ? "customer" : undefined,
   });
 
-  if (!isAuthReady) {
+  async function handleWalletPass(provider: WalletProvider) {
+    if (!token) return;
+
+    setWalletLoading(provider);
+    setWalletStatus(null);
+
+    try {
+      const response = await api.post<WalletPassResponse>(
+        `/api/loyalty/pass/${provider}`,
+        {},
+        token
+      );
+      const walletUrl = response.url || response.passUrl || response.addUrl;
+
+      if (walletUrl) {
+        window.location.assign(walletUrl);
+        return;
+      }
+
+      setWalletStatus({
+        tone: "success",
+        message: response.message || "Tu pase de Wallet está listo.",
+      });
+    } catch {
+      setWalletStatus({
+        tone: "info",
+        message:
+          "Los botones ya quedaron listos. Falta conectar certificados de Apple Wallet y Google Wallet para emitir el pase.",
+      });
+    } finally {
+      setWalletLoading(null);
+    }
+  }
+
+  if (!isAuthReady || isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface text-on-surface">
         <div className="flex items-center gap-3 text-on-surface-variant">
@@ -111,7 +189,7 @@ export function LoyaltyPage() {
   if (!token) {
     return (
       <main className="min-h-screen bg-surface px-5 py-8 text-on-surface">
-        <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col justify-center">
+        <div className="mx-auto flex min-h-[72vh] w-full max-w-md flex-col justify-center">
           <Link
             href="/menu"
             className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary"
@@ -122,14 +200,13 @@ export function LoyaltyPage() {
 
           <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-6">
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/15 text-primary">
-              <Gift size={26} />
+              <Wallet size={26} />
             </div>
             <h1 className="font-headline text-3xl font-extrabold text-tertiary">
-              Tarjeta de lealtad
+              Tu tarjeta Pollón
             </h1>
             <p className="mt-3 leading-relaxed text-on-surface-variant">
-              Inicia sesión para ver tus compras acumuladas, recompensas listas y
-              vencimientos en tiempo real.
+              Entra para ver tus compras, recompensas y Wallet.
             </p>
             <Link
               href="/menu"
@@ -143,21 +220,10 @@ export function LoyaltyPage() {
     );
   }
 
-  if (isLoading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-surface text-on-surface">
-        <div className="flex items-center gap-3 text-on-surface-variant">
-          <Loader2 size={24} className="animate-spin text-primary" />
-          Cargando tu tarjeta
-        </div>
-      </main>
-    );
-  }
-
   if (isError || !info) {
     return (
       <main className="min-h-screen bg-surface px-5 py-8 text-on-surface">
-        <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col justify-center">
+        <div className="mx-auto flex min-h-[72vh] w-full max-w-md flex-col justify-center">
           <Link
             href="/menu"
             className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary"
@@ -182,208 +248,264 @@ export function LoyaltyPage() {
   const progress = Math.min(info.pendingReward ? target : info.progress, target);
   const progressPercent = Math.round((progress / target) * 100);
   const expiresAt = formatDate(info.rewardExpiresAt);
-  const earnedAt = formatDate(info.rewardEarnedAt);
-  const usedRewards = Math.max(info.freeProductsUsed, 0);
-  const earnedRewards = Math.max(info.freeProductsEarned, 0);
+  const recentHistory = history.slice(0, 4);
+  const rewardLabel = getRewardTitle(info);
 
   return (
-    <main className="min-h-screen bg-surface text-on-surface">
-      <section className="border-b border-outline-variant/10 bg-surface-container-low px-5 py-6">
-        <div className="mx-auto max-w-5xl">
-          <Link
-            href="/menu"
-            className="mb-8 inline-flex items-center gap-2 text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary"
-          >
-            <ArrowLeft size={18} />
-            Volver al menú
-          </Link>
+    <main className="min-h-screen overflow-hidden bg-surface text-on-surface">
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(115deg,rgba(249,115,22,0.14),transparent_32%),linear-gradient(180deg,rgba(250,204,21,0.08),transparent_42%)]" />
+      <div className="pointer-events-none fixed inset-0 grain opacity-70" />
 
-          <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
-            <div>
-              <p className="mb-3 inline-flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-bold uppercase text-primary">
-                <Sparkles size={14} />
-                Tarjeta de lealtad
-              </p>
-              <h1 className="font-headline text-4xl font-extrabold leading-tight text-tertiary sm:text-5xl">
-                5 compras y tu siguiente premio va por la casa.
-              </h1>
-              <p className="mt-4 max-w-2xl leading-relaxed text-on-surface-variant">
-                Acumula compras entregadas. Al completar cinco, Pollón elige un
-                producto gratis basado en lo que más pides y lo aplica en tu
-                próximo pedido.
-              </p>
-            </div>
+      <section className="relative mx-auto max-w-6xl px-5 py-6 sm:py-8 lg:px-8">
+        <Link
+          href="/menu"
+          className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary"
+        >
+          <ArrowLeft size={18} />
+          Volver al menú
+        </Link>
 
-            <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-on-surface-variant">
-                    Compras acumuladas
-                  </p>
-                  <p className="mt-1 font-headline text-4xl font-extrabold text-primary">
-                    {info.completedOrders}
-                  </p>
-                </div>
-                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-secondary/15 text-secondary">
-                  <ShoppingBag size={25} />
-                </div>
+        <div className="grid gap-7 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+          <div className="max-w-xl">
+            <p className="mb-4 inline-flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-bold uppercase text-primary">
+              <Sparkles size={14} />
+              Club Pollón
+            </p>
+            <h1 className="font-headline text-4xl font-extrabold leading-[0.95] text-tertiary sm:text-5xl lg:text-6xl">
+              Tu tarjeta digital.
+            </h1>
+            <p className="mt-4 max-w-md text-lg leading-relaxed text-on-surface-variant">
+              Cinco compras entregadas desbloquean un producto gratis. La
+              recompensa vence en seis meses.
+            </p>
+
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              <div className="rounded-lg border border-outline-variant/20 bg-surface-container/80 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">
+                  Avance
+                </p>
+                <p className="mt-1 font-headline text-2xl font-extrabold text-primary">
+                  {progress}/{target}
+                </p>
               </div>
-              <div className="mt-5 h-3 overflow-hidden rounded bg-surface-variant">
-                <div
-                  className="h-full rounded bg-primary transition-all duration-500"
-                  style={{ width: `${progressPercent}%` }}
-                />
+              <div className="rounded-lg border border-outline-variant/20 bg-surface-container/80 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">
+                  Ganadas
+                </p>
+                <p className="mt-1 font-headline text-2xl font-extrabold text-secondary">
+                  {info.freeProductsEarned}
+                </p>
               </div>
-              <div className="mt-3 flex items-center justify-between text-sm text-on-surface-variant">
-                <span>
-                  {progress} de {target}
-                </span>
-                <span>
-                  {info.pendingReward
-                    ? "Recompensa lista"
-                    : `Faltan ${info.ordersToNext} compra${info.ordersToNext === 1 ? "" : "s"}`}
-                </span>
+              <div className="rounded-lg border border-outline-variant/20 bg-surface-container/80 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-on-surface-variant">
+                  Usadas
+                </p>
+                <p className="mt-1 font-headline text-2xl font-extrabold text-tertiary">
+                  {info.freeProductsUsed}
+                </p>
               </div>
             </div>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-4 rounded-lg bg-primary/10 blur-2xl" />
+            <div className="relative overflow-hidden rounded-lg border border-primary/30 bg-[linear-gradient(140deg,#3a1706_0%,#17120f_48%,#050505_100%)] p-5 shadow-2xl sm:p-6">
+              <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#F97316,#FACC15,#F97316)]" />
+              <div className="absolute -right-16 top-10 h-40 w-56 rotate-12 border border-primary/20" />
+              <div className="absolute bottom-0 left-0 h-28 w-full bg-[repeating-linear-gradient(135deg,rgba(250,204,21,0.08)_0,rgba(250,204,21,0.08)_1px,transparent_1px,transparent_12px)]" />
+
+              <div className="relative z-10">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 overflow-hidden rounded-lg border border-primary/30 bg-surface">
+                      <Image
+                        src="/pollon-logo.jpg"
+                        alt="Pollón"
+                        width={64}
+                        height={64}
+                        className="h-full w-full object-cover"
+                        priority
+                      />
+                    </div>
+                    <div>
+                      <p className="font-headline text-xl font-extrabold tracking-tight text-tertiary">
+                        POLLÓN
+                      </p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+                        Tarjeta de lealtad
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-secondary/30 bg-secondary/10 px-3 py-2 text-right">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-secondary">
+                      Estado
+                    </p>
+                    <p className="text-sm font-extrabold text-tertiary">
+                      {info.pendingReward ? "Lista" : "Activa"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-10">
+                  <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">
+                    Próximo premio
+                  </p>
+                  <h2 className="mt-2 font-headline text-3xl font-extrabold leading-none text-tertiary sm:text-4xl">
+                    {rewardLabel}
+                  </h2>
+                  <p className="mt-3 max-w-md text-sm leading-relaxed text-on-surface-variant">
+                    {info.pendingReward
+                      ? "Se descuenta automáticamente en tu próximo pedido."
+                      : `Faltan ${info.ordersToNext} compra${info.ordersToNext === 1 ? "" : "s"} para desbloquearlo.`}
+                  </p>
+                </div>
+
+                <div className="mt-7">
+                  <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-[0.14em] text-on-surface-variant">
+                    <span>Compras</span>
+                    <span>{progressPercent}%</span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-2">
+                    {Array.from({ length: target }).map((_, index) => {
+                      const filled = index < progress;
+                      return (
+                        <div
+                          key={index}
+                          className={`h-11 rounded-lg border transition-colors ${
+                            filled
+                              ? "border-primary bg-primary text-on-primary"
+                              : "border-outline-variant/40 bg-surface/45 text-on-surface-variant"
+                          }`}
+                        >
+                          <div className="flex h-full items-center justify-center">
+                            {filled ? <CheckCircle2 size={18} /> : index + 1}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-7 flex items-end justify-between gap-4 border-t border-outline-variant/20 pt-5">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-variant">
+                      Vigencia
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-tertiary">
+                      {expiresAt ? `Vence ${expiresAt}` : "6 meses al ganar"}
+                    </p>
+                  </div>
+                  <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-tertiary/20 bg-tertiary text-surface">
+                    <QrCode size={34} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <WalletButton
+                provider="apple"
+                loading={walletLoading === "apple"}
+                onClick={() => void handleWalletPass("apple")}
+              />
+              <WalletButton
+                provider="google"
+                loading={walletLoading === "google"}
+                onClick={() => void handleWalletPass("google")}
+              />
+            </div>
+
+            {walletStatus && (
+              <div
+                className={`mt-3 rounded-lg border px-4 py-3 text-sm ${
+                  walletStatus.tone === "success"
+                    ? "border-primary/30 bg-primary/10 text-tertiary"
+                    : "border-outline-variant/30 bg-surface-container text-on-surface-variant"
+                }`}
+              >
+                {walletStatus.message}
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-5xl gap-5 px-5 py-8 lg:grid-cols-[1fr_0.8fr]">
-        <div className="space-y-5">
-          <article className="rounded-lg border border-outline-variant/20 bg-surface-container p-5">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                  <Gift size={26} />
-                </div>
-                <p className="text-sm font-bold uppercase text-primary">
-                  {info.pendingReward ? "Disponible ahora" : "En progreso"}
-                </p>
-                <h2 className="mt-2 font-headline text-2xl font-extrabold text-tertiary">
-                  {getRewardTitle(info)}
-                </h2>
-                <p className="mt-3 max-w-xl leading-relaxed text-on-surface-variant">
-                  {info.pendingReward
-                    ? "Tu producto gratis se descuenta automáticamente cuando hagas tu próximo pedido."
-                    : `Completa ${info.ordersToNext} compra${info.ordersToNext === 1 ? "" : "s"} más para desbloquear tu producto gratis.`}
-                </p>
-              </div>
-
-              <div className="rounded-lg border border-outline-variant/20 bg-surface-container-high p-4 sm:min-w-48">
-                <div className="flex items-center gap-2 text-sm font-bold text-secondary">
-                  <TimerReset size={17} />
-                  Vigencia
-                </div>
-                <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-                  {expiresAt
-                    ? `Vence el ${expiresAt}.`
-                    : "Cada recompensa vence 6 meses después de ganarla."}
-                </p>
-                {earnedAt && (
-                  <p className="mt-2 text-xs text-on-surface-variant/70">
-                    Ganada el {earnedAt}.
-                  </p>
-                )}
-              </div>
+      <section className="relative mx-auto grid max-w-6xl gap-4 px-5 pb-10 lg:grid-cols-[0.85fr_1.15fr] lg:px-8">
+        <article className="rounded-lg border border-outline-variant/20 bg-surface-container/90 p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <Gift size={22} />
             </div>
-          </article>
-
-          <article className="rounded-lg border border-outline-variant/20 bg-surface-container p-5">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="font-headline text-xl font-extrabold text-tertiary">
-                  Historial
-                </h2>
-                <p className="text-sm text-on-surface-variant">
-                  Movimientos de tu tarjeta.
-                </p>
-              </div>
-              <Clock3 size={22} className="text-on-surface-variant" />
+            <div>
+              <h2 className="font-headline text-xl font-extrabold text-tertiary">
+                Resumen
+              </h2>
+              <p className="text-sm text-on-surface-variant">Lo importante, sin vueltas.</p>
             </div>
+          </div>
 
-            {history.length > 0 ? (
-              <div className="divide-y divide-outline-variant/15">
-                {history.map((event) => (
-                  <div key={event.id} className="flex items-center justify-between gap-4 py-4">
-                    <div>
-                      <p className="font-semibold text-tertiary">
-                        {getHistoryLabel(event.reason)}
-                      </p>
-                      <p className="mt-1 text-xs text-on-surface-variant">
-                        {formatDate(event.createdAt)}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded px-2.5 py-1 text-sm font-bold ${
-                        event.orderDelta >= 0
-                          ? "bg-primary/15 text-primary"
-                          : "bg-error/15 text-error"
-                      }`}
-                    >
-                      {event.orderDelta > 0 ? "+" : ""}
-                      {event.orderDelta}
-                    </span>
+          <div className="space-y-3 text-sm text-on-surface-variant">
+            <p className="flex items-center gap-3">
+              <ShoppingBag size={18} className="shrink-0 text-primary" />
+              {info.completedOrders} compras acumuladas.
+            </p>
+            <p className="flex items-center gap-3">
+              <Gift size={18} className="shrink-0 text-secondary" />
+              {info.pendingReward ? "Tienes recompensa lista." : "Producto gratis cada 5 compras."}
+            </p>
+            <p className="flex items-center gap-3">
+              <Smartphone size={18} className="shrink-0 text-primary" />
+              Progreso actualizado en tiempo real.
+            </p>
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-outline-variant/20 bg-surface-container/90 p-5">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-headline text-xl font-extrabold text-tertiary">
+                Últimos movimientos
+              </h2>
+              <p className="text-sm text-on-surface-variant">Tus compras recientes.</p>
+            </div>
+            <Clock3 size={22} className="text-on-surface-variant" />
+          </div>
+
+          {recentHistory.length > 0 ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {recentHistory.map((event) => (
+                <div
+                  key={event.id}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-outline-variant/15 bg-surface-container-high p-3"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-tertiary">
+                      {getHistoryLabel(event.reason)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-on-surface-variant">
+                      {formatDate(event.createdAt)}
+                    </p>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-outline-variant/30 bg-surface-container-high p-5 text-sm text-on-surface-variant">
-                Aún no hay movimientos. Tu primera compra entregada aparecerá aquí.
-              </div>
-            )}
-          </article>
-        </div>
-
-        <aside className="space-y-5">
-          <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-5">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-secondary/15 text-secondary">
-              <Award size={24} />
+                  <span
+                    className={`rounded px-2 py-1 text-sm font-bold ${
+                      event.orderDelta >= 0
+                        ? "bg-primary/15 text-primary"
+                        : "bg-error/15 text-error"
+                    }`}
+                  >
+                    {event.orderDelta > 0 ? "+" : ""}
+                    {event.orderDelta}
+                  </span>
+                </div>
+              ))}
             </div>
-            <h2 className="font-headline text-xl font-extrabold text-tertiary">
-              Reglas claras
-            </h2>
-            <div className="mt-5 space-y-4">
-              <div className="flex gap-3">
-                <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-primary" />
-                <p className="text-sm leading-relaxed text-on-surface-variant">
-                  Cada pedido entregado suma una compra.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-primary" />
-                <p className="text-sm leading-relaxed text-on-surface-variant">
-                  Cada cinco compras desbloquean un producto gratis.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-primary" />
-                <p className="text-sm leading-relaxed text-on-surface-variant">
-                  Las recompensas vencen a los seis meses.
-                </p>
-              </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-outline-variant/30 bg-surface-container-high p-4 text-sm text-on-surface-variant">
+              Tu primera compra entregada aparecerá aquí.
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4">
-              <p className="text-xs font-semibold uppercase text-on-surface-variant">
-                Ganadas
-              </p>
-              <p className="mt-2 font-headline text-3xl font-extrabold text-secondary">
-                {earnedRewards}
-              </p>
-            </div>
-            <div className="rounded-lg border border-outline-variant/20 bg-surface-container p-4">
-              <p className="text-xs font-semibold uppercase text-on-surface-variant">
-                Usadas
-              </p>
-              <p className="mt-2 font-headline text-3xl font-extrabold text-primary">
-                {usedRewards}
-              </p>
-            </div>
-          </div>
-        </aside>
+          )}
+        </article>
       </section>
     </main>
   );
