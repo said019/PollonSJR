@@ -2,11 +2,23 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useState, useEffect } from "react";
+import { getToken, clearTokens } from "@/lib/auth";
+import { AuthModal } from "./auth-modal";
+import { User, LogOut, Star } from "lucide-react";
 
 /* ────────────────────────────────────────────────────────────── */
 /*  NavBar — frosted glass with warm char tones                   */
 /* ────────────────────────────────────────────────────────────── */
-function NavBar() {
+function NavBar({
+  authed,
+  onLogin,
+  onLogout,
+}: {
+  authed: boolean;
+  onLogin: () => void;
+  onLogout: () => void;
+}) {
   return (
     <nav className="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/10">
       <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
@@ -34,21 +46,56 @@ function NavBar() {
           <a href="#proceso" className="text-on-surface-variant hover:text-tertiary transition-colors">
             El Proceso
           </a>
-          <a href="#rewards" className="text-on-surface-variant hover:text-tertiary transition-colors">
-            Rewards
-          </a>
+          {authed ? (
+            <Link href="/loyalty" className="text-secondary hover:text-secondary-fixed transition-colors flex items-center gap-1.5">
+              <Star size={14} />
+              Mi Lealtad
+            </Link>
+          ) : (
+            <a href="#rewards" className="text-on-surface-variant hover:text-tertiary transition-colors">
+              Rewards
+            </a>
+          )}
           <a href="#location" className="text-on-surface-variant hover:text-tertiary transition-colors">
             Ubicación
           </a>
         </div>
 
-        {/* CTA */}
-        <Link
-          href="/menu"
-          className="bg-primary text-on-primary px-5 py-2.5 rounded-xl font-headline font-bold text-sm tracking-tight hover:brightness-110 transition-all active:scale-95 glow-primary"
-        >
-          Ordenar Ya
-        </Link>
+        {/* Auth + CTA */}
+        <div className="flex items-center gap-3">
+          {authed ? (
+            <>
+              <Link
+                href="/loyalty"
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-secondary/30 text-xs font-headline font-bold text-secondary hover:bg-secondary/10 transition-colors"
+              >
+                <Star size={14} />
+                Mi Tarjeta
+              </Link>
+              <button
+                onClick={onLogout}
+                title="Cerrar sesión"
+                className="p-2 rounded-xl text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+              >
+                <LogOut size={18} />
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onLogin}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-headline font-bold text-on-surface hover:border-primary hover:text-primary transition-colors"
+            >
+              <User size={15} />
+              Entrar
+            </button>
+          )}
+          <Link
+            href="/menu"
+            className="bg-primary text-on-primary px-5 py-2.5 rounded-xl font-headline font-bold text-sm tracking-tight hover:brightness-110 transition-all active:scale-95 glow-primary"
+          >
+            Ordenar Ya
+          </Link>
+        </div>
       </div>
     </nav>
   );
@@ -730,9 +777,25 @@ function FloatingCartButton() {
 /*  Export                                                        */
 /* ────────────────────────────────────────────────────────────── */
 export function LandingPage() {
+  const [authed, setAuthed] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+
+  useEffect(() => {
+    setAuthed(!!getToken());
+  }, []);
+
+  const handleLogout = () => {
+    clearTokens();
+    setAuthed(false);
+  };
+
   return (
     <>
-      <NavBar />
+      <NavBar
+        authed={authed}
+        onLogin={() => setAuthOpen(true)}
+        onLogout={handleLogout}
+      />
       <main>
         <HeroSection />
         <MarqueeStrip />
@@ -743,6 +806,14 @@ export function LandingPage() {
       </main>
       <Footer />
       <FloatingCartButton />
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onSuccess={() => {
+          setAuthed(true);
+          setAuthOpen(false);
+        }}
+      />
     </>
   );
 }
