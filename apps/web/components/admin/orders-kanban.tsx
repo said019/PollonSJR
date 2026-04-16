@@ -6,9 +6,10 @@ import { getAdminToken } from "@/lib/auth";
 import { useSocket } from "@/hooks/useSocket";
 import type { OrderSummary, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
-import { Clock, ChefHat, Package, Truck, CheckCircle } from "lucide-react";
-import { useCallback } from "react";
+import { Clock, ChefHat, Package, Truck, CheckCircle, Eye } from "lucide-react";
+import { useCallback, useState } from "react";
 import { ConnectionStatus } from "./connection-status";
+import { OrderDetailModal } from "./order-detail-modal";
 
 const COLUMNS: { status: OrderStatusType; label: string; icon: React.ReactNode; color: string }[] = [
   { status: "RECEIVED", label: "Recibidos", icon: <Clock size={18} />, color: "border-blue-400" },
@@ -30,6 +31,7 @@ export function OrdersKanban() {
   const adminToken = getAdminToken();
   const qc = useQueryClient();
   const socketAuth = { token: adminToken || undefined, role: "admin" as const };
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
 
   const { data: orders = [] } = useQuery({
     queryKey: ["admin-active-orders"],
@@ -84,7 +86,16 @@ export function OrdersKanban() {
                 {colOrders.map((order) => (
                   <div
                     key={order.id}
-                    className="bg-surface-container rounded-lg p-3 border border-outline-variant/20"
+                    onClick={() => setDetailOrderId(order.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setDetailOrderId(order.id);
+                      }
+                    }}
+                    className="group cursor-pointer rounded-lg border border-outline-variant/20 bg-surface-container p-3 transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10"
                   >
                     <div className="flex justify-between items-start mb-1">
                       <span className="font-bold text-sm">#{order.orderNumber}</span>
@@ -100,15 +111,24 @@ export function OrdersKanban() {
                       {new Date(order.createdAt).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
                     </p>
 
-                    {NEXT_STATUS[col.status] && (
-                      <button
-                        onClick={() => advance(order.id, col.status)}
-                        disabled={advanceMut.isPending}
-                        className="mt-2 w-full bg-primary text-on-primary text-xs py-2 rounded-lg font-medium disabled:opacity-50"
-                      >
-                        Mover a → {COLUMNS.find((c) => c.status === NEXT_STATUS[col.status])?.label}
-                      </button>
-                    )}
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-outline-variant/25 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant transition-colors group-hover:border-primary/40 group-hover:text-primary">
+                        <Eye size={11} />
+                        Ver detalle
+                      </span>
+                      {NEXT_STATUS[col.status] && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            advance(order.id, col.status);
+                          }}
+                          disabled={advanceMut.isPending}
+                          className="flex-[1.6] bg-primary text-on-primary text-[10px] py-1.5 rounded-lg font-semibold uppercase tracking-wider disabled:opacity-50 transition-all hover:brightness-110"
+                        >
+                          Mover → {COLUMNS.find((c) => c.status === NEXT_STATUS[col.status])?.label}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
 
@@ -120,6 +140,11 @@ export function OrdersKanban() {
           );
         })}
       </div>
+
+      <OrderDetailModal
+        orderId={detailOrderId}
+        onClose={() => setDetailOrderId(null)}
+      />
     </div>
   );
 }

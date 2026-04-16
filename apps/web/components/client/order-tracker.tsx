@@ -7,15 +7,37 @@ import { useSocket } from "@/hooks/useSocket";
 import type { OrderDetail, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState, useEffect } from "react";
-import { Banknote, CheckCircle, ChefHat, CreditCard, Landmark, Package, Truck } from "lucide-react";
-import { motion } from "framer-motion";
+import {
+  ArrowLeft,
+  Banknote,
+  CheckCircle,
+  ChefHat,
+  CreditCard,
+  Home,
+  Landmark,
+  Package,
+  ShoppingBag,
+  Sparkles,
+  Truck,
+  X,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 
-const STATUS_STEPS: { status: OrderStatusType; label: string; icon: React.ReactNode }[] = [
-  { status: "RECEIVED", label: "Recibido", icon: <CheckCircle size={20} /> },
-  { status: "PREPARING", label: "Preparando", icon: <ChefHat size={20} /> },
-  { status: "READY", label: "Listo", icon: <Package size={20} /> },
-  { status: "ON_THE_WAY", label: "En camino", icon: <Truck size={20} /> },
-  { status: "DELIVERED", label: "Entregado", icon: <CheckCircle size={20} /> },
+type Step = {
+  status: OrderStatusType;
+  label: string;
+  short: string;
+  icon: React.ReactNode;
+  vibe: string; // short tagline shown on the Rappi-style pill
+};
+
+const STATUS_STEPS: Step[] = [
+  { status: "RECEIVED",   label: "Recibido",   short: "Recibido",   icon: <CheckCircle size={18} />, vibe: "Recibimos tu pedido" },
+  { status: "PREPARING",  label: "Preparando", short: "Cocinando",  icon: <ChefHat size={18} />,     vibe: "Estamos cocinando con fuego" },
+  { status: "READY",      label: "Listo",      short: "Listo",      icon: <Package size={18} />,     vibe: "Tu pedido está listo" },
+  { status: "ON_THE_WAY", label: "En camino",  short: "En camino",  icon: <Truck size={18} />,       vibe: "Tu pedido ya va en camino" },
+  { status: "DELIVERED",  label: "Entregado",  short: "Entregado",  icon: <CheckCircle size={18} />, vibe: "Disfruta tu pedido" },
 ];
 
 const PAYMENT_LABELS = {
@@ -27,6 +49,7 @@ const PAYMENT_LABELS = {
 export function OrderTracker({ orderId }: { orderId: string }) {
   const token = getToken();
   const [currentStatus, setCurrentStatus] = useState<OrderStatusType | null>(null);
+  const [showExpandedTracker, setShowExpandedTracker] = useState(false);
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["order", orderId],
@@ -43,37 +66,244 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   });
 
   const activeStep = STATUS_STEPS.findIndex((s) => s.status === currentStatus);
+  const currentStep = activeStep >= 0 ? STATUS_STEPS[activeStep] : STATUS_STEPS[0];
+  const progressPct = activeStep < 0 ? 0 : ((activeStep + 1) / STATUS_STEPS.length) * 100;
+  const isDelivered = currentStatus === "DELIVERED";
+  const isCancelled = currentStatus === "CANCELLED";
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-surface">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
 
   if (!order) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface">
-        <p className="text-on-surface-variant">Pedido no encontrado</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
+        <div className="text-5xl opacity-50">🤔</div>
+        <p className="text-on-surface-variant">Pedido no encontrado.</p>
+        <Link
+          href="/"
+          className="mt-2 inline-flex items-center gap-2 rounded-2xl border border-outline-variant/30 bg-surface-container px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-tertiary transition-all hover:border-primary hover:text-primary"
+        >
+          <Home size={16} />
+          Volver al inicio
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-surface">
-      <header className="bg-surface-container-low/90 backdrop-blur-md border-b border-outline-variant/20 p-4">
-        <div className="max-w-lg mx-auto">
-          <h1 className="text-lg font-headline font-bold text-on-surface">Pedido #{order.orderNumber}</h1>
-          <p className="text-sm text-on-surface-variant">{order.type === "DELIVERY" ? "Envío a domicilio" : "Recoger en tienda"}</p>
+    <div className="relative min-h-screen bg-surface">
+      <div className="pointer-events-none fixed inset-0 z-0 grain" />
+
+      {/* Header with back + home navigation */}
+      <header className="sticky top-0 z-30 border-b border-outline-variant/10 bg-surface/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              href="/"
+              aria-label="Volver al inicio"
+              className="flex-shrink-0 rounded-xl border border-outline-variant/20 bg-surface-container p-2 text-on-surface-variant transition-all hover:border-primary/40 hover:text-primary"
+            >
+              <ArrowLeft size={18} />
+            </Link>
+            <div className="min-w-0">
+              <h1 className="font-headline text-base font-extrabold leading-tight tracking-tight text-tertiary">
+                Pedido #{order.orderNumber}
+              </h1>
+              <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant/60">
+                {order.type === "DELIVERY" ? "Envío a domicilio" : "Recoger en tienda"}
+              </p>
+            </div>
+          </div>
+
+          <Link
+            href="/menu"
+            className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 font-headline text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20"
+          >
+            <ShoppingBag size={14} />
+            <span className="hidden sm:inline">Seguir comprando</span>
+            <span className="sm:hidden">Menú</span>
+          </Link>
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6">
+      <main className="relative z-10 mx-auto max-w-2xl px-4 pb-32 pt-6">
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/*  Rappi-style status pill — clickable to open full view  */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        {!isCancelled && currentStatus !== "PENDING_PAYMENT" && (
+          <motion.button
+            layout
+            onClick={() => setShowExpandedTracker(true)}
+            className="group mb-5 w-full overflow-hidden rounded-3xl border border-primary/25 bg-gradient-to-br from-surface-container-high to-surface-container text-left transition-all hover:border-primary/40"
+            whileTap={{ scale: 0.98 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+          >
+            <div className="flex items-center gap-4 p-4 sm:p-5">
+              {/* Animated status icon */}
+              <div className="relative flex-shrink-0">
+                <motion.div
+                  key={currentStatus}
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", damping: 15, stiffness: 220 }}
+                  className={`relative flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg ${
+                    isDelivered
+                      ? "bg-gradient-to-br from-green-400 to-green-600 text-white"
+                      : "bg-gradient-to-br from-primary to-primary-dim text-on-primary"
+                  }`}
+                >
+                  <motion.div
+                    animate={
+                      isDelivered
+                        ? { rotate: 0 }
+                        : { rotate: [0, -8, 8, -5, 5, 0] }
+                    }
+                    transition={
+                      isDelivered
+                        ? { duration: 0 }
+                        : { duration: 1.8, repeat: Infinity, repeatDelay: 1.5 }
+                    }
+                  >
+                    {currentStep.icon}
+                  </motion.div>
+                </motion.div>
+
+                {/* Pulse ring for in-progress states */}
+                {!isDelivered && (
+                  <motion.span
+                    className="absolute inset-0 rounded-2xl border-2 border-primary"
+                    animate={{
+                      scale: [1, 1.25, 1],
+                      opacity: [0.6, 0, 0.6],
+                    }}
+                    transition={{
+                      duration: 2,
+                      repeat: Infinity,
+                      ease: "easeOut",
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-headline text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+                    {isDelivered ? "Completado" : "En curso"}
+                  </span>
+                  {!isDelivered && (
+                    <motion.span
+                      className="flex h-1.5 w-1.5 rounded-full bg-primary"
+                      animate={{ opacity: [1, 0.3, 1] }}
+                      transition={{ duration: 1.2, repeat: Infinity }}
+                    />
+                  )}
+                </div>
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={currentStatus}
+                    initial={{ y: 8, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -8, opacity: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="mt-0.5 font-headline text-lg font-extrabold leading-tight text-tertiary sm:text-xl"
+                  >
+                    {currentStep.vibe}
+                  </motion.p>
+                </AnimatePresence>
+                <p className="mt-0.5 text-[11px] font-medium text-on-surface-variant/70">
+                  Toca para ver el detalle del estado
+                </p>
+              </div>
+
+              <motion.div
+                className="flex-shrink-0 text-on-surface-variant/50 transition-colors group-hover:text-primary"
+                animate={{ x: [0, 3, 0] }}
+                transition={{ duration: 1.8, repeat: Infinity }}
+              >
+                <Sparkles size={18} />
+              </motion.div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="relative h-1.5 w-full bg-surface-variant/50">
+              <motion.div
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-primary via-primary to-secondary"
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+              />
+              {!isDelivered && (
+                <motion.div
+                  className="absolute inset-y-0 h-full w-16 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                  animate={{ x: ["-100%", "400%"] }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+                />
+              )}
+            </div>
+
+            {/* Tiny step dots */}
+            <div className="flex items-center justify-between px-4 py-2.5 sm:px-5">
+              {STATUS_STEPS.map((step, i) => {
+                const done = i <= activeStep;
+                return (
+                  <div
+                    key={step.status}
+                    className="flex flex-1 flex-col items-center gap-1"
+                  >
+                    <motion.div
+                      initial={false}
+                      animate={{
+                        scale: done ? 1 : 0.8,
+                        backgroundColor: done ? "#F97316" : "#44403C",
+                      }}
+                      className="h-2 w-2 rounded-full"
+                    />
+                    <span
+                      className={`text-[9px] font-bold uppercase tracking-wider ${
+                        done ? "text-primary" : "text-on-surface-variant/40"
+                      }`}
+                    >
+                      {step.short}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.button>
+        )}
+
+        {/* Cancelled banner */}
+        {isCancelled && (
+          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-error/30 bg-error/10 p-5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-error/20 text-error">
+              <X size={22} />
+            </div>
+            <div>
+              <h2 className="font-headline font-bold text-error">Pedido cancelado</h2>
+              <p className="text-sm text-on-surface-variant/70">
+                Si fue un error, contáctanos por WhatsApp.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Payment card */}
         {order.paymentMethod && (
-          <div className="bg-surface-container-high rounded-xl p-5 mb-6 border border-outline-variant/20">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-5 rounded-2xl border border-outline-variant/15 bg-surface-container p-5"
+          >
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
                 {order.paymentMethod === "CARD" ? (
                   <CreditCard size={19} />
                 ) : order.paymentMethod === "TRANSFER" ? (
@@ -83,10 +313,10 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                 )}
               </div>
               <div>
-                <h2 className="font-headline font-bold text-on-surface">
+                <h2 className="font-headline font-bold text-tertiary">
                   {PAYMENT_LABELS[order.paymentMethod]}
                 </h2>
-                <p className="text-sm text-on-surface-variant">
+                <p className="text-sm text-on-surface-variant/80">
                   {order.paymentMethod === "TRANSFER"
                     ? "Usa estos datos para completar tu pago."
                     : order.paymentMethod === "CASH"
@@ -99,7 +329,7 @@ export function OrderTracker({ orderId }: { orderId: string }) {
             </div>
 
             {order.paymentMethod === "TRANSFER" && order.transferInfo && (
-              <div className="mt-4 grid gap-2 rounded-lg bg-surface p-3 text-sm">
+              <div className="mt-4 grid gap-2 rounded-xl bg-surface p-3.5 text-sm">
                 <div className="flex justify-between gap-3">
                   <span className="text-on-surface-variant">Banco</span>
                   <span className="font-semibold text-on-surface">{order.transferInfo.bank}</span>
@@ -128,54 +358,33 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
 
-        {/* Status tracker */}
-        {currentStatus !== "PENDING_PAYMENT" && currentStatus !== "CANCELLED" && (
-          <div className="bg-surface-container-high rounded-xl p-6 mb-6 border border-outline-variant/20">
-            <h2 className="font-headline font-bold mb-4 text-on-surface">Estado del pedido</h2>
-            <div className="space-y-4">
-              {STATUS_STEPS.map((step, i) => {
-                const isActive = i <= activeStep;
-                const isCurrent = i === activeStep;
-                return (
-                  <motion.div
-                    key={step.status}
-                    className="flex items-center gap-3"
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                  >
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        isActive ? "bg-primary text-on-primary" : "bg-surface-variant text-on-surface-variant"
-                      } ${isCurrent ? "ring-2 ring-secondary" : ""}`}
-                    >
-                      {step.icon}
-                    </div>
-                    <span className={`text-sm ${isActive ? "font-semibold text-on-surface" : "text-on-surface-variant"}`}>
-                      {step.label}
-                    </span>
-                  </motion.div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Items */}
-        <div className="bg-surface-container-high rounded-xl p-6 border border-outline-variant/20">
-          <h2 className="font-headline font-bold mb-3 text-on-surface">Detalle</h2>
+        {/* Items detail */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="rounded-2xl border border-outline-variant/15 bg-surface-container p-5"
+        >
+          <h2 className="mb-3 font-headline font-bold text-tertiary">Detalle</h2>
           {order.items.map((item) => (
-            <div key={item.id} className="flex justify-between py-2 border-b border-outline-variant/10 last:border-0">
+            <div
+              key={item.id}
+              className="flex justify-between border-b border-outline-variant/10 py-2 last:border-0"
+            >
               <div>
                 <p className="text-sm font-medium text-on-surface">
                   {item.qty}x {item.productName}
-                  {item.variant && <span className="text-on-surface-variant ml-1">({item.variant})</span>}
+                  {item.variant && (
+                    <span className="ml-1 text-on-surface-variant">({item.variant})</span>
+                  )}
                 </p>
               </div>
-              <p className="text-sm font-bold text-on-surface">{formatCents(item.unitPrice * item.qty)}</p>
+              <p className="text-sm font-bold text-on-surface">
+                {formatCents(item.unitPrice * item.qty)}
+              </p>
             </div>
           ))}
 
@@ -190,13 +399,248 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                 <span>{formatCents(order.deliveryFee)}</span>
               </div>
             )}
-            <div className="flex justify-between text-lg font-bold pt-2 border-t border-outline-variant/20">
+            <div className="flex justify-between border-t border-outline-variant/20 pt-2 text-lg font-bold">
               <span className="text-on-surface">Total</span>
               <span className="text-primary">{formatCents(order.total)}</span>
             </div>
           </div>
-        </div>
+        </motion.div>
       </main>
+
+      {/* Sticky bottom CTA — always-visible exit */}
+      <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-10">
+        <div className="pointer-events-auto mx-auto flex max-w-2xl gap-2.5">
+          <Link
+            href="/"
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container/90 py-3.5 font-headline text-sm font-bold uppercase tracking-wider text-tertiary backdrop-blur-xl transition-all hover:border-primary/40 hover:text-primary"
+          >
+            <Home size={16} />
+            Inicio
+          </Link>
+          <Link
+            href="/menu"
+            className="flex flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 font-headline text-sm font-bold uppercase tracking-wider text-on-primary shadow-xl shadow-primary/30 transition-all active:scale-[0.98]"
+          >
+            <ShoppingBag size={16} />
+            Seguir comprando
+          </Link>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/*  Expanded Rappi-style modal — full status progression       */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <ExpandedTrackerModal
+        open={showExpandedTracker}
+        onClose={() => setShowExpandedTracker(false)}
+        activeStep={activeStep}
+        currentStep={currentStep}
+        isDelivered={isDelivered}
+        orderNumber={order.orderNumber}
+      />
     </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  ExpandedTrackerModal — bottom sheet with animated timeline    */
+/* ────────────────────────────────────────────────────────────── */
+function ExpandedTrackerModal({
+  open,
+  onClose,
+  activeStep,
+  currentStep,
+  isDelivered,
+  orderNumber,
+}: {
+  open: boolean;
+  onClose: () => void;
+  activeStep: number;
+  currentStep: Step;
+  isDelivered: boolean;
+  orderNumber: number;
+}) {
+  // Escape to close
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.6 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-40 bg-black"
+            onClick={onClose}
+          />
+
+          <motion.div
+            role="dialog"
+            aria-label="Estado del pedido"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ type: "spring", damping: 30, stiffness: 240 }}
+            className="fixed bottom-0 left-0 right-0 z-50 mx-auto flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-outline-variant/15 bg-surface-container shadow-2xl"
+          >
+            {/* Grabber */}
+            <div className="flex justify-center pt-3">
+              <div className="h-1 w-10 rounded-full bg-outline-variant/40" />
+            </div>
+
+            <div className="flex items-center justify-between px-5 py-4">
+              <div>
+                <span className="font-headline text-[10px] font-bold uppercase tracking-[0.25em] text-primary">
+                  Pedido #{orderNumber}
+                </span>
+                <h2 className="font-headline text-xl font-extrabold uppercase tracking-tighter text-tertiary">
+                  Estado del pedido
+                </h2>
+              </div>
+              <button
+                onClick={onClose}
+                aria-label="Cerrar"
+                className="rounded-xl border border-outline-variant/20 p-2 text-on-surface-variant transition-colors hover:bg-surface-variant hover:text-tertiary"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Vibe quote */}
+            <div className="mx-5 mb-4 rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/15 to-primary/5 p-4">
+              <div className="flex items-center gap-3">
+                <motion.div
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                    isDelivered
+                      ? "bg-green-500/20 text-green-400"
+                      : "bg-primary/25 text-primary"
+                  }`}
+                  animate={
+                    isDelivered
+                      ? { scale: 1 }
+                      : { scale: [1, 1.08, 1] }
+                  }
+                  transition={{ duration: 1.6, repeat: Infinity }}
+                >
+                  {currentStep.icon}
+                </motion.div>
+                <p className="font-headline text-sm font-bold text-tertiary sm:text-base">
+                  {currentStep.vibe}
+                </p>
+              </div>
+            </div>
+
+            {/* Timeline */}
+            <div className="scrollbar-hide overflow-y-auto px-5 pb-6">
+              <div className="relative">
+                {/* Connecting line */}
+                <div className="absolute left-[22px] top-6 bottom-6 w-0.5 bg-outline-variant/20" />
+                <motion.div
+                  className="absolute left-[22px] top-6 w-0.5 bg-gradient-to-b from-primary to-primary-dim"
+                  initial={{ height: 0 }}
+                  animate={{
+                    height: `calc(${(activeStep / (STATUS_STEPS.length - 1)) * 100}% - 12px)`,
+                  }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                />
+
+                <div className="space-y-5">
+                  {STATUS_STEPS.map((step, i) => {
+                    const isActive = i <= activeStep;
+                    const isCurrent = i === activeStep;
+                    return (
+                      <motion.div
+                        key={step.status}
+                        className="relative flex items-start gap-4"
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.08 * i, duration: 0.35 }}
+                      >
+                        <div className="relative z-10 flex-shrink-0">
+                          <motion.div
+                            initial={false}
+                            animate={{
+                              scale: isActive ? 1 : 0.88,
+                            }}
+                            className={`flex h-11 w-11 items-center justify-center rounded-xl border-2 transition-colors ${
+                              isActive
+                                ? "border-primary bg-primary text-on-primary shadow-lg shadow-primary/40"
+                                : "border-outline-variant/30 bg-surface-container-high text-on-surface-variant/50"
+                            }`}
+                          >
+                            {step.icon}
+                          </motion.div>
+
+                          {isCurrent && !isDelivered && (
+                            <motion.span
+                              className="absolute inset-0 rounded-xl border-2 border-primary"
+                              animate={{
+                                scale: [1, 1.5, 1],
+                                opacity: [0.8, 0, 0.8],
+                              }}
+                              transition={{
+                                duration: 1.8,
+                                repeat: Infinity,
+                                ease: "easeOut",
+                              }}
+                            />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1 pt-1.5">
+                          <h3
+                            className={`font-headline text-sm font-bold uppercase tracking-tight ${
+                              isActive ? "text-tertiary" : "text-on-surface-variant/50"
+                            }`}
+                          >
+                            {step.label}
+                          </h3>
+                          <p
+                            className={`mt-0.5 text-[12px] ${
+                              isActive ? "text-on-surface-variant/80" : "text-on-surface-variant/40"
+                            }`}
+                          >
+                            {step.vibe}
+                          </p>
+                          {isCurrent && !isDelivered && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.2 }}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-[10px] font-headline font-bold uppercase tracking-wider text-primary"
+                            >
+                              <motion.span
+                                className="h-1.5 w-1.5 rounded-full bg-primary"
+                                animate={{ opacity: [1, 0.3, 1] }}
+                                transition={{ duration: 1.2, repeat: Infinity }}
+                              />
+                              Actualmente
+                            </motion.div>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer tip */}
+              <p className="mt-6 text-center text-[11px] text-on-surface-variant/50">
+                El estado se actualiza en tiempo real
+              </p>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
