@@ -1,11 +1,11 @@
 "use client";
 
-import "leaflet/dist/leaflet.css";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
 import { formatCents } from "@pollon/utils";
 import type { DeliveryZonePublic, StoreLocationPublic, DeliveryResult } from "@pollon/types";
+import { StoreLocationMap, CoverageMap } from "./google-store-map";
 import {
   Save,
   Loader2,
@@ -19,7 +19,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 
 interface ZoneForm {
@@ -53,19 +53,11 @@ function AdminDeliveryPageInner() {
   const [storeAddress, setStoreAddress] = useState("");
   const [testMode, setTestMode] = useState(false);
   const [testResult, setTestResult] = useState<DeliveryResult | null>(null);
+  const [testMarker, setTestMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [expandedZone, setExpandedZone] = useState<number | null>(null);
   const [showZones, setShowZones] = useState(true);
 
-  const mapRef = useRef<L.Map | null>(null);
-  const storeMarkerRef = useRef<L.Marker | null>(null);
-  const testMarkerRef = useRef<L.Marker | null>(null);
-  const circlesRef = useRef<L.Circle[]>([]);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const storeMapRef = useRef<L.Map | null>(null);
-  const storeMapMarkerRef = useRef<L.Marker | null>(null);
-  const storeMapContainerRef = useRef<HTMLDivElement>(null);
-  const initializedRef = useRef(false);
-  const storeMapInitRef = useRef(false);
+  // Map state is now handled by Google Maps components (google-store-map.tsx)
 
   // Stats computed from zoneList
   const activeZones = zoneList.filter((z) => z.active);
@@ -89,160 +81,7 @@ function AdminDeliveryPageInner() {
     }
   }, [storeLocation]);
 
-  const storeIcon = useCallback(() => {
-    const L = require("leaflet");
-    return L.divIcon({
-      html: '<div style="background:#DC2626;width:20px;height:20px;border-radius:50%;border:3px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3)"></div>',
-      iconSize: [20, 20],
-      iconAnchor: [10, 10],
-      className: "",
-    });
-  }, []);
-
-  // Initialize main coverage map
-  useEffect(() => {
-    if (initializedRef.current || !mapContainerRef.current) return;
-    initializedRef.current = true;
-
-    const L = require("leaflet");
-
-    const map = L.map(mapContainerRef.current).setView([storeLat, storeLng], 13);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
-
-    const marker = L.marker([storeLat, storeLng], {
-      icon: storeIcon(),
-    }).addTo(map);
-
-    mapRef.current = map;
-    storeMarkerRef.current = marker;
-
-    map.on("click", (e: L.LeafletMouseEvent) => {
-      if (!testMode) return;
-      handleTestClick(e.latlng.lat, e.latlng.lng);
-    });
-
-    return () => {
-      map.remove();
-      initializedRef.current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Initialize mini store location map
-  useEffect(() => {
-    if (storeMapInitRef.current || !storeMapContainerRef.current) return;
-    storeMapInitRef.current = true;
-
-    const L = require("leaflet");
-
-    const map = L.map(storeMapContainerRef.current).setView([storeLat, storeLng], 15);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "",
-    }).addTo(map);
-
-    const marker = L.marker([storeLat, storeLng], {
-      draggable: true,
-      icon: storeIcon(),
-    }).addTo(map);
-
-    marker.on("dragend", () => {
-      const pos = marker.getLatLng();
-      setStoreLat(pos.lat);
-      setStoreLng(pos.lng);
-      reverseGeocode(pos.lat, pos.lng);
-    });
-
-    map.on("click", (e: L.LeafletMouseEvent) => {
-      marker.setLatLng(e.latlng);
-      setStoreLat(e.latlng.lat);
-      setStoreLng(e.latlng.lng);
-      reverseGeocode(e.latlng.lat, e.latlng.lng);
-    });
-
-    storeMapRef.current = map;
-    storeMapMarkerRef.current = marker;
-
-    return () => {
-      map.remove();
-      storeMapInitRef.current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Sync store marker on main map
-  useEffect(() => {
-    if (storeMarkerRef.current) {
-      storeMarkerRef.current.setLatLng([storeLat, storeLng]);
-    }
-    if (storeMapMarkerRef.current) {
-      storeMapMarkerRef.current.setLatLng([storeLat, storeLng]);
-    }
-  }, [storeLat, storeLng]);
-
-  // Draw/hide zone circles
-  useEffect(() => {
-    if (!mapRef.current) return;
-    const L = require("leaflet");
-
-    circlesRef.current.forEach((c) => c.remove());
-    circlesRef.current = [];
-
-    if (!showZones) return;
-
-    const sorted = [...zoneList].sort((a, b) => b.maxKm - a.maxKm);
-    for (const zone of sorted) {
-      if (!zone.active) continue;
-      const circle = L.circle([storeLat, storeLng], {
-        radius: zone.maxKm * 1000,
-        color: zone.color,
-        fillColor: zone.color,
-        fillOpacity: 0.1,
-        weight: 2,
-      }).addTo(mapRef.current);
-      circle.bindTooltip(zone.name, { permanent: false });
-      circlesRef.current.push(circle);
-    }
-  }, [zoneList, storeLat, storeLng, showZones]);
-
-  const reverseGeocode = useCallback((lat: number, lng: number) => {
-    fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-      { headers: { "Accept-Language": "es" } }
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.display_name) setStoreAddress(data.display_name);
-      })
-      .catch(() => {});
-  }, []);
-
-  const handleTestClick = useCallback(
-    async (lat: number, lng: number) => {
-      const L = require("leaflet");
-
-      if (testMarkerRef.current) testMarkerRef.current.remove();
-
-      const marker = L.marker([lat, lng]).addTo(mapRef.current!);
-      testMarkerRef.current = marker;
-
-      try {
-        const result = await api.post<DeliveryResult>("/api/delivery/calculate", { lat, lng });
-        setTestResult(result);
-        marker
-          .bindPopup(
-            result.available
-              ? `<b>${result.zoneName}</b><br>${result.distanceKm} km · ${result.feeMXN}`
-              : `<b>Fuera de zona</b><br>${result.distanceKm} km`
-          )
-          .openPopup();
-      } catch {
-        setTestResult(null);
-      }
-    },
-    []
-  );
+  // Map rendering is now handled by google-store-map.tsx (StoreLocationMap + CoverageMap)
 
   // Mutations
   const saveZonesMut = useMutation({
@@ -292,17 +131,7 @@ function AdminDeliveryPageInner() {
     setZoneList(updated);
   };
 
-  const handleLocateStore = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude, longitude } = pos.coords;
-      setStoreLat(latitude);
-      setStoreLng(longitude);
-      storeMapRef.current?.setView([latitude, longitude], 15);
-      mapRef.current?.setView([latitude, longitude], 13);
-      reverseGeocode(latitude, longitude);
-    });
-  };
+  // "Mi ubicación" is now inside the StoreLocationMap component
 
   if (loadingZones || loadingStore) {
     return (
@@ -351,30 +180,24 @@ function AdminDeliveryPageInner() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left panel: config */}
         <div className="space-y-6">
-          {/* Store location with mini map */}
-          <div className="bg-surface-container-high rounded-xl border p-4 space-y-3">
+          {/* Store location with Google Maps + Places autocomplete */}
+          <div className="bg-surface-container-high rounded-xl border border-outline-variant/20 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold flex items-center gap-2">
+              <h2 className="font-headline font-semibold flex items-center gap-2">
                 <MapPin size={18} /> Ubicación del negocio
               </h2>
-              <button
-                onClick={handleLocateStore}
-                className="text-sm text-primary flex items-center gap-1"
-              >
-                <Navigation size={14} /> Mi ubicación
-              </button>
             </div>
-            <div
-              ref={storeMapContainerRef}
-              className="w-full h-[180px] rounded-lg overflow-hidden border"
+            <StoreLocationMap
+              lat={storeLat}
+              lng={storeLng}
+              address={storeAddress}
+              height={260}
+              onChange={(newLat, newLng, newAddr) => {
+                setStoreLat(newLat);
+                setStoreLng(newLng);
+                setStoreAddress(newAddr);
+              }}
             />
-            <p className="text-xs text-on-surface-variant truncate">
-              {storeAddress || "Arrastra el pin o haz clic en el mini mapa"}
-            </p>
-            <div className="flex gap-2 text-xs text-on-surface-variant">
-              <span>Lat: {storeLat.toFixed(6)}</span>
-              <span>Lng: {storeLng.toFixed(6)}</span>
-            </div>
           </div>
 
           {/* Zones */}
@@ -529,10 +352,7 @@ function AdminDeliveryPageInner() {
               <button
                 onClick={() => {
                   setTestMode(!testMode);
-                  if (testMarkerRef.current) {
-                    testMarkerRef.current.remove();
-                    testMarkerRef.current = null;
-                  }
+                  setTestMarker(null);
                   setTestResult(null);
                 }}
                 className={`text-sm flex items-center gap-1 px-3 py-1 rounded-lg ${
@@ -546,10 +366,22 @@ function AdminDeliveryPageInner() {
             </div>
           </div>
 
-          <div
-            ref={mapContainerRef}
-            className="w-full h-[500px] rounded-xl overflow-hidden border"
-            style={{ cursor: testMode ? "crosshair" : "grab" }}
+          <CoverageMap
+            storeLat={storeLat}
+            storeLng={storeLng}
+            zones={zoneList}
+            testMode={testMode}
+            testMarker={testMarker}
+            onTestClick={async (lat, lng) => {
+              setTestMarker({ lat, lng });
+              try {
+                const result = await api.post<DeliveryResult>("/api/delivery/calculate", { lat, lng });
+                setTestResult(result);
+              } catch {
+                setTestResult(null);
+              }
+            }}
+            height={500}
           />
 
           {testResult && (
