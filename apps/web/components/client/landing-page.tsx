@@ -72,6 +72,14 @@ function NavBar({
                 <Star size={14} />
                 Mi Tarjeta
               </Link>
+              <Link
+                href="/profile"
+                title="Mi perfil"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-outline-variant/30 text-xs font-headline font-bold text-on-surface hover:border-primary hover:text-primary transition-colors"
+              >
+                <User size={14} />
+                <span className="hidden sm:inline">Mi perfil</span>
+              </Link>
               <button
                 onClick={onLogout}
                 title="Cerrar sesión"

@@ -8,12 +8,12 @@ import { CartDrawer } from "./cart-drawer";
 import { AuthModal } from "./auth-modal";
 import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
-import { ShoppingCart, ArrowLeft, User, LogOut, Search } from "lucide-react";
+import { ShoppingCart, ArrowLeft, User, Search } from "lucide-react";
 import { StoreStatusBanner } from "./store-status-banner";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { getToken, clearTokens } from "@/lib/auth";
+import { getToken } from "@/lib/auth";
 import { CATEGORY_IMAGES, CATEGORY_EMOJI, resolveProductImage } from "@/lib/product-images";
 
 /* ────────────────────────────────────────────────────────────── */
@@ -283,11 +283,6 @@ export function MenuPage() {
     setAuthed(!!getToken());
   }, []);
 
-  const handleLogout = () => {
-    clearTokens();
-    setAuthed(false);
-  };
-
   const { data: menu, isLoading } = useQuery({
     queryKey: ["menu"],
     queryFn: () => api.get<MenuByCategory[]>("/api/menu"),
@@ -403,13 +398,14 @@ export function MenuPage() {
 
           <div className="flex flex-shrink-0 items-center gap-2">
             {authed ? (
-              <button
-                onClick={handleLogout}
-                title="Cerrar sesión"
-                className="rounded-xl border border-outline-variant/20 p-2.5 text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+              <Link
+                href="/profile"
+                title="Mi perfil"
+                className="flex items-center gap-1.5 rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 font-headline text-xs font-bold uppercase tracking-wider text-on-surface transition-colors hover:border-primary hover:text-primary"
               >
-                <LogOut size={18} />
-              </button>
+                <User size={14} />
+                <span className="hidden sm:inline">Mi cuenta</span>
+              </Link>
             ) : (
               <button
                 onClick={() => setAuthOpen(true)}
