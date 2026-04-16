@@ -22,7 +22,7 @@ export interface ServerToClientEvents {
     acceptOrders: boolean;
     message?: string;
   }) => void;
-  "loyalty:points": (data: { points: number; tier: LoyaltyTierType; pointsEarned?: number }) => void;
+  "loyalty:points": (data: LoyaltyProgressEvent) => void;
   "loyalty:tier_up": (data: { newTier: LoyaltyTierType; previousTier: LoyaltyTierType; message?: string }) => void;
 }
 
@@ -263,19 +263,42 @@ export interface MenuByCategory {
 
 export type LoyaltyTierType = "POLLITO" | "CRUJIENTE" | "VIP_POLLON";
 
+export interface LoyaltyRewardProduct {
+  id: string;
+  name: string;
+  emoji: string | null;
+}
+
 export interface LoyaltyInfo {
-  points: number;
-  tier: LoyaltyTierType;
-  nextTier: LoyaltyTierType | null;
-  pointsToNextTier: number;
+  completedOrders: number;
+  freeProductsEarned: number;
+  freeProductsUsed: number;
+  progress: number;
+  ordersToNext: number;
+  target: number;
+  pendingReward: boolean;
+  pendingProduct: LoyaltyRewardProduct | null;
+  rewardEarnedAt: string | null;
+  rewardExpiresAt: string | null;
 }
 
 export interface LoyaltyEventItem {
   id: string;
-  type: string;
-  points: number;
-  orderId: string | null;
+  cardId?: string;
+  orderDelta: number;
+  reason: string;
   createdAt: string;
+}
+
+export interface LoyaltyProgressEvent {
+  completedOrders: number;
+  progress: number;
+  ordersToNext: number;
+  target: number;
+  pendingReward: boolean;
+  points?: number;
+  tier?: LoyaltyTierType;
+  pointsEarned?: number;
 }
 
 // ─── Store Types ────────────────────────────────────────────

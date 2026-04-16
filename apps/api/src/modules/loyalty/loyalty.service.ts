@@ -10,22 +10,18 @@ export class LoyaltyService {
    * Get loyalty info for a customer.
    */
   async getInfo(customerId: string) {
-    const card = await this.app.prisma.loyaltyCard.findUnique({
-      where: { customerId },
-      include: { pendingProduct: true },
-    });
-
-    if (!card) return null;
-
-    const progress = card.completedOrders % ORDERS_PER_REWARD;
-    const ordersToNext = ORDERS_PER_REWARD - progress;
+    const card = await this.ensureCard(customerId);
+    const { progress, ordersToNext } = this.getProgress(
+      card.completedOrders,
+      card.pendingReward
+    );
 
     return {
       completedOrders: card.completedOrders,
       freeProductsEarned: card.freeProductsEarned,
       freeProductsUsed: card.freeProductsUsed,
       progress,
-      ordersToNext: ordersToNext === ORDERS_PER_REWARD ? 0 : ordersToNext,
+      ordersToNext,
       target: ORDERS_PER_REWARD,
       pendingReward: card.pendingReward,
       pendingProduct: card.pendingProduct
@@ -41,10 +37,7 @@ export class LoyaltyService {
   }
 
   async getHistory(customerId: string) {
-    const card = await this.app.prisma.loyaltyCard.findUnique({
-      where: { customerId },
-    });
-    if (!card) return [];
+    const card = await this.ensureCard(customerId);
 
     return this.app.prisma.loyaltyEvent.findMany({
       where: { cardId: card.id },
@@ -118,7 +111,14 @@ export class LoyaltyService {
     ]);
 
     // Emit progress to customer
+    const progressState = this.getProgress(newCompletedOrders, pendingReward);
+
     this.app.io.to(`customer:${order.customerId}`).emit("loyalty:points", {
+      completedOrders: newCompletedOrders,
+      progress: progressState.progress,
+      ordersToNext: progressState.ordersToNext,
+      target: ORDERS_PER_REWARD,
+      pendingReward,
       points: newCompletedOrders,
       tier: "POLLITO",
       pointsEarned: 1,
@@ -219,6 +219,27 @@ export class LoyaltyService {
     ]);
 
     return this.getInfo(customerId);
+  }
+
+  private async ensureCard(customerId: string) {
+    return this.app.prisma.loyaltyCard.upsert({
+      where: { customerId },
+      update: {},
+      create: { customerId },
+      include: { pendingProduct: true },
+    });
+  }
+
+  private getProgress(completedOrders: number, pendingReward: boolean) {
+    if (pendingReward) {
+      return { progress: ORDERS_PER_REWARD, ordersToNext: 0 };
+    }
+
+    const progress = completedOrders % ORDERS_PER_REWARD;
+    return {
+      progress,
+      ordersToNext: ORDERS_PER_REWARD - progress,
+    };
   }
 
   /**

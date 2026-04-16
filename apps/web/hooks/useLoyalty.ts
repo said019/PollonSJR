@@ -1,44 +1,66 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type { LoyaltyInfo, LoyaltyEventItem } from "@pollon/types";
 import { useSocket } from "./useSocket";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function useLoyalty() {
-  const [realtimePoints, setRealtimePoints] = useState<number | null>(null);
-  const [realtimeTier, setRealtimeTier] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [realtimeInfo, setRealtimeInfo] = useState<Partial<LoyaltyInfo> | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
-  const token = getToken();
+  useEffect(() => {
+    setToken(getToken());
+    setIsAuthReady(true);
+  }, []);
 
   const { data: info, isLoading } = useQuery({
     queryKey: ["loyalty"],
     queryFn: () => api.get<LoyaltyInfo>("/api/loyalty/me", token || undefined),
-    enabled: !!token,
+    enabled: isAuthReady && !!token,
   });
 
   const { data: history } = useQuery({
     queryKey: ["loyalty-history"],
     queryFn: () => api.get<LoyaltyEventItem[]>("/api/loyalty/me/history", token || undefined),
-    enabled: !!token,
+    enabled: isAuthReady && !!token,
   });
 
-  useSocket("loyalty:points", ({ points, tier }) => {
-    setRealtimePoints(points);
-    setRealtimeTier(tier);
-  });
+  useSocket(
+    "loyalty:points",
+    ({ completedOrders, progress, ordersToNext, target, pendingReward }) => {
+      setRealtimeInfo({ completedOrders, progress, ordersToNext, target, pendingReward });
+      void queryClient.invalidateQueries({ queryKey: ["loyalty"] });
+      void queryClient.invalidateQueries({ queryKey: ["loyalty-history"] });
+    },
+    { token: token || undefined, role: token ? "customer" : undefined }
+  );
 
-  const currentPoints = realtimePoints ?? info?.points ?? 0;
-  const currentTier = realtimeTier ?? info?.tier ?? "POLLITO";
+  useSocket(
+    "loyalty:tier_up",
+    () => {
+      void queryClient.invalidateQueries({ queryKey: ["loyalty"] });
+      void queryClient.invalidateQueries({ queryKey: ["loyalty-history"] });
+    },
+    { token: token || undefined, role: token ? "customer" : undefined }
+  );
+
+  const currentInfo = info ? { ...info, ...realtimeInfo } : info;
 
   return {
-    points: currentPoints,
-    tier: currentTier,
-    nextTier: info?.nextTier ?? null,
-    pointsToNextTier: info?.pointsToNextTier ?? 0,
+    info: currentInfo,
+    completedOrders: currentInfo?.completedOrders ?? 0,
+    progress: currentInfo?.progress ?? 0,
+    ordersToNext: currentInfo?.ordersToNext ?? 5,
+    target: currentInfo?.target ?? 5,
+    pendingReward: currentInfo?.pendingReward ?? false,
+    pendingProduct: currentInfo?.pendingProduct ?? null,
     history: history ?? [],
-    isLoading,
+    isLoading: !isAuthReady || isLoading,
+    isAuthenticated: !!token,
   };
 }

@@ -462,22 +462,22 @@ function LoyaltySection() {
                 VIP<br />POLLÓN
               </h2>
               <p className="text-on-surface-variant text-base lg:text-lg mb-10 max-w-md leading-relaxed">
-                Únete y convierte cada bocado en moneda. Desbloquea drops
-                secretos, sáltate la fila y gana Crunch Coins con cada pedido.
+                Junta cinco compras entregadas y desbloquea un producto gratis.
+                Tu recompensa se guarda en tu tarjeta y vence a los seis meses.
               </p>
 
               {/* Stats */}
               <div className="grid grid-cols-2 gap-6 mb-10">
                 <div className="bg-surface-container rounded-2xl p-5 border border-outline-variant/10">
-                  <div className="text-primary text-3xl font-headline font-extrabold mb-1">10%</div>
+                  <div className="text-primary text-3xl font-headline font-extrabold mb-1">5</div>
                   <div className="text-on-surface-variant text-xs font-headline font-semibold uppercase tracking-wider">
-                    De vuelta en cada caja
+                    Compras para ganar
                   </div>
                 </div>
                 <div className="bg-surface-container rounded-2xl p-5 border border-outline-variant/10">
                   <div className="text-secondary text-3xl font-headline font-extrabold mb-1">GRATIS</div>
                   <div className="text-on-surface-variant text-xs font-headline font-semibold uppercase tracking-wider">
-                    Balde de cumpleaños
+                    Producto favorito
                   </div>
                 </div>
               </div>
@@ -487,7 +487,7 @@ function LoyaltySection() {
                 className="inline-flex items-center justify-center gap-3 bg-tertiary text-surface px-7 py-3.5 rounded-2xl font-headline font-bold text-sm hover:brightness-95 transition-all active:scale-95 w-fit"
               >
                 <span className="material-symbols-outlined text-lg">loyalty</span>
-                Ver Mis Puntos
+                Ver Mi Tarjeta
               </Link>
             </div>
 
@@ -521,16 +521,16 @@ function LoyaltySection() {
                 <div className="space-y-5">
                   <div className="flex justify-between items-center border-b border-outline-variant/15 pb-3">
                     <span className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.15em]">
-                      Crunch Coins
+                      Compras
                     </span>
-                    <span className="text-tertiary font-headline font-extrabold text-lg">2,450</span>
+                    <span className="text-tertiary font-headline font-extrabold text-lg">3/5</span>
                   </div>
                   <div className="flex justify-between items-center border-b border-outline-variant/15 pb-3">
                     <span className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.15em]">
                       Próxima Recompensa
                     </span>
                     <span className="text-tertiary font-headline font-bold text-sm">
-                      Sliders Picantes
+                      Producto gratis
                     </span>
                   </div>
                 </div>

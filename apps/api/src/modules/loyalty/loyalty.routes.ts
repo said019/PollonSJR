@@ -5,11 +5,9 @@ import { authenticate } from "../../middlewares/authenticate";
 export async function loyaltyRoutes(app: FastifyInstance) {
   const service = new LoyaltyService(app);
 
-  app.get("/me", { preHandler: [authenticate] }, async (request, reply) => {
+  app.get("/me", { preHandler: [authenticate] }, async (request) => {
     const user = request.user as { id: string };
-    const info = await service.getInfo(user.id);
-    if (!info) return reply.status(404).send({ error: "Tarjeta de lealtad no encontrada" });
-    return info;
+    return service.getInfo(user.id);
   });
 
   app.get("/me/history", { preHandler: [authenticate] }, async (request) => {
