@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Briefcase, Crosshair, Home, Loader2, MapPin, Search, Star, Trash2 } from "lucide-react";
+import { Briefcase, Crosshair, Home, Loader2, MapPin, Plus, Search, Star, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type { CreateSavedAddressPayload, SavedAddressPublic } from "@pollon/types";
@@ -284,6 +284,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
   const [address, setAddress] = useState("");
   const [result, setResult] = useState<DeliveryResult | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const googleApiRef = useRef<GoogleMapsApi | null>(null);
@@ -855,17 +856,44 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
     );
   }, [calculate, placeMarker]);
 
+  const handleStartNewAddress = useCallback(() => {
+    setSelectedSavedAddressId(null);
+    setSuggestions([]);
+    setAddressError("");
+    setSaveAddressError("");
+    setSaveAlias("");
+    setAddressQuery("");
+    setAddress("");
+    setSaveAsDefault(savedAddresses.length === 0);
+    // Focus the search input next tick
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+  }, [savedAddresses.length]);
+
   return (
     <div className="space-y-3">
       {(loadingSavedAddresses || savedAddresses.length > 0) && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
               Mis direcciones
             </p>
-            <span className="text-xs text-on-surface-variant">
-              {savedAddresses.length}/3
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-on-surface-variant">
+                {savedAddresses.length}/3
+              </span>
+              {savedAddresses.length < 3 && (
+                <button
+                  type="button"
+                  onClick={handleStartNewAddress}
+                  className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-primary transition-colors hover:bg-primary/20"
+                >
+                  <Plus size={12} />
+                  Nueva
+                </button>
+              )}
+            </div>
           </div>
 
           {loadingSavedAddresses ? (
@@ -953,6 +981,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
               className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
             />
             <input
+              ref={searchInputRef}
               value={addressQuery}
               onChange={(event) => setAddressQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -1044,20 +1073,29 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
       </p>
 
       {selectedLocation && address && (
-        <div className="rounded-lg border border-outline-variant bg-surface-container-high p-3">
-          {selectedSavedAddressId ? (
-            <p className="text-xs font-medium text-on-surface-variant">
-              Usando una dirección guardada. Mueve el pin para ajustar y guardarla como otra dirección.
-            </p>
-          ) : savedAddresses.length >= 3 ? (
-            <p className="text-xs font-medium text-on-surface-variant">
-              Ya tienes 3 direcciones guardadas. Borra una para guardar esta.
-            </p>
+        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+          {savedAddresses.length >= 3 && !selectedSavedAddressId ? (
+            <div className="flex items-start gap-2">
+              <MapPin size={14} className="mt-0.5 shrink-0 text-on-surface-variant" />
+              <p className="text-xs font-medium text-on-surface-variant">
+                Ya tienes 3 direcciones guardadas. Borra una para guardar esta.
+              </p>
+            </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-                Guardar esta dirección
-              </p>
+              <div className="flex items-start gap-2">
+                <Plus size={14} className="mt-0.5 shrink-0 text-primary" />
+                <p className="text-xs font-bold uppercase tracking-wide text-primary">
+                  {selectedSavedAddressId
+                    ? "Guardar como nueva dirección"
+                    : "Guardar esta dirección"}
+                </p>
+              </div>
+              {selectedSavedAddressId && (
+                <p className="pl-5 text-[11px] text-on-surface-variant">
+                  Ponle un alias distinto para crear otra entrada.
+                </p>
+              )}
               <div className="flex gap-2">
                 <input
                   value={saveAlias}
@@ -1068,15 +1106,15 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
                       void handleSaveCurrentAddress();
                     }
                   }}
-                  placeholder="Alias: Casa, Trabajo..."
+                  placeholder="Alias: Casa, Trabajo, Novia..."
                   maxLength={30}
                   className="min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <button
                   type="button"
                   onClick={() => void handleSaveCurrentAddress()}
-                  disabled={savingAddress}
-                  className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-on-primary disabled:opacity-50"
+                  disabled={savingAddress || saveAlias.trim().length < 2}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary transition-all hover:brightness-110 disabled:opacity-50"
                 >
                   {savingAddress ? <Loader2 size={16} className="animate-spin" /> : "Guardar"}
                 </button>

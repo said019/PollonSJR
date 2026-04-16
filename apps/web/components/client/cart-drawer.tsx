@@ -5,6 +5,7 @@ import { formatCents } from "@pollon/utils";
 import { X, Minus, Plus, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
+import { UpsellRecommendations } from "./upsell-recommendations";
 import { useState } from "react";
 import { getToken } from "@/lib/auth";
 
@@ -103,23 +104,28 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                   ))}
                 </div>
 
-                <div className="shrink-0 space-y-3 border-t border-outline-variant/10 p-5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-on-surface-variant font-headline font-semibold">Total</span>
-                    <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
+                <div className="shrink-0">
+                  {/* Upsell strip — pre-checkout recommendations */}
+                  <UpsellRecommendations />
+
+                  <div className="space-y-3 border-t border-outline-variant/10 p-5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-on-surface-variant font-headline font-semibold">Total</span>
+                      <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
+                    </div>
+                    <button
+                      onClick={handleCheckout}
+                      className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary"
+                    >
+                      Proceder al pago
+                    </button>
+                    <button
+                      onClick={clearCart}
+                      className="w-full text-on-surface-variant/50 text-sm py-2 hover:text-error transition-colors font-medium"
+                    >
+                      Vaciar carrito
+                    </button>
                   </div>
-                  <button
-                    onClick={handleCheckout}
-                    className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary"
-                  >
-                    Proceder al pago
-                  </button>
-                  <button
-                    onClick={clearCart}
-                    className="w-full text-on-surface-variant/50 text-sm py-2 hover:text-error transition-colors font-medium"
-                  >
-                    Vaciar carrito
-                  </button>
                 </div>
               </>
             )}
