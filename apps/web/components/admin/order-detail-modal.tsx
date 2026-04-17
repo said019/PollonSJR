@@ -7,6 +7,7 @@ import type { OrderDetail, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  AlertTriangle,
   Banknote,
   CheckCircle,
   ChefHat,
@@ -20,7 +21,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const STATUS_META: Record<
   OrderStatusType,
@@ -43,6 +44,14 @@ const NEXT_STATUS: Record<string, OrderStatusType | null> = {
   DELIVERED: null,
 };
 
+const CANCELLABLE: Set<string> = new Set([
+  "PENDING_PAYMENT",
+  "RECEIVED",
+  "PREPARING",
+  "READY",
+  "ON_THE_WAY",
+]);
+
 const PAYMENT_LABELS = {
   CARD: "Tarjeta",
   CASH: "Efectivo",
@@ -58,6 +67,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
   const adminToken = getAdminToken();
   const qc = useQueryClient();
   const open = !!orderId;
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["admin-order-detail", orderId],
@@ -74,17 +84,37 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
     },
   });
 
+  const cancelMut = useMutation({
+    mutationFn: (id: string) =>
+      api.patch(`/api/admin/orders/${id}/status`, { status: "CANCELLED" }, adminToken || undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
+      qc.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
+      setConfirmingCancel(false);
+      onClose();
+    },
+  });
+
   // Esc to close
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (confirmingCancel) { setConfirmingCancel(false); return; }
+        onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, confirmingCancel]);
+
+  // Reset confirm state when modal opens/closes
+  useEffect(() => {
+    if (!open) setConfirmingCancel(false);
+  }, [open]);
 
   const next = order?.status ? NEXT_STATUS[order.status] : null;
+  const canCancel = order ? CANCELLABLE.has(order.status) : false;
 
   return (
     <AnimatePresence>
@@ -311,27 +341,99 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
               </div>
 
               {/* Footer actions */}
-              {order && next && (
-                <div className="flex items-center gap-2 border-t border-outline-variant/10 bg-surface-container-high/50 p-4 sm:p-5">
-                  <button
-                    onClick={onClose}
-                    className="rounded-xl border border-outline-variant/25 px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-surface-variant transition-colors hover:border-outline-variant hover:text-tertiary"
-                  >
-                    Cerrar
-                  </button>
-                  <button
-                    onClick={() => advanceMut.mutate({ id: order.id, status: next })}
-                    disabled={advanceMut.isPending}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {advanceMut.isPending ? (
-                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
+              {order && (next || canCancel) && (
+                <div className="border-t border-outline-variant/10 bg-surface-container-high/50 p-4 sm:p-5">
+                  <AnimatePresence mode="wait">
+                    {confirmingCancel ? (
+                      /* ── Confirm cancel ── */
+                      <motion.div
+                        key="confirm"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.18 }}
+                        className="flex flex-col gap-2"
+                      >
+                        <div className="flex items-center gap-2 rounded-xl bg-error/10 px-3 py-2.5 text-sm text-error">
+                          <AlertTriangle size={15} className="flex-shrink-0" />
+                          <span className="font-semibold">
+                            ¿Cancelar el pedido #{order.orderNumber}? Esta acción no se puede deshacer.
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setConfirmingCancel(false)}
+                            disabled={cancelMut.isPending}
+                            className="flex-1 rounded-xl border border-outline-variant/25 px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-surface-variant transition-colors hover:border-outline-variant hover:text-tertiary disabled:opacity-50"
+                          >
+                            No, volver
+                          </button>
+                          <button
+                            onClick={() => cancelMut.mutate(order.id)}
+                            disabled={cancelMut.isPending}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-error px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-error/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+                          >
+                            {cancelMut.isPending ? (
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            ) : (
+                              <>
+                                <X size={13} /> Sí, cancelar
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </motion.div>
                     ) : (
-                      <>
-                        Avanzar → {STATUS_META[next].label}
-                      </>
+                      /* ── Normal actions ── */
+                      <motion.div
+                        key="actions"
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.18 }}
+                        className="flex items-center gap-2"
+                      >
+                        {/* Cancel button — left side */}
+                        {canCancel && (
+                          <button
+                            onClick={() => setConfirmingCancel(true)}
+                            className="flex items-center gap-1.5 rounded-xl border border-error/30 px-3 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-error transition-colors hover:bg-error/10"
+                          >
+                            <X size={13} />
+                            Cancelar
+                          </button>
+                        )}
+
+                        {/* Spacer when no next status */}
+                        {!next && <div className="flex-1" />}
+
+                        {/* Close — only when there's no advance button */}
+                        {!next && (
+                          <button
+                            onClick={onClose}
+                            className="rounded-xl border border-outline-variant/25 px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-surface-variant transition-colors hover:border-outline-variant hover:text-tertiary"
+                          >
+                            Cerrar
+                          </button>
+                        )}
+
+                        {/* Advance button */}
+                        {next && (
+                          <button
+                            onClick={() => advanceMut.mutate({ id: order.id, status: next })}
+                            disabled={advanceMut.isPending}
+                            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+                          >
+                            {advanceMut.isPending ? (
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-on-primary border-t-transparent" />
+                            ) : (
+                              <>Avanzar → {STATUS_META[next].label}</>
+                            )}
+                          </button>
+                        )}
+                      </motion.div>
                     )}
-                  </button>
+                  </AnimatePresence>
                 </div>
               )}
             </div>
