@@ -2,6 +2,11 @@ import { FastifyInstance } from "fastify";
 import { PKPass } from "passkit-generator";
 import https from "https";
 import jwt from "jsonwebtoken";
+import fs from "fs";
+import path from "path";
+
+// __dirname is available in CommonJS (tsconfig module: CommonJS)
+const ASSETS_DIR = path.join(__dirname, "pass-assets");
 
 export class AppleWalletService {
   constructor(private app: FastifyInstance) {}
@@ -37,6 +42,12 @@ export class AppleWalletService {
     const apiUrl = process.env.API_URL ?? "https://api.pollon.mx";
     const authToken = process.env.APPLE_AUTH_TOKEN ?? "changeme";
 
+    // ── Load brand assets ─────────────────────────────────────
+    const readAsset = (name: string): Buffer | undefined => {
+      const p = path.join(ASSETS_DIR, name);
+      return fs.existsSync(p) ? fs.readFileSync(p) : undefined;
+    };
+
     const pass = new PKPass(
       {},
       {
@@ -50,36 +61,91 @@ export class AppleWalletService {
         passTypeIdentifier: passTypeId,
         teamIdentifier: teamId,
         organizationName: "Pollón SJR",
-        description: "Tarjeta de Lealtad",
+        description: "Tarjeta de Lealtad Club Pollón",
         serialNumber: customerId,
-        webServiceURL: `${apiUrl}/`,
+        webServiceURL: `${apiUrl}/api/loyalty/`,
         authenticationToken: authToken,
-        backgroundColor: "rgb(249, 115, 22)",
+        // Match the dark slate from the Pollón logo/strip
+        backgroundColor: "rgb(45, 48, 57)",
         foregroundColor: "rgb(255, 255, 255)",
-        labelColor: "rgb(255, 255, 255)",
+        labelColor: "rgb(232, 56, 79)",
       }
     );
 
     pass.type = "storeCard";
 
+    // ── Fields ───────────────────────────────────────────────
+    pass.headerFields.push({
+      key: "header_club",
+      label: "",
+      value: pendingReward ? "🎉 PREMIO LISTO" : "CLUB POLLÓN",
+    });
+
     pass.primaryFields.push({
       key: "name",
       label: "TITULAR",
-      value: customerName,
+      value: customerName.toUpperCase(),
     });
 
     pass.secondaryFields.push(
-      { key: "progress", label: "COMPRAS", value: `${stamps}/5` },
-      { key: "type", label: "PROGRAMA", value: "Club Pollón" }
+      {
+        key: "progress",
+        label: "AVANCE",
+        value: pendingReward ? "¡Premio!" : `${stamps} de 5`,
+      },
+      {
+        key: "type",
+        label: "PROGRAMA",
+        value: "Lealtad",
+      }
     );
 
-    pass.auxiliaryFields.push({
-      key: "phone",
-      label: "TELÉFONO",
-      value: customerPhone,
-    });
+    pass.auxiliaryFields.push(
+      {
+        key: "phone",
+        label: "TELÉFONO",
+        value: customerPhone,
+      },
+      {
+        key: "reward",
+        label: "PRÓXIMO PREMIO",
+        value: "Producto gratis",
+      }
+    );
 
-    // Location
+    pass.backFields.push(
+      {
+        key: "how_it_works",
+        label: "¿Cómo funciona?",
+        value: "Cada pedido entregado suma 1 compra. Al llegar a 5 compras recibes un producto gratis de tu elección. La recompensa tiene vigencia de 6 meses.",
+      },
+      {
+        key: "contact",
+        label: "Contacto",
+        value: "San Juan del Río, Querétaro",
+      }
+    );
+
+    // ── Strip images (progress visual) ──────────────────────
+    const stripKey = `strip-${stamps}`;
+    const strip1x = readAsset(`${stripKey}.png`);
+    const strip2x = readAsset(`${stripKey}@2x.png`);
+    if (strip1x) pass.addBuffer("strip.png", strip1x);
+    if (strip2x) pass.addBuffer("strip@2x.png", strip2x);
+
+    // ── Logo ─────────────────────────────────────────────────
+    const logo1x = readAsset("logo.png");
+    const logo2x = readAsset("logo@2x.png");
+    if (logo1x) pass.addBuffer("logo.png", logo1x);
+    if (logo2x) pass.addBuffer("logo@2x.png", logo2x);
+
+    // ── Icon ─────────────────────────────────────────────────
+    const icon1x = readAsset("icon.png");
+    const icon2x = readAsset("icon@2x.png");
+    if (icon1x) pass.addBuffer("icon.png", icon1x);
+    if (icon2x) pass.addBuffer("icon@2x.png", icon2x);
+
+    // ── Location ─────────────────────────────────────────────
     const lat = process.env.BUSINESS_LATITUDE
       ? parseFloat(process.env.BUSINESS_LATITUDE)
       : null;
@@ -91,10 +157,12 @@ export class AppleWalletService {
       pass.setLocations({ latitude: lat, longitude: lng });
     }
 
+    // ── QR barcode ───────────────────────────────────────────
     pass.setBarcodes({
       message: customerId,
       format: "PKBarcodeFormatQR",
       messageEncoding: "iso-8859-1",
+      altText: `ID: ${customerId.slice(0, 8)}`,
     });
 
     return pass.getAsBuffer();
