@@ -16,6 +16,16 @@ interface StoreConfig {
   openDays: number[];
 }
 
+const ALL_DAYS: { label: string; short: string; value: number }[] = [
+  { value: 1, label: "Lunes",     short: "Lun" },
+  { value: 2, label: "Martes",    short: "Mar" },
+  { value: 3, label: "Miércoles", short: "Mié" },
+  { value: 4, label: "Jueves",    short: "Jue" },
+  { value: 5, label: "Viernes",   short: "Vie" },
+  { value: 6, label: "Sábado",    short: "Sáb" },
+  { value: 0, label: "Domingo",   short: "Dom" },
+];
+
 export function SettingsPage() {
   const token = getAdminToken();
   const qc = useQueryClient();
@@ -28,7 +38,7 @@ export function SettingsPage() {
       acceptOrders: true,
       openTime: "14:00",
       closeTime: "22:00",
-      openDays: [4, 5, 6, 0],
+      openDays: [1, 2, 3, 4, 5, 6, 0],
     } as StoreConfig)),
   });
 
@@ -46,6 +56,14 @@ export function SettingsPage() {
 
   const handleSave = () => {
     if (form) saveMut.mutate(form);
+  };
+
+  const toggleDay = (day: number) => {
+    if (!form) return;
+    const days = form.openDays.includes(day)
+      ? form.openDays.filter((d) => d !== day)
+      : [...form.openDays, day];
+    setForm({ ...form, openDays: days });
   };
 
   if (isLoading || !form) {
@@ -130,11 +148,39 @@ export function SettingsPage() {
       </section>
 
       {/* Hours */}
-      <section className="bg-surface-container-high rounded-xl p-5 border border-outline-variant/20">
+      <section className="bg-surface-container-high rounded-xl p-5 border border-outline-variant/20 mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Clock size={20} className="text-primary" />
           <h2 className="font-bold">Horario</h2>
         </div>
+
+        {/* Days of week */}
+        <div className="mb-4">
+          <label className="text-sm font-medium mb-2 block">Días de atención</label>
+          <div className="flex flex-wrap gap-2">
+            {ALL_DAYS.map((day) => {
+              const active = form.openDays.includes(day.value);
+              return (
+                <button
+                  key={day.value}
+                  type="button"
+                  onClick={() => toggleDay(day.value)}
+                  className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition-all ${
+                    active
+                      ? "border-primary bg-primary text-on-primary"
+                      : "border-outline-variant/40 bg-surface-container text-on-surface-variant hover:border-primary/40"
+                  }`}
+                >
+                  {day.short}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-xs text-on-surface-variant/60">
+            Deja vacío para aceptar pedidos todos los días dentro del horario
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="text-sm font-medium mb-1 block">Hora apertura</label>
@@ -155,6 +201,9 @@ export function SettingsPage() {
             />
           </div>
         </div>
+        <p className="mt-2 text-xs text-on-surface-variant/60">
+          Horario en tiempo de México (CST/CDT)
+        </p>
       </section>
     </div>
   );

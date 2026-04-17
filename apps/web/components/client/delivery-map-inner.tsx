@@ -992,7 +992,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
               }}
               placeholder="Calle, número, colonia"
               autoComplete="street-address"
-              className="w-full rounded-lg border border-outline-variant bg-surface-container-high py-2.5 pl-9 pr-3 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-lg border border-outline-variant/40 bg-white py-2.5 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <button
@@ -1108,7 +1108,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
                   }}
                   placeholder="Alias: Casa, Trabajo, Novia..."
                   maxLength={30}
-                  className="min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="min-w-0 flex-1 rounded-lg border border-outline-variant/40 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <button
                   type="button"

@@ -335,7 +335,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
             <textarea
               {...register("address")}
               placeholder="Calle, número, colonia, casa/depto, referencias..."
-              className="w-full border border-outline-variant bg-surface-container-high text-on-surface rounded-xl p-3 text-sm resize-none placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary focus:border-primary"
+              className="w-full border border-outline-variant/40 bg-white text-neutral-900 rounded-xl p-3 text-sm resize-none placeholder:text-neutral-400 focus:ring-2 focus:ring-primary focus:border-primary"
               rows={3}
             />
           </div>
@@ -348,7 +348,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         <input
           {...register("notes")}
           placeholder="Instrucciones especiales..."
-          className="w-full border border-outline-variant bg-surface-container-high text-on-surface rounded-xl p-3 text-sm placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-primary focus:border-primary"
+          className="w-full border border-outline-variant/40 bg-white text-neutral-900 rounded-xl p-3 text-sm placeholder:text-neutral-400 focus:ring-2 focus:ring-primary focus:border-primary"
         />
       </div>
 

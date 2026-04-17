@@ -103,21 +103,26 @@ export async function isAcceptingOrders(
     };
   }
 
-  // Check day of week
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun, 6=Sat
+  // All time checks use Mexico City local time so the schedule matches
+  // what the admin configures in the dashboard, regardless of server TZ.
+  const nowMx = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" })
+  );
+  const dayOfWeek = nowMx.getDay(); // 0=Sun, 6=Sat
 
-  if (!config.openDays.includes(dayOfWeek)) {
+  if (config.openDays.length > 0 && !config.openDays.includes(dayOfWeek)) {
+    const DAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+    const openDayNames = config.openDays.map((d: number) => DAY_NAMES[d]).join(", ");
     return {
       accepting: false,
-      reason: "Hoy no tenemos servicio. Vuelve jueves a domingo.",
+      reason: `Hoy no tenemos servicio. Abrimos: ${openDayNames}.`,
     };
   }
 
   // Check time window
   const [openH, openM] = config.openTime.split(":").map(Number);
   const [closeH, closeM] = config.closeTime.split(":").map(Number);
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = nowMx.getHours() * 60 + nowMx.getMinutes();
   const openMinutes = openH * 60 + openM;
   const closeMinutes = closeH * 60 + closeM;
 
