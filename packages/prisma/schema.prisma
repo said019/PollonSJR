@@ -372,3 +372,25 @@ model StoreConfig {
   updatedAt      DateTime @updatedAt
   updatedBy      String?
 }
+
+// ─── Apple Wallet Web Service ────────────────────────────────
+
+model AppleDevice {
+  id           String   @id @default(cuid())
+  deviceId     String
+  pushToken    String
+  passTypeId   String
+  serialNumber String
+  registeredAt DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([deviceId, passTypeId, serialNumber])
+}
+
+model AppleUpdate {
+  id           String   @id @default(cuid())
+  serialNumber String
+  updatedAt    DateTime @default(now())
+
+  @@index([serialNumber])
+}

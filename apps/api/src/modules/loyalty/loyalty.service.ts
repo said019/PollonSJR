@@ -1,4 +1,6 @@
 import { FastifyInstance } from "fastify";
+import { AppleWalletService } from "./apple-wallet.service";
+import { GoogleWalletService } from "./google-wallet.service";
 
 const ORDERS_PER_REWARD = 5;
 const REWARD_TTL_MONTHS = 6;
@@ -109,6 +111,21 @@ export class LoyaltyService {
         },
       }),
     ]);
+
+    // Update wallet passes (fire-and-forget, don't block the response)
+    const newProgress = pendingReward
+      ? ORDERS_PER_REWARD
+      : newCompletedOrders % ORDERS_PER_REWARD;
+    const apple = new AppleWalletService(this.app);
+    const google = new GoogleWalletService(this.app);
+    Promise.allSettled([
+      apple.updatePassAndNotify(order.customerId),
+      google.updateLoyaltyObject(
+        order.customerId,
+        order.customer.name ?? "",
+        newProgress
+      ),
+    ]).catch(() => {});
 
     // Emit progress to customer
     const progressState = this.getProgress(newCompletedOrders, pendingReward);
