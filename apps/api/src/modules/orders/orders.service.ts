@@ -390,6 +390,28 @@ export class OrdersService {
     return { success: true };
   }
 
+  /** Customer-facing: returns the caller's own orders that are still in progress */
+  async getMyActiveOrders(customerId: string) {
+    const orders = await this.app.prisma.order.findMany({
+      where: {
+        customerId,
+        status: {
+          in: ["PENDING_PAYMENT", "RECEIVED", "PREPARING", "READY", "ON_THE_WAY"],
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+    });
+
+    return orders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      status: o.status as OrderStatusType,
+      type: o.type as "PICKUP" | "DELIVERY",
+      total: o.total,
+    }));
+  }
+
   async getActiveOrders(): Promise<OrderSummary[]> {
     const orders = await this.app.prisma.order.findMany({
       where: {

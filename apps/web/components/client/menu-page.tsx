@@ -10,6 +10,7 @@ import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
 import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star } from "lucide-react";
 import { StoreStatusBanner } from "./store-status-banner";
+import { ActiveOrderBanner } from "./active-order-banner";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -635,21 +636,27 @@ export function MenuPage() {
         )}
       </main>
 
-      {/* Floating cart bar */}
-      {itemCount > 0 && (
-        <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-8">
-          <button
-            onClick={() => setCartOpen(true)}
-            className="pointer-events-auto mx-auto flex w-full max-w-lg items-center justify-between rounded-2xl bg-primary px-6 py-3.5 font-headline font-bold text-on-primary shadow-2xl transition-transform active:scale-[0.98] glow-primary"
-          >
-            <span className="flex items-center gap-2">
-              <ShoppingCart size={18} />
-              Ver carrito ({itemCount})
-            </span>
-            <span>{formatCents(total)}</span>
-          </button>
+      {/* Floating bottom area: active-order banner + cart bar */}
+      <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-8">
+        <div className="mx-auto flex w-full max-w-lg flex-col gap-2">
+          {/* Active order banner — only when cart is empty (no overlap) */}
+          {itemCount === 0 && <ActiveOrderBanner />}
+
+          {/* Cart bar */}
+          {itemCount > 0 && (
+            <button
+              onClick={() => setCartOpen(true)}
+              className="pointer-events-auto flex w-full items-center justify-between rounded-2xl bg-primary px-6 py-3.5 font-headline font-bold text-on-primary shadow-2xl transition-transform active:scale-[0.98] glow-primary"
+            >
+              <span className="flex items-center gap-2">
+                <ShoppingCart size={18} />
+                Ver carrito ({itemCount})
+              </span>
+              <span>{formatCents(total)}</span>
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Cart drawer */}
       <CartDrawer

@@ -6,7 +6,8 @@ import { getToken } from "@/lib/auth";
 import { useSocket } from "@/hooks/useSocket";
 import type { OrderDetail, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Banknote,
@@ -15,6 +16,7 @@ import {
   CreditCard,
   Home,
   Landmark,
+  Loader2,
   Package,
   ShoppingBag,
   Sparkles,
@@ -51,13 +53,19 @@ const PAYMENT_LABELS = {
 
 export function OrderTracker({ orderId }: { orderId: string }) {
   const token = getToken();
+  const searchParams = useSearchParams();
+  const pagoParam = searchParams.get("pago"); // "exitoso" | "error" | "pendiente" | null
   const [currentStatus, setCurrentStatus] = useState<OrderStatusType | null>(null);
   const [showExpandedTracker, setShowExpandedTracker] = useState(false);
+
+  const isPendingPayment = currentStatus === "PENDING_PAYMENT";
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["order", orderId],
     queryFn: () => api.get<OrderDetail>(`/api/orders/${orderId}`, token || undefined),
     enabled: !!token,
+    // Auto-poll while still waiting for payment confirmation
+    refetchInterval: isPendingPayment ? 3_000 : false,
   });
 
   useEffect(() => {
@@ -135,6 +143,61 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       </header>
 
       <main className="relative z-10 mx-auto max-w-2xl px-4 pb-32 pt-6">
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/*  PENDING_PAYMENT — waiting for MP webhook               */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        {currentStatus === "PENDING_PAYMENT" && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="mb-5 overflow-hidden rounded-3xl border border-primary/25 bg-gradient-to-br from-surface-container-high to-surface-container"
+          >
+            <div className="flex items-center gap-4 p-5">
+              <div className="relative flex-shrink-0">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dim shadow-lg shadow-primary/30">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+                  >
+                    <Loader2 size={22} className="text-on-primary" />
+                  </motion.div>
+                </div>
+                <motion.span
+                  className="absolute inset-0 rounded-2xl border-2 border-primary"
+                  animate={{ scale: [1, 1.25, 1], opacity: [0.6, 0, 0.6] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="font-headline text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
+                  {pagoParam === "exitoso" ? "Pago recibido" : "Procesando"}
+                </span>
+                <p className="mt-0.5 font-headline text-lg font-extrabold leading-tight text-tertiary">
+                  {pagoParam === "exitoso"
+                    ? "Confirmando tu pago…"
+                    : pagoParam === "pendiente"
+                      ? "Tu pago está en revisión"
+                      : "Procesando tu pago…"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-on-surface-variant/70">
+                  {pagoParam === "exitoso"
+                    ? "Mercado Pago confirmó el pago. Activando tu pedido."
+                    : "En unos segundos te confirmamos el estado."}
+                </p>
+              </div>
+            </div>
+            {/* Shimmer progress bar */}
+            <div className="relative h-1 w-full overflow-hidden bg-surface-variant/50">
+              <motion.div
+                className="absolute inset-y-0 h-full w-1/3 bg-gradient-to-r from-transparent via-primary to-transparent"
+                animate={{ x: ["-100%", "400%"] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+              />
+            </div>
+          </motion.div>
+        )}
+
         {/* ═══════════════════════════════════════════════════════ */}
         {/*  Rappi-style status pill — clickable to open full view  */}
         {/* ═══════════════════════════════════════════════════════ */}

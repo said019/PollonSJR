@@ -48,6 +48,12 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
   });
 
+  // Cliente: pedidos activos propios (para el banner de "en curso")
+  app.get("/my-active", { preHandler: [authenticate] }, async (request, reply) => {
+    const user = request.user as { id: string };
+    return service.getMyActiveOrders(user.id);
+  });
+
   // Cliente: validar cupón
   app.post("/coupons/validate", { preHandler: [authenticate] }, async (request, reply) => {
     const { code, subtotal } = request.body as { code: string; subtotal: number };
