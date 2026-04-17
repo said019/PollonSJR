@@ -67,7 +67,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: "Status inválido" });
 
     try {
-      return await ordersService.updateStatus(request.params.id, parsed.data.status);
+      return await ordersService.updateStatus(request.params.id, parsed.data.status, parsed.data.cancelReason);
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
     }

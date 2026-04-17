@@ -46,4 +46,5 @@ export const updateStatusSchema = z.object({
     "DELIVERED",
     "CANCELLED",
   ]),
+  cancelReason: z.string().max(500).optional(),
 });

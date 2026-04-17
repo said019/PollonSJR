@@ -306,6 +306,7 @@ export class OrdersService {
       deliveryFee: order.deliveryFee,
       address: order.address,
       notes: order.notes,
+      cancelReason: order.cancelReason,
       customerName: order.customer.name,
       customerPhone: order.customer.phone,
       itemCount: order.items.length,
@@ -329,7 +330,7 @@ export class OrdersService {
     };
   }
 
-  async updateStatus(orderId: string, newStatus: OrderStatusType) {
+  async updateStatus(orderId: string, newStatus: OrderStatusType, cancelReason?: string) {
     const order = await this.app.prisma.order.findUnique({
       where: { id: orderId },
       include: { customer: true },
@@ -340,19 +341,24 @@ export class OrdersService {
     await this.app.prisma.$transaction([
       this.app.prisma.order.update({
         where: { id: orderId },
-        data: { status: newStatus },
+        data: {
+          status: newStatus,
+          ...(newStatus === "CANCELLED" && cancelReason ? { cancelReason } : {}),
+        },
       }),
       this.app.prisma.orderStatusLog.create({
         data: {
           orderId,
           from: order.status,
           to: newStatus,
+          ...(newStatus === "CANCELLED" && cancelReason ? { note: cancelReason } : {}),
         },
       }),
     ]);
 
     emitOrderStatus(this.app, order.customerId, orderId, newStatus, {
       orderNumber: order.orderNumber,
+      ...(newStatus === "CANCELLED" && cancelReason ? { cancelReason } : {}),
     });
 
     // Enqueue WhatsApp notification per status

@@ -21,15 +21,19 @@ export function emitOrderStatus(
   customerId: string,
   orderId: string,
   status: OrderStatusType | string,
-  extra?: { orderNumber?: number; estimatedMinutes?: number }
+  extra?: { orderNumber?: number; estimatedMinutes?: number; cancelReason?: string }
 ) {
-  const message = STATUS_MESSAGES[status] ?? "Estado actualizado";
+  const message =
+    status === "CANCELLED" && extra?.cancelReason
+      ? extra.cancelReason
+      : STATUS_MESSAGES[status] ?? "Estado actualizado";
 
   const payload = {
     orderId,
     orderNumber: extra?.orderNumber,
     status: status as OrderStatusType,
     message,
+    cancelReason: extra?.cancelReason,
     estimatedMinutes: extra?.estimatedMinutes,
   };
 

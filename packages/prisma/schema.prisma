@@ -128,6 +128,7 @@ model Order {
   total            Int
   notes            String?
   estimatedMinutes Int?
+  cancelReason     String?
   // Scheduled order fields
   isScheduled      Boolean          @default(false)
   scheduledFor     DateTime?

@@ -416,16 +416,28 @@ export function OrderTracker({ orderId }: { orderId: string }) {
 
         {/* Cancelled banner */}
         {isCancelled && (
-          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-error/30 bg-error/10 p-5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-error/20 text-error">
-              <X size={22} />
+          <div className="mb-5 overflow-hidden rounded-2xl border border-error/30 bg-error/10">
+            <div className="flex items-center gap-3 p-5">
+              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-error/20 text-error">
+                <X size={22} />
+              </div>
+              <div>
+                <h2 className="font-headline font-bold text-error">Pedido cancelado</h2>
+                <p className="text-sm text-on-surface-variant/70">
+                  Si fue un error, contáctanos por WhatsApp.
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="font-headline font-bold text-error">Pedido cancelado</h2>
-              <p className="text-sm text-on-surface-variant/70">
-                Si fue un error, contáctanos por WhatsApp.
-              </p>
-            </div>
+            {order?.cancelReason && (
+              <div className="border-t border-error/15 bg-error/5 px-5 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-error/60">
+                  Motivo
+                </p>
+                <p className="mt-0.5 text-sm font-medium text-on-surface">
+                  {order.cancelReason}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

@@ -68,6 +68,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
   const qc = useQueryClient();
   const open = !!orderId;
   const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["admin-order-detail", orderId],
@@ -85,12 +86,17 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
   });
 
   const cancelMut = useMutation({
-    mutationFn: (id: string) =>
-      api.patch(`/api/admin/orders/${id}/status`, { status: "CANCELLED" }, adminToken || undefined),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.patch(
+        `/api/admin/orders/${id}/status`,
+        { status: "CANCELLED", cancelReason: reason || undefined },
+        adminToken || undefined
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
       qc.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
       setConfirmingCancel(false);
+      setCancelReason("");
       onClose();
     },
   });
@@ -110,7 +116,10 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
 
   // Reset confirm state when modal opens/closes
   useEffect(() => {
-    if (!open) setConfirmingCancel(false);
+    if (!open) {
+      setConfirmingCancel(false);
+      setCancelReason("");
+    }
   }, [open]);
 
   const next = order?.status ? NEXT_STATUS[order.status] : null;
@@ -345,39 +354,77 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                 <div className="border-t border-outline-variant/10 bg-surface-container-high/50 p-4 sm:p-5">
                   <AnimatePresence mode="wait">
                     {confirmingCancel ? (
-                      /* ── Confirm cancel ── */
+                      /* ── Confirm cancel with reason ── */
                       <motion.div
                         key="confirm"
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -6 }}
                         transition={{ duration: 0.18 }}
-                        className="flex flex-col gap-2"
+                        className="flex flex-col gap-3"
                       >
                         <div className="flex items-center gap-2 rounded-xl bg-error/10 px-3 py-2.5 text-sm text-error">
                           <AlertTriangle size={15} className="flex-shrink-0" />
                           <span className="font-semibold">
-                            ¿Cancelar el pedido #{order.orderNumber}? Esta acción no se puede deshacer.
+                            ¿Cancelar pedido #{order.orderNumber}?
                           </span>
                         </div>
+
+                        {/* Quick reason buttons */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            "Producto agotado",
+                            "Fuera de zona",
+                            "Pedido duplicado",
+                            "Cliente solicitó cancelar",
+                          ].map((reason) => (
+                            <button
+                              key={reason}
+                              type="button"
+                              onClick={() => setCancelReason(reason)}
+                              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                                cancelReason === reason
+                                  ? "border-error bg-error/15 text-error"
+                                  : "border-outline-variant/25 text-on-surface-variant hover:border-error/40 hover:text-error"
+                              }`}
+                            >
+                              {reason}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Custom reason input */}
+                        <input
+                          type="text"
+                          value={cancelReason}
+                          onChange={(e) => setCancelReason(e.target.value)}
+                          placeholder="Motivo de cancelación (se muestra al cliente)..."
+                          className="w-full rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/40 focus:border-error focus:outline-none focus:ring-1 focus:ring-error"
+                        />
+
                         <div className="flex gap-2">
                           <button
-                            onClick={() => setConfirmingCancel(false)}
+                            onClick={() => {
+                              setConfirmingCancel(false);
+                              setCancelReason("");
+                            }}
                             disabled={cancelMut.isPending}
                             className="flex-1 rounded-xl border border-outline-variant/25 px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-surface-variant transition-colors hover:border-outline-variant hover:text-tertiary disabled:opacity-50"
                           >
                             No, volver
                           </button>
                           <button
-                            onClick={() => cancelMut.mutate(order.id)}
-                            disabled={cancelMut.isPending}
+                            onClick={() =>
+                              cancelMut.mutate({ id: order.id, reason: cancelReason })
+                            }
+                            disabled={cancelMut.isPending || !cancelReason.trim()}
                             className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-error px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-error/25 transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
                           >
                             {cancelMut.isPending ? (
                               <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
                             ) : (
                               <>
-                                <X size={13} /> Sí, cancelar
+                                <X size={13} /> Cancelar pedido
                               </>
                             )}
                           </button>
