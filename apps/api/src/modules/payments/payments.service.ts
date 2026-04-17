@@ -69,9 +69,9 @@ export class PaymentsService {
         statement_descriptor: "POLLON SJR",
         notification_url: `${apiUrl}/api/payments/webhook`,
         back_urls: {
-          success: `${webUrl}/pedido/${orderId}?pago=exitoso`,
-          failure: `${webUrl}/pedido/${orderId}?pago=error`,
-          pending: `${webUrl}/pedido/${orderId}?pago=pendiente`,
+          success: `${webUrl}/order/${orderId}?pago=exitoso`,
+          failure: `${webUrl}/order/${orderId}?pago=error`,
+          pending: `${webUrl}/order/${orderId}?pago=pendiente`,
         },
         auto_return: "approved",
         expires: true,

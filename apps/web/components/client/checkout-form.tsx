@@ -8,22 +8,13 @@ import { useDelivery } from "@/hooks/useDelivery";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type {
-  CardPaymentPayload,
-  CreateCardPaymentResponse,
   CreateOrderResponse,
   PaymentMethodType,
 } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Banknote, CreditCard, Landmark, Loader2, ShieldCheck, Lock } from "lucide-react";
-import { CardPayment, initMercadoPago } from "@mercadopago/sdk-react";
-import type {
-  ICardPaymentBrickPayer,
-  ICardPaymentFormData,
-} from "@mercadopago/sdk-react/esm/bricks/cardPayment/type";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { ArrowLeft, Banknote, CreditCard, Landmark, Loader2, ShieldCheck, Lock, ExternalLink } from "lucide-react";
 import { DeliveryMap } from "./delivery-map";
-
-const STATIC_MP_PUBLIC_KEY = process.env.NEXT_PUBLIC_MP_PUBLIC_KEY || "";
 
 const checkoutSchema = z.object({
   type: z.enum(["DELIVERY", "PICKUP"]),
@@ -33,7 +24,6 @@ const checkoutSchema = z.object({
 });
 
 type CheckoutData = z.infer<typeof checkoutSchema>;
-type CardPaymentFormData = ICardPaymentFormData<ICardPaymentBrickPayer>;
 
 interface CheckoutFormProps {
   onBack: () => void;
@@ -50,7 +40,7 @@ const PAYMENT_METHODS: Array<{
   {
     value: "CARD",
     title: "Tarjeta de crédito / débito",
-    description: () => "Encriptado 256-bit · Sin comisión extra · Mercado Pago",
+    description: () => "Paga de forma segura con Mercado Pago · Acepta todas las tarjetas",
     badge: "Recomendado",
     icon: <CreditCard size={17} />,
   },
@@ -71,12 +61,36 @@ const PAYMENT_METHODS: Array<{
   },
 ];
 
+/** Mercado Pago logotype in SVG — displays inline in the button */
+function MercadoPagoLogo({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 60 14"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden
+    >
+      <path
+        d="M5.7 0C2.55 0 0 2.55 0 5.7c0 3.15 2.55 5.7 5.7 5.7 1.08 0 2.1-.3 2.97-.82L11.4 11.4V8.55A5.68 5.68 0 0 0 11.4 5.7C11.4 2.55 8.85 0 5.7 0z"
+        fill="#009EE3"
+      />
+      <path
+        d="M5.7 2.28a3.42 3.42 0 1 1 0 6.84 3.42 3.42 0 0 1 0-6.84z"
+        fill="white"
+      />
+      <text x="14" y="9.5" fontFamily="system-ui,sans-serif" fontSize="8.5" fontWeight="700" fill="currentColor" letterSpacing="0">
+        MercadoPago
+      </text>
+    </svg>
+  );
+}
+
 export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const { items, total, clearCart } = useCart();
   const { delivery, onDeliveryChange } = useDelivery();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mpPublicKey, setMpPublicKey] = useState(STATIC_MP_PUBLIC_KEY);
 
   const { register, handleSubmit, watch, setValue } = useForm<CheckoutData>({
     resolver: zodResolver(checkoutSchema),
@@ -90,38 +104,13 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
     [delivery.fee, orderType, total]
   );
   const cardBlocked = orderType === "DELIVERY" && delivery.available !== true;
+
   const submitLabel =
-    paymentMethod === "CARD"
-      ? "Pagar con tarjeta"
-      : paymentMethod === "TRANSFER"
-        ? "Confirmar transferencia"
-        : orderType === "PICKUP"
-          ? "Confirmar y pagar en sucursal"
-          : "Confirmar pedido en efectivo";
-
-  useEffect(() => {
-    if (STATIC_MP_PUBLIC_KEY) return;
-
-    let active = true;
-    fetch("/api/public-config", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((config: { mpPublicKey?: string } | null) => {
-        if (active && config?.mpPublicKey) {
-          setMpPublicKey(config.mpPublicKey);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (mpPublicKey) {
-      initMercadoPago(mpPublicKey, { locale: "es-MX" });
-    }
-  }, [mpPublicKey]);
+    paymentMethod === "TRANSFER"
+      ? "Confirmar transferencia"
+      : orderType === "PICKUP"
+        ? "Confirmar y pagar en sucursal"
+        : "Confirmar pedido en efectivo";
 
   const createOrder = useCallback(
     async (data: CheckoutData, token: string) =>
@@ -158,6 +147,47 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
     [handleSubmit]
   );
 
+  /** CARD → Checkout Pro: create order then redirect to Mercado Pago */
+  const handleCardRedirect = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setError("Necesitas iniciar sesión primero");
+      return;
+    }
+
+    let data: CheckoutData;
+    try {
+      data = await getCheckoutData();
+    } catch (err: any) {
+      setError(err.message || "Revisa los datos del pedido.");
+      return;
+    }
+
+    if (data.type === "DELIVERY" && !delivery.available) {
+      setError("Selecciona una ubicación de entrega válida");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const order = await createOrder(data, token);
+      const { checkoutUrl } = await api.post<{ preferenceId: string; checkoutUrl: string }>(
+        "/api/payments/create",
+        { orderId: order.orderId },
+        token
+      );
+      clearCart();
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      setError(err.message || "No se pudo redirigir a Mercado Pago. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }, [clearCart, createOrder, delivery.available, getCheckoutData]);
+
+  /** CASH / TRANSFER → submit directly */
   const onSubmit = async (data: CheckoutData) => {
     const token = getToken();
     if (!token) {
@@ -167,11 +197,6 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
     if (data.type === "DELIVERY" && !delivery.available) {
       setError("Selecciona una ubicación de entrega válida");
-      return;
-    }
-
-    if (data.paymentMethod === "CARD") {
-      setError("Completa los datos de tu tarjeta en el formulario de Mercado Pago.");
       return;
     }
 
@@ -188,68 +213,6 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
       setLoading(false);
     }
   };
-
-  const handleCardPayment = useCallback(
-    async (cardData: CardPaymentFormData) => {
-      const token = getToken();
-      if (!token) {
-        const message = "Necesitas iniciar sesión primero";
-        setError(message);
-        throw new Error(message);
-      }
-
-      setLoading(true);
-      setError(null);
-
-      try {
-        const data = await getCheckoutData();
-
-        if (data.type === "DELIVERY" && !delivery.available) {
-          throw new Error("Selecciona una ubicación de entrega válida");
-        }
-
-        const order = await createOrder(data, token);
-        const payload: CardPaymentPayload = {
-          orderId: order.orderId,
-          token: cardData.token,
-          paymentMethodId: cardData.payment_method_id,
-          issuerId: cardData.issuer_id,
-          installments: cardData.installments,
-          transactionAmount: cardData.transaction_amount,
-          idempotencyKey:
-            typeof crypto !== "undefined" && "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `${order.orderId}-${Date.now()}`,
-          payer: {
-            email: cardData.payer?.email,
-            identification: cardData.payer?.identification,
-          },
-        };
-
-        const payment = await api.post<CreateCardPaymentResponse>(
-          "/api/payments/card",
-          payload,
-          token
-        );
-
-        if (payment.status === "REJECTED") {
-          throw new Error(payment.message || "No pudimos procesar tu tarjeta.");
-        }
-
-        clearCart();
-        window.location.href = `/order/${order.orderId}?pago=${
-          payment.mpStatus || payment.status.toLowerCase()
-        }`;
-      } catch (err: any) {
-        const message = err.message || "No pudimos procesar tu tarjeta.";
-        setError(message);
-        throw new Error(message);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [clearCart, createOrder, delivery.available, getCheckoutData]
-  );
 
   return (
     <div className="flex min-h-full flex-col p-4 pb-6">
@@ -280,6 +243,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         </div>
       </div>
 
+      {/* Payment method */}
       <div className="mb-4">
         <label className="text-sm font-medium mb-2 block text-on-surface">Forma de pago</label>
         <div className="grid gap-2">
@@ -354,65 +318,58 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
       {error && <p className="text-error text-sm mb-3">{error}</p>}
 
+      {/* ── CARD: Checkout Pro redirect button ── */}
       {paymentMethod === "CARD" && (
-        <div className="mb-4 space-y-3">
-          <div className="rounded-lg border border-outline-variant bg-surface-container-high p-3">
-            <p className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-              Pago seguro con Mercado Pago
-            </p>
-            <p className="mt-1 text-sm text-on-surface">
-              Total a pagar:{" "}
-              <span className="font-headline font-bold text-primary">
+        <div className="mt-auto space-y-3">
+          {/* Amount preview */}
+          <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-on-surface-variant">Total a pagar</span>
+              <span className="font-headline text-lg font-extrabold text-primary">
                 {formatCents(totalCents)}
               </span>
-            </p>
-            <p className="mt-1 text-xs text-on-surface-variant">
-              Los datos de tu tarjeta se capturan directamente en Mercado Pago.
+            </div>
+            <p className="mt-1 text-[11px] text-on-surface-variant/60">
+              Incluye {orderType === "DELIVERY" && delivery.fee ? `envío ($${(delivery.fee / 100).toFixed(0)}) + ` : ""}todos los productos
             </p>
           </div>
 
           {cardBlocked ? (
-            <p className="rounded-lg bg-surface-container-high p-3 text-sm text-on-surface-variant">
-              Selecciona una dirección de entrega válida para mostrar el formulario de tarjeta.
+            <p className="rounded-xl bg-surface-container-high p-3 text-sm text-on-surface-variant text-center">
+              Selecciona una dirección de entrega válida para continuar.
             </p>
-          ) : totalCents <= 0 ? (
-            <p className="rounded-lg bg-surface-container-high p-3 text-sm text-on-surface-variant">
-              Agrega productos al carrito para pagar con tarjeta.
-            </p>
-          ) : mpPublicKey ? (
-            <div className="overflow-hidden rounded-lg border border-outline-variant bg-white p-2">
-              <CardPayment
-                key={`${orderType}-${totalCents}-${delivery.zoneId || "pickup"}`}
-                initialization={{
-                  amount: totalCents / 100,
-                }}
-                customization={{
-                  paymentMethods: {
-                    minInstallments: 1,
-                    maxInstallments: 1,
-                    types: {
-                      included: ["credit_card", "debit_card"],
-                    },
-                  },
-                  visual: {
-                    hideFormTitle: true,
-                  },
-                }}
-                locale="es-MX"
-                onSubmit={handleCardPayment}
-                onError={() => {
-                  setError("No pude cargar el formulario de tarjeta. Intenta de nuevo.");
-                }}
-              />
-            </div>
           ) : (
-            <p className="rounded-lg border border-error/40 bg-error/10 p-3 text-sm text-error">
-              Falta configurar la llave pública de Mercado Pago.
-            </p>
+            <button
+              type="button"
+              onClick={handleCardRedirect}
+              disabled={loading || totalCents <= 0}
+              className="group w-full overflow-hidden rounded-2xl bg-[#009EE3] py-4 font-headline font-bold text-white shadow-lg shadow-[#009EE3]/30 transition-all hover:brightness-105 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Redirigiendo a Mercado Pago...
+                </>
+              ) : (
+                <>
+                  <ExternalLink size={16} />
+                  Pagar con Mercado Pago
+                </>
+              )}
+            </button>
           )}
+
+          <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant/50">
+            <span className="flex items-center gap-1"><Lock size={9} /> Cifrado 256-bit</span>
+            <span>·</span>
+            <span className="flex items-center gap-1"><ShieldCheck size={9} /> Pago seguro</span>
+            <span>·</span>
+            <span>Acepta tarjetas y saldo MP</span>
+          </div>
         </div>
       )}
 
+      {/* ── CASH / TRANSFER ── */}
       {paymentMethod !== "CARD" && (
         <div className="mt-auto pt-2">
           <button
