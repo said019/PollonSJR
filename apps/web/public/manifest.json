@@ -1,0 +1,30 @@
+{
+  "name": "Pollón SJR",
+  "short_name": "Pollón",
+  "description": "Pide pollo frito crujiente. Entrega a domicilio en San Juan del Río.",
+  "start_url": "/menu",
+  "display": "standalone",
+  "background_color": "#0A0A0A",
+  "theme_color": "#F97316",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512x512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

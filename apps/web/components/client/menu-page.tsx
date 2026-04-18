@@ -11,6 +11,7 @@ import { formatCents } from "@pollon/utils";
 import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star } from "lucide-react";
 import { StoreStatusBanner } from "./store-status-banner";
 import { ActiveOrderBanner } from "./active-order-banner";
+import { InstallAppBanner } from "./install-app-banner";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -639,8 +640,13 @@ export function MenuPage() {
       {/* Floating bottom area: active-order banner + cart bar */}
       <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-8">
         <div className="mx-auto flex w-full max-w-lg flex-col gap-2">
-          {/* Active order banner — only when cart is empty (no overlap) */}
-          {itemCount === 0 && <ActiveOrderBanner />}
+          {/* Install app + active order — shown when cart is empty */}
+          {itemCount === 0 && (
+            <>
+              <InstallAppBanner />
+              <ActiveOrderBanner />
+            </>
+          )}
 
           {/* Cart bar */}
           {itemCount > 0 && (
