@@ -3,9 +3,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
-import { Save, Loader2, Clock, Store } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Save, Loader2, Clock, Store, Download, Share, Smartphone } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 interface StoreConfig {
   isOpen: boolean;
@@ -188,7 +189,7 @@ export function SettingsPage() {
               type="time"
               value={form.openTime}
               onChange={(e) => setForm({ ...form, openTime: e.target.value })}
-              className="w-full border rounded-xl p-3 text-sm"
+              className="w-full border border-outline-variant/30 bg-surface-container rounded-xl p-3 text-sm text-on-surface"
             />
           </div>
           <div>
@@ -197,7 +198,7 @@ export function SettingsPage() {
               type="time"
               value={form.closeTime}
               onChange={(e) => setForm({ ...form, closeTime: e.target.value })}
-              className="w-full border rounded-xl p-3 text-sm"
+              className="w-full border border-outline-variant/30 bg-surface-container rounded-xl p-3 text-sm text-on-surface"
             />
           </div>
         </div>
@@ -205,6 +206,169 @@ export function SettingsPage() {
           Horario en tiempo de México (CST/CDT)
         </p>
       </section>
+
+      {/* Install app */}
+      <InstallAppSection />
     </div>
+  );
+}
+
+/* ─── Install App Section ──────────────────────────────────── */
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+function InstallAppSection() {
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isIos, setIsIos] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as any).standalone === true;
+    setIsStandalone(standalone);
+
+    const ua = navigator.userAgent;
+    setIsIos(/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream);
+
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const handleInstall = useCallback(async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") setInstalled(true);
+    setDeferredPrompt(null);
+  }, [deferredPrompt]);
+
+  return (
+    <section className="bg-surface-container-high rounded-xl p-5 border border-outline-variant/20 mb-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Smartphone size={20} className="text-primary" />
+        <h2 className="font-bold">Instalar app en celular</h2>
+      </div>
+
+      <div className="flex items-center gap-4 mb-5">
+        <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-2xl border-2 border-primary/30 shadow-lg shadow-primary/10">
+          <Image
+            src="/pollon-logo.jpg"
+            alt="Pollón"
+            width={64}
+            height={64}
+            className="h-full w-full object-cover"
+          />
+        </div>
+        <div>
+          <p className="font-bold text-on-surface">Pollón SJR</p>
+          <p className="text-xs text-on-surface-variant">
+            {isStandalone || installed
+              ? "Ya tienes la app instalada"
+              : "Acceso directo como app nativa"}
+          </p>
+        </div>
+      </div>
+
+      {isStandalone || installed ? (
+        <div className="flex items-center gap-2 rounded-xl bg-green-500/10 border border-green-500/20 p-3 text-sm text-green-400">
+          <span className="text-lg">✓</span>
+          <span>App instalada correctamente en este dispositivo</span>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {/* Android / Chrome */}
+          {deferredPrompt && (
+            <button
+              onClick={handleInstall}
+              className="w-full flex items-center justify-center gap-2 bg-primary text-on-primary py-3 rounded-xl font-semibold text-sm transition-all active:scale-[0.98]"
+            >
+              <Download size={16} />
+              Instalar app ahora
+            </button>
+          )}
+
+          {/* iOS instructions */}
+          <div className="rounded-xl border border-outline-variant/20 bg-surface-container p-4">
+            <p className="text-sm font-semibold text-on-surface mb-3">
+              {isIos ? "Instalar en este iPhone / iPad:" : "Instrucciones para iOS (iPhone / iPad):"}
+            </p>
+            <div className="space-y-2.5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                  1
+                </div>
+                <p className="text-sm text-on-surface-variant">
+                  Abre esta página en <strong className="text-on-surface">Safari</strong>
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                  2
+                </div>
+                <p className="text-sm text-on-surface-variant">
+                  Toca el botón <Share size={12} className="inline text-primary" /> <strong className="text-on-surface">Compartir</strong> en la barra inferior
+                </p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                  3
+                </div>
+                <p className="text-sm text-on-surface-variant">
+                  Selecciona <strong className="text-on-surface">"Agregar a inicio"</strong> y confirma
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Android instructions (when no prompt available) */}
+          {!deferredPrompt && !isIos && (
+            <div className="rounded-xl border border-outline-variant/20 bg-surface-container p-4">
+              <p className="text-sm font-semibold text-on-surface mb-3">
+                Instrucciones para Android (Chrome):
+              </p>
+              <div className="space-y-2.5">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                    1
+                  </div>
+                  <p className="text-sm text-on-surface-variant">
+                    Abre esta página en <strong className="text-on-surface">Chrome</strong>
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                    2
+                  </div>
+                  <p className="text-sm text-on-surface-variant">
+                    Toca los <strong className="text-on-surface">3 puntos ⋮</strong> arriba a la derecha
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary/15 text-xs font-bold text-primary">
+                    3
+                  </div>
+                  <p className="text-sm text-on-surface-variant">
+                    Selecciona <strong className="text-on-surface">"Instalar app"</strong> o <strong className="text-on-surface">"Agregar a pantalla de inicio"</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[11px] text-on-surface-variant/50 text-center">
+            El icono de Pollón aparecerá en tu pantalla como una app nativa
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
