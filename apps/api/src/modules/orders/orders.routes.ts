@@ -7,6 +7,13 @@ import { validateCoupon, CouponError } from "./coupon.service";
 export async function ordersRoutes(app: FastifyInstance) {
   const service = new OrdersService(app);
 
+  // Cliente: pedidos activos propios (para el banner de "en curso")
+  // MUST be registered before /:id to avoid parametric route collision
+  app.get("/my-active", { preHandler: [authenticate] }, async (request) => {
+    const user = request.user as { id: string };
+    return service.getMyActiveOrders(user.id);
+  });
+
   // Cliente: crear pedido
   app.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = createOrderSchema.safeParse(request.body);
@@ -46,12 +53,6 @@ export async function ordersRoutes(app: FastifyInstance) {
     } catch (err: any) {
       return reply.status(404).send({ error: err.message });
     }
-  });
-
-  // Cliente: pedidos activos propios (para el banner de "en curso")
-  app.get("/my-active", { preHandler: [authenticate] }, async (request, reply) => {
-    const user = request.user as { id: string };
-    return service.getMyActiveOrders(user.id);
   });
 
   // Cliente: validar cupón
