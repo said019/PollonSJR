@@ -307,6 +307,7 @@ export class OrdersService {
       address: order.address,
       notes: order.notes,
       cancelReason: order.cancelReason,
+      rating: order.rating,
       customerName: order.customer.name,
       customerPhone: order.customer.phone,
       itemCount: order.items.length,

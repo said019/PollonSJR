@@ -345,6 +345,27 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                         <p className="text-sm italic text-on-surface">{order.notes}</p>
                       </section>
                     )}
+
+                    {/* Rating */}
+                    {order.rating && (
+                      <section className="rounded-2xl border border-secondary/30 bg-secondary/5 p-4">
+                        <h3 className="mb-2 font-headline text-[10px] font-bold uppercase tracking-[0.25em] text-secondary">
+                          Calificación del cliente
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-0.5">
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <span key={n} className={n <= order.rating! ? "text-secondary" : "text-on-surface-variant/20"}>
+                                ★
+                              </span>
+                            ))}
+                          </div>
+                          <span className="text-sm font-bold text-secondary">
+                            {order.rating}/5
+                          </span>
+                        </div>
+                      </section>
+                    )}
                   </div>
                 )}
               </div>

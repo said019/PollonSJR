@@ -323,7 +323,7 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               )}
             </div>
 
-            {/* Tiny step dots */}
+            {/* Step icons */}
             <div className="flex items-center justify-between px-4 py-2.5 sm:px-5">
               {STATUS_STEPS.map((step, i) => {
                 const done = i <= activeStep;
@@ -332,14 +332,15 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                     key={step.status}
                     className="flex flex-1 flex-col items-center gap-1"
                   >
-                    <motion.div
-                      initial={false}
-                      animate={{
-                        scale: done ? 1 : 0.8,
-                        backgroundColor: done ? "#F97316" : "#44403C",
-                      }}
-                      className="h-2 w-2 rounded-full"
-                    />
+                    <div
+                      className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${
+                        done
+                          ? "bg-primary text-on-primary"
+                          : "bg-surface-variant/50 text-on-surface-variant/40"
+                      }`}
+                    >
+                      {step.icon}
+                    </div>
                     <span
                       className={`text-[9px] font-bold uppercase tracking-wider ${
                         done ? "text-primary" : "text-on-surface-variant/40"
@@ -357,70 +358,8 @@ export function OrderTracker({ orderId }: { orderId: string }) {
         {/* ═══════════════════════════════════════════════════════ */}
         {/*  Post-delivery celebration — shown when DELIVERED       */}
         {/* ═══════════════════════════════════════════════════════ */}
-        {isDelivered && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.1 }}
-            className="mb-5 overflow-hidden rounded-3xl border border-secondary/30 bg-gradient-to-br from-surface-container-high to-surface-container"
-          >
-            {/* Confetti top stripe */}
-            <div className="h-1.5 w-full bg-[linear-gradient(90deg,#F97316,#FACC15,#22c55e,#F97316)]" />
-
-            <div className="px-5 py-6 text-center">
-              <motion.div
-                initial={{ scale: 0.5, rotate: -10 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", damping: 10, stiffness: 200, delay: 0.2 }}
-                className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-secondary/30 to-secondary/10 text-3xl"
-              >
-                🎉
-              </motion.div>
-
-              <h2 className="font-headline text-2xl font-extrabold uppercase tracking-tighter text-tertiary">
-                ¡Buen provecho!
-              </h2>
-              <p className="mt-1 text-sm text-on-surface-variant/80">
-                Tu pedido fue entregado. Esperamos que lo disfrutes mucho.
-              </p>
-
-              {/* Rating strip */}
-              <div className="mt-4 flex items-center justify-center gap-1.5">
-                <span className="text-xs text-on-surface-variant/60">¿Qué tal estuvo?</span>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <motion.button
-                    key={n}
-                    whileTap={{ scale: 0.8 }}
-                    whileHover={{ scale: 1.2 }}
-                    aria-label={`${n} estrellas`}
-                    className="text-on-surface-variant/30 transition-colors hover:text-secondary"
-                  >
-                    <Star size={20} />
-                  </motion.button>
-                ))}
-              </div>
-
-              {/* CTAs */}
-              <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-                <Link
-                  href="/menu"
-                  className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98]"
-                >
-                  <RotateCcw size={15} />
-                  Pedir de nuevo
-                </Link>
-                <a
-                  href={`https://wa.me/?text=${encodeURIComponent("¡Hola! Acabo de recibir mi pedido de Pollón SJR y estuvo increíble 🍗🔥")}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-tertiary transition-all hover:border-primary/40 active:scale-[0.98]"
-                >
-                  <MessageCircle size={15} />
-                  Compartir
-                </a>
-              </div>
-            </div>
-          </motion.div>
+        {isDelivered && order && (
+          <CelebrationCard order={order} token={token} />
         )}
 
         {/* Cancelled banner */}
@@ -595,6 +534,166 @@ export function OrderTracker({ orderId }: { orderId: string }) {
         orderNumber={order.orderNumber}
       />
     </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  CelebrationCard — rating + share for delivered orders          */
+/* ────────────────────────────────────────────────────────────── */
+
+function CelebrationCard({ order, token }: { order: OrderDetail; token: string | null }) {
+  const [selectedRating, setSelectedRating] = useState<number>(order.rating ?? 0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [ratingDone, setRatingDone] = useState(!!order.rating);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleRate = async (stars: number) => {
+    setSelectedRating(stars);
+    if (!token) return;
+    setSubmitting(true);
+    try {
+      await api.post(`/api/orders/${order.id}/rate`, { rating: stars }, token);
+      setRatingDone(true);
+    } catch {
+      // silently ignore
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const shareText = `Pedí en Pollón SJR y estuvo increíble 🍗🔥 El mejor pollo frito de San Juan del Río. ¡Pide el tuyo!`;
+  const shareUrl = typeof window !== "undefined" ? window.location.origin + "/menu" : "";
+
+  const handleShare = async () => {
+    // Use Web Share API if available (mobile)
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({
+          title: "Pollón SJR — Pollo Frito",
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch {
+        // User cancelled or not supported — fall through to WhatsApp
+      }
+    }
+    // Fallback: WhatsApp
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(shareText + "\n\n" + shareUrl)}`,
+      "_blank"
+    );
+  };
+
+  const displayRating = hoverRating || selectedRating;
+
+  const ratingLabels = ["", "Malo", "Regular", "Bien", "Muy bien", "Excelente"];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: 0.1 }}
+      className="mb-5 overflow-hidden rounded-3xl border border-secondary/30 bg-gradient-to-br from-surface-container-high to-surface-container"
+    >
+      <div className="h-1.5 w-full bg-[linear-gradient(90deg,#F97316,#FACC15,#22c55e,#F97316)]" />
+
+      <div className="px-5 py-6 text-center">
+        <motion.div
+          initial={{ scale: 0.5, rotate: -10 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", damping: 10, stiffness: 200, delay: 0.2 }}
+          className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-secondary/30 to-secondary/10 text-3xl"
+        >
+          🎉
+        </motion.div>
+
+        <h2 className="font-headline text-2xl font-extrabold uppercase tracking-tighter text-tertiary">
+          ¡Buen provecho!
+        </h2>
+        <p className="mt-1 text-sm text-on-surface-variant/80">
+          Tu pedido fue entregado. Esperamos que lo disfrutes mucho.
+        </p>
+
+        {/* ── Rating stars ── */}
+        <div className="mt-5">
+          {ratingDone ? (
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="flex flex-col items-center gap-1"
+            >
+              <div className="flex gap-0.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <Star
+                    key={n}
+                    size={22}
+                    className={n <= selectedRating ? "fill-secondary text-secondary" : "text-on-surface-variant/20"}
+                  />
+                ))}
+              </div>
+              <p className="text-xs font-semibold text-secondary">
+                {ratingLabels[selectedRating]} — Gracias por tu calificación
+              </p>
+            </motion.div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <p className="text-xs text-on-surface-variant/60">¿Qué tal estuvo?</p>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <motion.button
+                    key={n}
+                    whileTap={{ scale: 0.8 }}
+                    onMouseEnter={() => setHoverRating(n)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    onClick={() => void handleRate(n)}
+                    disabled={submitting}
+                    aria-label={`${n} estrellas`}
+                    className="p-1 transition-colors disabled:opacity-50"
+                  >
+                    <Star
+                      size={28}
+                      className={
+                        n <= displayRating
+                          ? "fill-secondary text-secondary"
+                          : "text-on-surface-variant/25 hover:text-secondary/50"
+                      }
+                    />
+                  </motion.button>
+                ))}
+              </div>
+              {displayRating > 0 && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-xs font-semibold text-secondary"
+                >
+                  {ratingLabels[displayRating]}
+                </motion.p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── CTAs ── */}
+        <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
+          <Link
+            href="/menu"
+            className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98]"
+          >
+            <RotateCcw size={15} />
+            Pedir de nuevo
+          </Link>
+          <button
+            onClick={handleShare}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-tertiary transition-all hover:border-primary/40 active:scale-[0.98]"
+          >
+            <MessageCircle size={15} />
+            Recomendar
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 

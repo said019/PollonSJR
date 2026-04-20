@@ -75,6 +75,7 @@ export interface OrderDetail extends OrderSummary {
   deliveryFee: number;
   notes: string | null;
   cancelReason?: string | null;
+  rating?: number | null;
   items: OrderItemDetail[];
   payment: PaymentInfo | null;
 }

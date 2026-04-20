@@ -129,6 +129,9 @@ model Order {
   notes            String?
   estimatedMinutes Int?
   cancelReason     String?
+  rating           Int?
+  ratingComment    String?
+  ratedAt          DateTime?
   // Scheduled order fields
   isScheduled      Boolean          @default(false)
   scheduledFor     DateTime?

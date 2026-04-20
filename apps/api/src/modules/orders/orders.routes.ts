@@ -62,6 +62,28 @@ export async function ordersRoutes(app: FastifyInstance) {
     }
   });
 
+  // Cliente: calificar pedido
+  app.post<{ Params: { id: string } }>("/:id/rate", { preHandler: [authenticate] }, async (request, reply) => {
+    const user = request.user as { id: string };
+    const { rating, comment } = request.body as { rating: number; comment?: string };
+
+    if (!rating || rating < 1 || rating > 5) {
+      return reply.status(400).send({ error: "Calificación debe ser entre 1 y 5" });
+    }
+
+    const order = await app.prisma.order.findUnique({ where: { id: request.params.id } });
+    if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
+    if (order.customerId !== user.id) return reply.status(403).send({ error: "No autorizado" });
+    if (order.status !== "DELIVERED") return reply.status(400).send({ error: "Solo puedes calificar pedidos entregados" });
+
+    await app.prisma.order.update({
+      where: { id: request.params.id },
+      data: { rating, ratingComment: comment || null, ratedAt: new Date() },
+    });
+
+    return { success: true, rating };
+  });
+
   // Cliente: validar cupón
   app.post("/coupons/validate", { preHandler: [authenticate] }, async (request, reply) => {
     const { code, subtotal } = request.body as { code: string; subtotal: number };
