@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "prisma db push --schema=../../packages/prisma/schema.prisma --skip-generate && prisma generate --schema=../../packages/prisma/schema.prisma && tsc",
-    "start": "node dist/server.js",
+    "build": "prisma generate --schema=../../packages/prisma/schema.prisma && tsc",
+    "start": "prisma db push --schema=../../packages/prisma/schema.prisma --skip-generate && node dist/server.js",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   },

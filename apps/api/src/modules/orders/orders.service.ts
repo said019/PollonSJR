@@ -405,6 +405,13 @@ export class OrdersService {
           in: ["PENDING_PAYMENT", "RECEIVED", "PREPARING", "READY", "ON_THE_WAY"],
         },
       },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        type: true,
+        total: true,
+      },
       orderBy: { createdAt: "desc" },
       take: 3,
     });
