@@ -17,7 +17,6 @@ const COLUMNS: { status: OrderStatusType; label: string; icon: React.ReactNode; 
   { status: "PREPARING", label: "Preparando", icon: <ChefHat size={18} />, color: "border-orange-400" },
   { status: "READY", label: "Listos", icon: <Package size={18} />, color: "border-green-400" },
   { status: "ON_THE_WAY", label: "En camino", icon: <Truck size={18} />, color: "border-purple-400" },
-  { status: "DELIVERED", label: "Entregados", icon: <CheckCircle size={18} />, color: "border-gray-400" },
 ];
 
 const NEXT_STATUS: Record<string, OrderStatusType | null> = {
@@ -119,7 +118,7 @@ export function OrdersKanban() {
         </FilterTab>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 overflow-x-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {COLUMNS.map((col) => {
           const colOrders = filtered.filter((o) => o.status === col.status);
           return (
