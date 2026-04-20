@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -25,7 +26,11 @@ const STATUS_META: Record<string, { label: string; icon: React.ReactNode; pulse:
 };
 
 export function ActiveOrderBanner() {
-  const token = getToken();
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    setToken(getToken());
+  }, []);
 
   const { data: orders } = useQuery<ActiveOrder[]>({
     queryKey: ["my-active-orders"],

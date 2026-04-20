@@ -52,8 +52,12 @@ const PAYMENT_LABELS = {
 } as const;
 
 export function OrderTracker({ orderId }: { orderId: string }) {
-  const token = getToken();
+  const [token, setToken] = useState<string | null>(null);
   const searchParams = useSearchParams();
+
+  useEffect(() => {
+    setToken(getToken());
+  }, []);
   const pagoParam = searchParams.get("pago"); // "exitoso" | "error" | "pendiente" | null
   const [currentStatus, setCurrentStatus] = useState<OrderStatusType | null>(null);
   const [showExpandedTracker, setShowExpandedTracker] = useState(false);
