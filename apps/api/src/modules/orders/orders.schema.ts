@@ -9,11 +9,11 @@ export const createOrderSchema = z.object({
   isScheduled: z.boolean().optional(),
   scheduledFor: z.string().datetime().optional(),
   address: z.string().optional(),
-  deliveryLat: z.number().min(-90).max(90).optional(),
-  deliveryLng: z.number().min(-180).max(180).optional(),
-  deliveryZoneId: z.string().optional(),
-  deliveryAddress: z.string().max(500).optional(),
-  deliveryFee: z.number().int().min(0).optional(),
+  deliveryLat: z.number().min(-90).max(90).nullable().optional(),
+  deliveryLng: z.number().min(-180).max(180).nullable().optional(),
+  deliveryZoneId: z.string().nullable().optional(),
+  deliveryAddress: z.string().max(500).nullable().optional(),
+  deliveryFee: z.number().int().min(0).nullable().optional(),
   notes: z.string().max(500).optional(),
   items: z
     .array(

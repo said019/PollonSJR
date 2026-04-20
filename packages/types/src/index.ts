@@ -105,10 +105,11 @@ export interface CreateOrderPayload {
   paymentMethod?: PaymentMethodType;
   cashAmount?: number;
   address?: string;
-  deliveryLat?: number;
-  deliveryLng?: number;
-  deliveryZoneId?: string;
-  deliveryFee?: number;
+  deliveryLat?: number | null;
+  deliveryLng?: number | null;
+  deliveryZoneId?: string | null;
+  deliveryAddress?: string | null;
+  deliveryFee?: number | null;
   notes?: string;
   items: Array<{
     productId: string;

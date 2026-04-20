@@ -26,8 +26,15 @@ export async function ordersRoutes(app: FastifyInstance) {
       const result = await service.create(user.id, parsed.data);
       return reply.status(201).send(result);
     } catch (err: any) {
-      const status = err.message?.includes("cerrado") || err.message?.includes("disponible") ? 409 : 400;
-      return reply.status(status).send({ error: err.message });
+      const msg = err.message || "Error al crear el pedido";
+      const isStoreReason =
+        msg.includes("cerrado") ||
+        msg.includes("disponible") ||
+        msg.includes("aceptando") ||
+        msg.includes("Abrimos") ||
+        msg.includes("Cerramos") ||
+        msg.includes("servicio");
+      return reply.status(isStoreReason ? 409 : 400).send({ error: msg });
     }
   });
 
