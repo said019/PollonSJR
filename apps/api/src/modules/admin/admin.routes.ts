@@ -108,8 +108,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // Customers
   app.get("/customers", async (request) => {
-    const { page } = request.query as { page?: string };
-    return adminService.getCustomers(Number(page) || 1);
+    const { page, search } = request.query as { page?: string; search?: string };
+    return adminService.getCustomers(Number(page) || 1, 20, search);
   });
 
   // Reports are handled by reports.routes.ts

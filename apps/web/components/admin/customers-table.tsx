@@ -3,26 +3,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
-import { Search, Star, Phone } from "lucide-react";
+import { formatCents } from "@pollon/utils";
+import { Search, Star, Phone, ShoppingBag, Gift, TrendingUp } from "lucide-react";
 import { useState } from "react";
 
 interface CustomerRow {
   id: string;
   phone: string;
   name: string | null;
-  totalOrders: number;
-  totalSpent: number;
-  loyaltyPoints: number;
-  loyaltyTier: string;
-  lastOrderAt: string | null;
   createdAt: string;
+  totalOrders: number;
+  deliveredOrders: number;
+  totalSpent: number;
+  avgRating: number | null;
+  ratingCount: number;
+  loyaltyProgress: number;
+  pendingReward: boolean;
+  freeProductsEarned: number;
+  lastOrderAt: string | null;
 }
-
-const TIER_BADGE: Record<string, string> = {
-  POLLITO: "bg-surface-variant text-on-surface-variant",
-  CRUJIENTE: "bg-orange-100 text-orange-700",
-  VIP_POLLON: "bg-yellow-100 text-yellow-700",
-};
 
 export function CustomersTable() {
   const token = getAdminToken();
@@ -40,8 +39,15 @@ export function CustomersTable() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Clientes</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Clientes</h1>
+          {data && (
+            <p className="text-sm text-on-surface-variant">
+              {data.total} cliente{data.total !== 1 ? "s" : ""} registrado{data.total !== 1 ? "s" : ""}
+            </p>
+          )}
+        </div>
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
           <input
@@ -50,92 +56,157 @@ export function CustomersTable() {
               setSearch(e.target.value);
               setPage(1);
             }}
-            placeholder="Buscar por nombre o teléfono..."
-            className="pl-9 pr-4 py-2 border rounded-xl text-sm w-64"
+            placeholder="Buscar nombre o teléfono..."
+            className="w-64 rounded-xl border border-outline-variant/30 bg-surface-container py-2 pl-9 pr-4 text-sm text-on-surface placeholder:text-on-surface-variant/40"
           />
         </div>
       </div>
 
-      <div className="bg-surface-container-high rounded-xl border border-outline-variant/20 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-container border-b">
-              <tr>
-                <th className="text-left p-3 font-semibold">Cliente</th>
-                <th className="text-left p-3 font-semibold">Teléfono</th>
-                <th className="text-center p-3 font-semibold">Pedidos</th>
-                <th className="text-center p-3 font-semibold">Gastado</th>
-                <th className="text-center p-3 font-semibold">Puntos</th>
-                <th className="text-center p-3 font-semibold">Nivel</th>
-                <th className="text-left p-3 font-semibold">Último pedido</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {isLoading
-                ? Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={7} className="p-3">
-                        <div className="h-6 bg-surface-variant rounded animate-pulse" />
-                      </td>
-                    </tr>
-                  ))
-                : data?.customers.map((c) => (
-                    <tr key={c.id} className="hover:bg-surface-container">
-                      <td className="p-3">
-                        <p className="font-medium">{c.name || "Sin nombre"}</p>
-                      </td>
-                      <td className="p-3">
-                        <span className="flex items-center gap-1 text-on-surface-variant">
-                          <Phone size={14} /> {c.phone}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center font-semibold">{c.totalOrders}</td>
-                      <td className="p-3 text-center">${(c.totalSpent / 100).toFixed(0)}</td>
-                      <td className="p-3 text-center">
-                        <span className="flex items-center justify-center gap-1">
-                          <Star size={14} className="text-yellow-500" /> {c.loyaltyPoints}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${TIER_BADGE[c.loyaltyTier] || ""}`}>
-                          {c.loyaltyTier}
-                        </span>
-                      </td>
-                      <td className="p-3 text-on-surface-variant text-xs">
-                        {c.lastOrderAt
-                          ? new Date(c.lastOrderAt).toLocaleDateString("es-MX")
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-        </div>
+      <div className="space-y-3">
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 animate-pulse rounded-xl bg-surface-container-high" />
+            ))
+          : data?.customers.map((c) => <CustomerCard key={c.id} customer={c} />)}
 
-        {data && data.pages > 1 && (
-          <div className="flex items-center justify-between p-4 border-t">
-            <p className="text-sm text-on-surface-variant">
-              Página {page} de {data.pages} ({data.total} clientes)
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1 border rounded text-sm disabled:opacity-50"
-              >
-                Anterior
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
-                disabled={page === data.pages}
-                className="px-3 py-1 border rounded text-sm disabled:opacity-50"
-              >
-                Siguiente
-              </button>
-            </div>
+        {!isLoading && data?.customers.length === 0 && (
+          <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high p-8 text-center text-sm text-on-surface-variant">
+            {search ? `No se encontraron clientes con "${search}"` : "Sin clientes registrados"}
           </div>
         )}
       </div>
+
+      {data && data.pages > 1 && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-on-surface-variant">
+            Página {page} de {data.pages}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="rounded-lg border border-outline-variant/30 px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              Anterior
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
+              disabled={page === data.pages}
+              className="rounded-lg border border-outline-variant/30 px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomerCard({ customer: c }: { customer: CustomerRow }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-high">
+      {/* Header row */}
+      <div className="flex items-center gap-4 p-4">
+        {/* Avatar */}
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary/15 font-headline text-lg font-bold text-primary">
+          {c.name ? c.name.charAt(0).toUpperCase() : "?"}
+        </div>
+
+        {/* Name + phone */}
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold text-on-surface">
+            {c.name || "Sin nombre"}
+          </p>
+          <a
+            href={`tel:${c.phone}`}
+            className="flex items-center gap-1 text-sm text-on-surface-variant hover:text-primary"
+          >
+            <Phone size={12} />
+            {c.phone}
+          </a>
+        </div>
+
+        {/* Rating badge */}
+        {c.avgRating !== null && (
+          <div className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-secondary/30 bg-secondary/10 px-2.5 py-1">
+            <Star size={13} className="fill-secondary text-secondary" />
+            <span className="text-sm font-bold text-secondary">{c.avgRating}</span>
+            <span className="text-[10px] text-on-surface-variant">({c.ratingCount})</span>
+          </div>
+        )}
+
+        {/* Reward badge */}
+        {c.pendingReward && (
+          <span className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-xs font-bold text-green-400">
+            <Gift size={12} />
+            Premio
+          </span>
+        )}
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-4 gap-px border-t border-outline-variant/10 bg-outline-variant/10">
+        <StatCell
+          icon={<ShoppingBag size={13} />}
+          label="Pedidos"
+          value={String(c.deliveredOrders)}
+          sub={c.totalOrders !== c.deliveredOrders ? `${c.totalOrders} total` : undefined}
+        />
+        <StatCell
+          icon={<TrendingUp size={13} />}
+          label="Gastado"
+          value={formatCents(c.totalSpent)}
+        />
+        <StatCell
+          icon={<Star size={13} />}
+          label="Lealtad"
+          value={`${c.loyaltyProgress % 5}/5`}
+          sub={c.freeProductsEarned > 0 ? `${c.freeProductsEarned} ganados` : undefined}
+        />
+        <StatCell
+          label="Último pedido"
+          value={
+            c.lastOrderAt
+              ? new Date(c.lastOrderAt).toLocaleDateString("es-MX", {
+                  day: "numeric",
+                  month: "short",
+                })
+              : "—"
+          }
+          sub={
+            c.lastOrderAt
+              ? new Date(c.lastOrderAt).toLocaleTimeString("es-MX", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : undefined
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatCell({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="bg-surface-container-high px-3 py-2.5 text-center">
+      <p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/60">
+        {icon}
+        {label}
+      </p>
+      <p className="mt-0.5 text-sm font-bold text-on-surface">{value}</p>
+      {sub && <p className="text-[10px] text-on-surface-variant/50">{sub}</p>}
     </div>
   );
 }
