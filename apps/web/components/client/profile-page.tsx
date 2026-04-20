@@ -677,6 +677,7 @@ interface RepeatResponse {
 
 function ReorderButton({ orderId, token }: { orderId: string; token: string }) {
   const { addItem } = useCart();
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -699,7 +700,8 @@ function ReorderButton({ orderId, token }: { orderId: string; token: string }) {
         });
       });
       setDone(true);
-      setTimeout(() => setDone(false), 2500);
+      // Redirect to menu so the user sees the cart bar and can checkout
+      setTimeout(() => router.push("/menu"), 600);
     } catch {
       // silently ignore — user can retry
     } finally {

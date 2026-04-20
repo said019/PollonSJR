@@ -60,10 +60,11 @@ export function OrderTracker({ orderId }: { orderId: string }) {
 
   const isPendingPayment = currentStatus === "PENDING_PAYMENT";
 
-  const { data: order, isLoading } = useQuery({
+  const { data: order, isLoading, refetch } = useQuery({
     queryKey: ["order", orderId],
     queryFn: () => api.get<OrderDetail>(`/api/orders/${orderId}`, token || undefined),
     enabled: !!token,
+    refetchOnMount: "always",
     // Auto-poll while still waiting for payment confirmation
     refetchInterval: isPendingPayment ? 3_000 : false,
   });
@@ -73,7 +74,11 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   }, [order]);
 
   useSocket("order:status", ({ orderId: id, status }) => {
-    if (id === orderId) setCurrentStatus(status);
+    if (id === orderId) {
+      setCurrentStatus(status);
+      // Refetch full order to get cancelReason and updated details
+      void refetch();
+    }
   });
 
   const activeStep = STATUS_STEPS.findIndex((s) => s.status === currentStatus);
