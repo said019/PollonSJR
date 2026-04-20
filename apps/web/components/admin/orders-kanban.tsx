@@ -7,9 +7,10 @@ import { useSocket } from "@/hooks/useSocket";
 import type { OrderSummary, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { Clock, ChefHat, Package, Truck, CheckCircle, Eye } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { ConnectionStatus } from "./connection-status";
 import { OrderDetailModal } from "./order-detail-modal";
+import { playNewOrderSound } from "@/lib/notification-sound";
 
 const COLUMNS: { status: OrderStatusType; label: string; icon: React.ReactNode; color: string }[] = [
   { status: "RECEIVED", label: "Recibidos", icon: <Clock size={18} />, color: "border-blue-400" },
@@ -39,8 +40,19 @@ export function OrdersKanban() {
     refetchInterval: 15000,
   });
 
+  // Unlock audio on first user interaction (browser autoplay policy)
+  useEffect(() => {
+    const unlock = () => {
+      playNewOrderSound(); // silent if context not ready — warms it up
+      window.removeEventListener("click", unlock);
+    };
+    window.addEventListener("click", unlock, { once: true });
+    return () => window.removeEventListener("click", unlock);
+  }, []);
+
   // Real-time updates with admin auth
   const { connected } = useSocket("order:new", () => {
+    playNewOrderSound();
     qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
   }, socketAuth);
 
