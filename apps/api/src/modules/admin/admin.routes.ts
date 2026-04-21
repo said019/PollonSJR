@@ -255,4 +255,53 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: err.message });
     }
   });
+
+  // Admin: canjear recompensa de lealtad manualmente
+  app.post<{ Params: { id: string } }>("/loyalty/customers/:id/redeem", async (request, reply) => {
+    const customerId = request.params.id;
+    const card = await app.prisma.loyaltyCard.findUnique({
+      where: { customerId },
+      include: { pendingProduct: true },
+    });
+
+    if (!card) return reply.status(404).send({ error: "Cliente sin tarjeta de lealtad" });
+    if (!card.pendingReward) return reply.status(400).send({ error: "Este cliente no tiene recompensa pendiente" });
+
+    const productName = card.pendingProduct?.name ?? "Producto";
+
+    await app.prisma.$transaction([
+      app.prisma.loyaltyCard.update({
+        where: { id: card.id },
+        data: {
+          pendingReward: false,
+          pendingProductId: null,
+          rewardEarnedAt: null,
+          rewardExpiresAt: null,
+          freeProductsUsed: card.freeProductsUsed + 1,
+        },
+      }),
+      app.prisma.loyaltyEvent.create({
+        data: {
+          cardId: card.id,
+          orderDelta: 0,
+          reason: `admin:canje manual — ${productName}`,
+        },
+      }),
+    ]);
+
+    return { success: true, message: `Recompensa canjeada: ${productName}` };
+  });
+
+  // Admin: detalle de lealtad de un cliente
+  app.get<{ Params: { id: string } }>("/loyalty/customers/:id", async (request, reply) => {
+    const customerId = request.params.id;
+    const loyaltyService = new LoyaltyService(app);
+    try {
+      const info = await loyaltyService.getInfo(customerId);
+      const history = await loyaltyService.getHistory(customerId);
+      return { info, history };
+    } catch (err: any) {
+      return reply.status(404).send({ error: err.message });
+    }
+  });
 }
