@@ -488,6 +488,12 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               <span>Subtotal</span>
               <span>{formatCents(order.subtotal)}</span>
             </div>
+            {order.discountAmount > 0 && (
+              <div className="flex justify-between text-sm text-green-400">
+                <span>Descuento</span>
+                <span>-{formatCents(order.discountAmount)}</span>
+              </div>
+            )}
             {order.deliveryFee > 0 && (
               <div className="flex justify-between text-sm text-on-surface-variant">
                 <span>Envío</span>

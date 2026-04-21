@@ -24,6 +24,7 @@ export interface ServerToClientEvents {
   }) => void;
   "loyalty:points": (data: LoyaltyProgressEvent) => void;
   "loyalty:tier_up": (data: { newTier: LoyaltyTierType; previousTier: LoyaltyTierType; message?: string }) => void;
+  "loyalty:redeemed": (data: { message: string; productName: string }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -73,6 +74,7 @@ export interface OrderDetail extends OrderSummary {
   transferInfo?: TransferInfo | null;
   subtotal: number;
   deliveryFee: number;
+  discountAmount: number;
   notes: string | null;
   cancelReason?: string | null;
   rating?: number | null;
@@ -171,6 +173,8 @@ export interface CreateOrderResponse {
   transferInfo?: TransferInfo;
   change?: string | null;
   message?: string;
+  rewardApplied?: boolean;
+  rewardMessage?: string | null;
 }
 
 // ─── Delivery Types ─────────────────────────────────────────

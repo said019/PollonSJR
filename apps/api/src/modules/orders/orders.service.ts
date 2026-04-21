@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import type { OrderSummary, OrderDetail, CreateOrderPayload, OrderStatusType } from "@pollon/types";
+import { formatCents } from "@pollon/utils";
 import { emitOrderStatus, emitOrderNew } from "./orders.events";
 import { isAcceptingOrders, getStoreConfig } from "../admin/store-config.service";
 import { validateCoupon } from "./coupon.service";
@@ -30,6 +31,8 @@ export class OrdersService {
     message?: string;
     scheduledFor?: string;
     depositAmount?: number;
+    rewardApplied?: boolean;
+    rewardMessage?: string | null;
   }> {
     const paymentMethod = data.paymentMethod || "CARD";
     const isScheduled = data.isScheduled === true;
@@ -145,6 +148,10 @@ export class OrdersService {
       discountAmount += reward.discountAmount;
     }
 
+    const rewardMessage = reward.rewardApplied
+      ? `Se aplicó tu ${reward.productName ?? "producto"} gratis (-${formatCents(reward.discountAmount)})`
+      : null;
+
     const total = Math.max(0, subtotal - discountAmount + deliveryFee);
 
     // Scheduled orders: 50% deposit, status SCHEDULED
@@ -247,6 +254,8 @@ export class OrdersService {
           concept: `Pedido #${order.orderNumber}`,
         },
         message: "Realiza tu transferencia y tu pedido empezará a prepararse en cuanto confirmemos el pago.",
+        rewardApplied: reward.rewardApplied,
+        rewardMessage,
       };
     }
 
@@ -261,6 +270,8 @@ export class OrdersService {
           data.type === "DELIVERY"
             ? "Tu pedido está confirmado. Ten el efectivo listo cuando llegue el repartidor."
             : "Tu pedido está confirmado. Paga en el local al recoger.",
+        rewardApplied: reward.rewardApplied,
+        rewardMessage,
       };
     }
 
@@ -269,6 +280,8 @@ export class OrdersService {
       orderId: order.id,
       orderNumber: order.orderNumber,
       paymentMethod: "CARD",
+      rewardApplied: reward.rewardApplied,
+      rewardMessage,
     };
   }
 
@@ -304,6 +317,7 @@ export class OrdersService {
       total: order.total,
       subtotal: order.subtotal,
       deliveryFee: order.deliveryFee,
+      discountAmount: order.discountAmount,
       address: order.address,
       notes: order.notes,
       cancelReason: order.cancelReason,

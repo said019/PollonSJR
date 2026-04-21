@@ -7,13 +7,15 @@ import { useCart } from "@/hooks/useCart";
 import { useDelivery } from "@/hooks/useDelivery";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 import type {
   CreateOrderResponse,
+  LoyaltyInfo,
   PaymentMethodType,
 } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Banknote, CreditCard, Landmark, Loader2, ShieldCheck, Lock, ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowLeft, Banknote, CreditCard, Gift, Landmark, Loader2, ShieldCheck, Lock, ExternalLink } from "lucide-react";
 import { DeliveryMap } from "./delivery-map";
 
 const checkoutSchema = z.object({
@@ -91,6 +93,18 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const { delivery, onDeliveryChange } = useDelivery();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Hydration-safe token for loyalty query
+  const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
+  useEffect(() => {
+    setLoyaltyToken(getToken());
+  }, []);
+
+  const { data: loyaltyInfo } = useQuery({
+    queryKey: ["loyalty-checkout"],
+    queryFn: () => api.get<LoyaltyInfo>("/api/loyalty/me", loyaltyToken || undefined),
+    enabled: !!loyaltyToken,
+  });
 
   const { register, handleSubmit, watch, setValue } = useForm<CheckoutData>({
     resolver: zodResolver(checkoutSchema),
@@ -242,6 +256,23 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
           </label>
         </div>
       </div>
+
+      {/* Loyalty reward banner */}
+      {loyaltyInfo?.pendingReward && (
+        <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/5 p-3">
+          <div className="flex items-center gap-2">
+            <Gift size={16} className="text-green-400" />
+            <div>
+              <p className="text-sm font-bold text-green-400">
+                Tienes un {loyaltyInfo.pendingProduct?.name ?? "producto"} gratis
+              </p>
+              <p className="text-xs text-on-surface-variant">
+                Se descuenta automáticamente de tu pedido
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Payment method */}
       <div className="mb-4">

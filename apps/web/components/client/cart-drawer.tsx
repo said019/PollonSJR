@@ -2,12 +2,15 @@
 
 import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
-import { X, Minus, Plus, Trash2, ShoppingBag, Bike } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { LoyaltyInfo } from "@pollon/types";
+import { X, Minus, Plus, Trash2, ShoppingBag, Bike, Gift } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
 import { UpsellRecommendations } from "./upsell-recommendations";
 import { EmptyCartSuggestions } from "./empty-cart-suggestions";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { getToken } from "@/lib/auth";
 
 interface CartDrawerProps {
@@ -19,6 +22,20 @@ interface CartDrawerProps {
 export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
   const { items, updateQty, removeItem, total, clearCart } = useCart();
   const [showCheckout, setShowCheckout] = useState(false);
+
+  // Hydration-safe token for loyalty query
+  const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
+  useEffect(() => {
+    setLoyaltyToken(getToken());
+  }, []);
+
+  const { data: loyaltyInfo } = useQuery({
+    queryKey: ["loyalty-cart"],
+    queryFn: () => api.get<LoyaltyInfo>("/api/loyalty/me", loyaltyToken || undefined),
+    enabled: !!loyaltyToken,
+  });
+
+  const hasPendingReward = loyaltyInfo?.pendingReward ?? false;
 
   const handleCheckout = () => {
     if (!getToken()) {
@@ -124,6 +141,12 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                       <span className="text-on-surface-variant font-headline font-semibold">Subtotal</span>
                       <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
                     </div>
+
+                    {hasPendingReward && (
+                      <p className="text-xs text-green-400 flex items-center gap-1 mt-1">
+                        <Gift size={12} /> Tienes un producto gratis — se aplica al pagar
+                      </p>
+                    )}
 
                     {/* Delivery fee hint */}
                     <div className="flex items-center gap-2 rounded-lg bg-surface-container-high px-3 py-2 text-[11px] text-on-surface-variant/70">

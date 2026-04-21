@@ -289,6 +289,15 @@ export async function adminRoutes(app: FastifyInstance) {
       }),
     ]);
 
+    // Notify customer via socket
+    const customer = await app.prisma.customer.findUnique({ where: { id: customerId } });
+    if (customer) {
+      app.io.to(`customer:${customerId}`).emit("loyalty:redeemed", {
+        message: `Tu ${productName} gratis fue canjeado. ¡Disfrútalo!`,
+        productName,
+      });
+    }
+
     return { success: true, message: `Recompensa canjeada: ${productName}` };
   });
 
