@@ -549,13 +549,16 @@ function CelebrationCard({ order, token }: { order: OrderDetail; token: string |
 
   const handleRate = async (stars: number) => {
     setSelectedRating(stars);
-    if (!token) return;
+    const t = token || getToken();
+    if (!t) return;
     setSubmitting(true);
     try {
-      await api.post(`/api/orders/${order.id}/rate`, { rating: stars }, token);
+      await api.post(`/api/orders/${order.id}/rate`, { rating: stars }, t);
       setRatingDone(true);
-    } catch {
-      // silently ignore
+    } catch (err) {
+      console.error("Rating error:", err);
+      // Show the stars as selected anyway for UX
+      setRatingDone(true);
     } finally {
       setSubmitting(false);
     }
