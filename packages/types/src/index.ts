@@ -7,6 +7,7 @@ export interface ServerToClientEvents {
     orderNumber?: number;
     status: OrderStatusType;
     message?: string;
+    cancelReason?: string;
     estimatedMinutes?: number;
   }) => void;
   "order:paid": (data: { orderId: string; paymentId: string }) => void;

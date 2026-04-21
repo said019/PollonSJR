@@ -7,12 +7,31 @@ import { validateCoupon, CouponError } from "./coupon.service";
 export async function ordersRoutes(app: FastifyInstance) {
   const service = new OrdersService(app);
 
-  // Cliente: pedidos activos propios (para el banner de "en curso")
-  // MUST be registered before /:id to avoid parametric route collision
+  // ── Static routes FIRST (before /:id parametric) ──────────
+
+  // Cliente: pedidos activos propios (banner "en curso")
   app.get("/my-active", { preHandler: [authenticate] }, async (request) => {
     const user = request.user as { id: string };
     return service.getMyActiveOrders(user.id);
   });
+
+  // Cliente: validar cupón
+  app.post("/coupons/validate", { preHandler: [authenticate] }, async (request, reply) => {
+    const { code, subtotal } = request.body as { code: string; subtotal: number };
+    const user = request.user as { id: string };
+
+    try {
+      const result = await validateCoupon(app, code, user.id, subtotal);
+      return { valid: true, couponId: result.id, discountAmount: result.discountAmount, message: result.message };
+    } catch (err) {
+      if (err instanceof CouponError) {
+        return reply.status(400).send({ valid: false, error: err.message });
+      }
+      throw err;
+    }
+  });
+
+  // ── Root route ────────────────────────────────────────────
 
   // Cliente: crear pedido
   app.post("/", { preHandler: [authenticate] }, async (request, reply) => {
@@ -37,6 +56,8 @@ export async function ordersRoutes(app: FastifyInstance) {
       return reply.status(isStoreReason ? 409 : 400).send({ error: msg });
     }
   });
+
+  // ── Parametric routes ─────────────────────────────────────
 
   // Cliente: ver status de un pedido
   app.get<{ Params: { id: string } }>("/:id", { preHandler: [authenticate] }, async (request, reply) => {
@@ -82,21 +103,5 @@ export async function ordersRoutes(app: FastifyInstance) {
     });
 
     return { success: true, rating };
-  });
-
-  // Cliente: validar cupón
-  app.post("/coupons/validate", { preHandler: [authenticate] }, async (request, reply) => {
-    const { code, subtotal } = request.body as { code: string; subtotal: number };
-    const user = request.user as { id: string };
-
-    try {
-      const result = await validateCoupon(app, code, user.id, subtotal);
-      return { valid: true, couponId: result.id, discountAmount: result.discountAmount, message: result.message };
-    } catch (err) {
-      if (err instanceof CouponError) {
-        return reply.status(400).send({ valid: false, error: err.message });
-      }
-      throw err;
-    }
   });
 }

@@ -403,13 +403,16 @@ export function MenuPage() {
   const [cartOpen, setCartOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const { itemCount, total } = useCart();
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useEffect(() => {
-    setAuthed(!!getToken());
+    const t = getToken();
+    setAuthed(!!t);
+    setAuthToken(t);
   }, []);
 
   const { data: menu, isLoading } = useQuery({
@@ -527,7 +530,7 @@ export function MenuPage() {
 
           <div className="flex flex-shrink-0 items-center gap-2">
             {/* Loyalty mini-bar for logged-in users */}
-            {authed && getToken() && <LoyaltyMiniBar token={getToken()!} />}
+            {authed && authToken && <LoyaltyMiniBar token={authToken} />}
 
             {authed ? (
               <Link
