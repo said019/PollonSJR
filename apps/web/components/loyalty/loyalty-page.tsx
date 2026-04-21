@@ -103,9 +103,8 @@ function WalletButton({
       {loading ? (
         <Loader2 size={18} className="animate-spin" />
       ) : isApple ? (
-        <svg viewBox="0 0 814 1000" className="h-5 w-auto" fill="white">
-          <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.7-58.7-155.5-127.4C46 658.5 0 504.4 0 357.3c0-219.2 143.4-335 284.4-335 74.5 0 136.5 49.1 183.4 49.1 44.9 0 115.4-52 201.6-52 32.3 0 134.5 2.6 198.6 97.2z"/>
-          <path d="M551.4 73.1c26.7-32.1 45.7-76.3 45.7-120.5 0-6.5-.6-13-1.9-18.4-43.3 1.6-95.1 28.9-126.3 64.5-24.4 27.5-46.9 71.1-46.9 115.9 0 7.1 1.3 14.2 1.9 16.5 2.6.6 6.5 1.3 10.4 1.3 39 0 88.1-25.8 116.1-59.3z"/>
+        <svg viewBox="0 0 17 20" className="h-5 w-auto" fill="white">
+          <path d="M13.21 10.47c-.02-2.15 1.75-3.18 1.83-3.23-1-1.46-2.55-1.66-3.1-1.68-1.32-.13-2.57.78-3.24.78-.67 0-1.7-.76-2.8-.74-1.44.02-2.77.84-3.51 2.13-1.5 2.6-.38 6.44 1.07 8.55.72 1.03 1.57 2.19 2.69 2.15 1.08-.04 1.49-.7 2.79-.7s1.67.7 2.81.67c1.16-.02 1.89-1.05 2.6-2.09.82-1.2 1.16-2.36 1.18-2.42-.03-.01-2.26-.87-2.28-3.44zM11.12 3.88c.59-.72.99-1.71.88-2.7-.85.03-1.89.57-2.5 1.28-.54.63-1.02 1.65-.89 2.62.95.07 1.92-.48 2.51-1.2z"/>
         </svg>
       ) : (
         <svg viewBox="0 0 24 24" className="h-5 w-auto" fill="none">
@@ -347,11 +346,11 @@ export function LoyaltyPage() {
           </div>
 
           <div className="relative">
-            <div className="absolute -inset-4 rounded-lg bg-primary/10 blur-2xl" />
+            <div className="pointer-events-none absolute -inset-4 rounded-lg bg-primary/10 blur-2xl" />
             <div className="relative overflow-hidden rounded-lg border border-primary/30 bg-[linear-gradient(140deg,#3a1706_0%,#17120f_48%,#050505_100%)] p-5 shadow-2xl sm:p-6">
-              <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#F97316,#FACC15,#F97316)]" />
-              <div className="absolute -right-16 top-10 h-40 w-56 rotate-12 border border-primary/20" />
-              <div className="absolute bottom-0 left-0 h-28 w-full bg-[repeating-linear-gradient(135deg,rgba(250,204,21,0.08)_0,rgba(250,204,21,0.08)_1px,transparent_1px,transparent_12px)]" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#F97316,#FACC15,#F97316)]" />
+              <div className="pointer-events-none absolute -right-16 top-10 h-40 w-56 rotate-12 border border-primary/20" />
+              <div className="pointer-events-none absolute bottom-0 left-0 h-28 w-full bg-[repeating-linear-gradient(135deg,rgba(250,204,21,0.08)_0,rgba(250,204,21,0.08)_1px,transparent_1px,transparent_12px)]" />
 
               <div className="relative z-10">
                 {/* Header row */}
