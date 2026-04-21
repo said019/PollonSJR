@@ -118,8 +118,14 @@ export class LoyaltyService {
       : newCompletedOrders % ORDERS_PER_REWARD;
     const apple = new AppleWalletService(this.app);
     const google = new GoogleWalletService(this.app);
+
+    const walletMessage =
+      earnedReward && pendingReward
+        ? "¡Felicidades! Ganaste un producto gratis"
+        : `Compra registrada — ${newProgress}/${ORDERS_PER_REWARD}`;
+
     Promise.allSettled([
-      apple.updatePassAndNotify(order.customerId),
+      apple.updatePassAndNotify(order.customerId, walletMessage),
       google.updateLoyaltyObject(
         order.customerId,
         order.customer.name ?? "",

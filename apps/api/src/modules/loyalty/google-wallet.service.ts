@@ -121,6 +121,126 @@ export class GoogleWalletService {
   // ─── Public API ────────────────────────────────────────────
 
   /**
+   * Creates or updates the Google Wallet loyalty class.
+   * Should be called once during setup or when class config changes.
+   */
+  async ensureLoyaltyClass(): Promise<void> {
+    const issuerId = process.env.GOOGLE_ISSUER_ID;
+    const sa = this.loadServiceAccount();
+    if (!issuerId || !sa) return;
+
+    const accessToken = await this.getAccessToken(sa);
+    const classId = `${issuerId}.pollon_loyalty_v1`;
+    const baseUrl = process.env.WEB_URL || "https://pollon.mx";
+
+    const loyaltyClass = {
+      id: classId,
+      issuerName: "Pollón SJR",
+      programName: "Club Pollón",
+      programLogo: {
+        sourceUri: { uri: `${baseUrl}/pollon-logo.jpg` },
+        contentDescription: {
+          defaultValue: { language: "es", value: "Pollón Logo" },
+        },
+      },
+      hexBackgroundColor: "#2D3039",
+      countryCode: "MX",
+      reviewStatus: "UNDER_REVIEW",
+      // Location for proximity notifications
+      locations:
+        process.env.BUSINESS_LATITUDE && process.env.BUSINESS_LONGITUDE
+          ? [
+              {
+                latitude: parseFloat(process.env.BUSINESS_LATITUDE),
+                longitude: parseFloat(process.env.BUSINESS_LONGITUDE),
+              },
+            ]
+          : [],
+    };
+
+    // Try PUT (update), fall back to POST (create)
+    const bodyStr = JSON.stringify(loyaltyClass);
+    const putResult = await this.httpsRequest(
+      {
+        hostname: "walletobjects.googleapis.com",
+        port: 443,
+        path: `/walletobjects/v1/loyaltyClass/${encodeURIComponent(classId)}`,
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(bodyStr),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+      bodyStr
+    );
+
+    if (putResult.statusCode === 404) {
+      await this.httpsRequest(
+        {
+          hostname: "walletobjects.googleapis.com",
+          port: 443,
+          path: "/walletobjects/v1/loyaltyClass",
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(bodyStr),
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+        bodyStr
+      );
+    }
+  }
+
+  /**
+   * Sends a visible notification (message) to a Google Wallet loyalty pass.
+   */
+  async sendMessage(
+    customerId: string,
+    title: string,
+    body: string
+  ): Promise<void> {
+    const issuerId = process.env.GOOGLE_ISSUER_ID;
+    const sa = this.loadServiceAccount();
+    if (!issuerId || !sa) return;
+
+    const accessToken = await this.getAccessToken(sa);
+    const objectId = `${issuerId}.${this.safeId(customerId)}`;
+    const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const now = new Date();
+    const end = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    const payload = JSON.stringify({
+      message: {
+        header: title,
+        body,
+        id: msgId,
+        messageType: "TEXT",
+        displayInterval: {
+          start: { date: now.toISOString() },
+          end: { date: end.toISOString() },
+        },
+      },
+    });
+
+    await this.httpsRequest(
+      {
+        hostname: "walletobjects.googleapis.com",
+        port: 443,
+        path: `/walletobjects/v1/loyaltyObject/${encodeURIComponent(objectId)}/addMessage`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+      payload
+    );
+  }
+
+  /**
    * Builds a Google Pay save URL containing a signed JWT with the loyalty
    * object embedded (no server-side object creation required).
    */

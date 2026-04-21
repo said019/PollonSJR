@@ -88,10 +88,9 @@ const appleWebServicePlugin: FastifyPluginAsync = async (app) => {
       let updatedSerials: string[] = serials;
 
       if (passesUpdatedSince) {
-        // Subtract 2 seconds to avoid race conditions
-        const since = new Date(
-          new Date(passesUpdatedSince).getTime() - 2000
-        );
+        // Apple sends a Unix timestamp (seconds since epoch)
+        const sinceMs = Number(passesUpdatedSince) * 1000;
+        const since = new Date(sinceMs - 2000); // subtract 2s for race conditions
 
         const updates = await app.prisma.appleUpdate.findMany({
           where: {

@@ -210,7 +210,7 @@ export class AppleWalletService {
           "Content-Length": Buffer.byteLength(body),
           authorization: `bearer ${token}`,
           "apns-push-type": "background",
-          "apns-topic": `${passTypeId}.voip`,
+          "apns-topic": passTypeId,
           "apns-priority": "5",
         },
       };
@@ -233,10 +233,85 @@ export class AppleWalletService {
   }
 
   /**
+   * Sends a VISIBLE alert push notification to the device (not background).
+   * Uses apns-push-type: "alert" and priority 10.
+   */
+  async sendAlertNotification(
+    pushToken: string,
+    title: string,
+    body: string
+  ): Promise<void> {
+    const keyId = process.env.APPLE_KEY_ID;
+    const teamId = process.env.APPLE_TEAM_ID;
+    const apnsKeyB64 = process.env.APPLE_APNS_KEY_BASE64;
+
+    if (!keyId || !teamId || !apnsKeyB64) {
+      this.app.log.warn(
+        "APNs alert push skipped: missing APPLE_KEY_ID, APPLE_TEAM_ID, or APPLE_APNS_KEY_BASE64"
+      );
+      return;
+    }
+
+    const apnsKey = Buffer.from(apnsKeyB64, "base64").toString("utf-8");
+
+    const token = jwt.sign({}, apnsKey, {
+      algorithm: "ES256",
+      issuer: teamId,
+      keyid: keyId,
+      expiresIn: "1h",
+    });
+
+    const passTypeId =
+      process.env.APPLE_PASS_TYPE_ID ?? "pass.com.pollon.loyalty";
+    const host = "api.push.apple.com";
+    const reqPath = `/3/device/${pushToken}`;
+
+    await new Promise<void>((resolve, reject) => {
+      const payload = JSON.stringify({
+        aps: {
+          alert: { title, body },
+          sound: "default",
+        },
+      });
+      const options: https.RequestOptions = {
+        hostname: host,
+        port: 443,
+        path: reqPath,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+          authorization: `bearer ${token}`,
+          "apns-push-type": "alert",
+          "apns-topic": passTypeId,
+          "apns-priority": "10",
+        },
+      };
+
+      const req = https.request(options, (res) => {
+        if (res.statusCode === 410) {
+          this.app.prisma.appleDevice
+            .deleteMany({ where: { pushToken } })
+            .catch(() => {});
+        }
+        res.resume();
+        resolve();
+      });
+
+      req.on("error", reject);
+      req.write(payload);
+      req.end();
+    });
+  }
+
+  /**
    * Called after a loyalty update — logs an update record and pushes to all
    * registered devices for the given serial number (= customerId).
    */
-  async updatePassAndNotify(customerId: string): Promise<void> {
+  async updatePassAndNotify(
+    customerId: string,
+    message?: string
+  ): Promise<void> {
     const devices = await this.app.prisma.appleDevice.findMany({
       where: { serialNumber: customerId },
     });
@@ -248,7 +323,18 @@ export class AppleWalletService {
 
     // Push to each device
     await Promise.allSettled(
-      devices.map((d) => this.sendWalletPush(d.pushToken))
+      devices.map(async (d) => {
+        // Send background push to trigger pass refresh
+        await this.sendWalletPush(d.pushToken);
+        // Send visible alert notification
+        if (message) {
+          await this.sendAlertNotification(
+            d.pushToken,
+            "Pollón SJR",
+            message
+          );
+        }
+      })
     );
   }
 }

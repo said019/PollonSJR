@@ -9,6 +9,8 @@ import { updateStatusSchema } from "../orders/orders.schema";
 import { emitMenuUpdated, emitOrderStatus } from "../orders/orders.events";
 import { getStoreConfig, updateStoreConfig } from "./store-config.service";
 import { LoyaltyService } from "../loyalty/loyalty.service";
+import { AppleWalletService } from "../loyalty/apple-wallet.service";
+import { GoogleWalletService } from "../loyalty/google-wallet.service";
 
 const storeConfigSchema = z.object({
   isOpen: z.boolean().optional(),
@@ -298,6 +300,14 @@ export async function adminRoutes(app: FastifyInstance) {
       });
     }
 
+    // Update wallet passes to show redeemed state
+    const appleWallet = new AppleWalletService(app);
+    const googleWallet = new GoogleWalletService(app);
+    Promise.allSettled([
+      appleWallet.updatePassAndNotify(customerId, `¡${productName} canjeado!`),
+      googleWallet.updateLoyaltyObject(customerId, customer?.name ?? "", 0),
+    ]).catch(() => {});
+
     return { success: true, message: `Recompensa canjeada: ${productName}` };
   });
 
@@ -312,5 +322,87 @@ export async function adminRoutes(app: FastifyInstance) {
     } catch (err: any) {
       return reply.status(404).send({ error: err.message });
     }
+  });
+
+  // ─── Wallet admin endpoints ─────────────────────────────────
+
+  // Admin: create/update Google Wallet loyalty class (run once)
+  app.post("/wallet/google/create-class", async (request, reply) => {
+    const google = new GoogleWalletService(app);
+    try {
+      await google.ensureLoyaltyClass();
+      return { success: true, message: "Loyalty class created/updated" };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message });
+    }
+  });
+
+  // Admin: force update a customer's wallet passes
+  app.post<{ Params: { id: string } }>(
+    "/wallet/force-update/:id",
+    async (request, reply) => {
+      const customerId = request.params.id;
+      const customer = await app.prisma.customer.findUnique({
+        where: { id: customerId },
+        include: { loyalty: true },
+      });
+      if (!customer)
+        return reply.status(404).send({ error: "Cliente no encontrado" });
+
+      const stamps = customer.loyalty
+        ? customer.loyalty.pendingReward
+          ? 5
+          : customer.loyalty.completedOrders % 5
+        : 0;
+
+      const apple = new AppleWalletService(app);
+      const google = new GoogleWalletService(app);
+
+      await Promise.allSettled([
+        apple.updatePassAndNotify(customerId, "Pase actualizado"),
+        google.updateLoyaltyObject(customerId, customer.name ?? "", stamps),
+      ]);
+
+      return { success: true };
+    }
+  );
+
+  // Admin: send push notification to all wallet holders
+  app.post("/wallet/push-all", async (request, reply) => {
+    const { title, message } = request.body as {
+      title: string;
+      message: string;
+    };
+    if (!title || !message)
+      return reply.status(400).send({ error: "title and message required" });
+
+    const cards = await app.prisma.loyaltyCard.findMany({
+      include: { customer: true },
+    });
+
+    const apple = new AppleWalletService(app);
+    const google = new GoogleWalletService(app);
+    let sent = 0;
+
+    for (const card of cards) {
+      try {
+        // Apple: send alert to all devices
+        const devices = await app.prisma.appleDevice.findMany({
+          where: { serialNumber: card.customerId },
+        });
+        for (const device of devices) {
+          await apple.sendAlertNotification(device.pushToken, title, message);
+        }
+        // Google: add message to loyalty object
+        await google.sendMessage(card.customerId, title, message);
+        sent++;
+      } catch {
+        /* continue */
+      }
+      // Rate limiting
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    return { success: true, sent, total: cards.length };
   });
 }
