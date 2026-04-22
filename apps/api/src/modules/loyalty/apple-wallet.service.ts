@@ -48,12 +48,16 @@ export class AppleWalletService {
       return fs.existsSync(p) ? fs.readFileSync(p) : undefined;
     };
 
+    const signerCert = Buffer.from(certB64, "base64").toString("utf-8");
+    const signerKey = Buffer.from(keyB64, "base64").toString("utf-8");
+    const wwdr = Buffer.from(wwdrB64, "base64").toString("utf-8");
+
     const pass = new PKPass(
       {},
       {
-        signerCert: Buffer.from(certB64, "base64"),
-        signerKey: Buffer.from(keyB64, "base64"),
-        wwdr: Buffer.from(wwdrB64, "base64"),
+        signerCert,
+        signerKey,
+        wwdr,
         signerKeyPassphrase: process.env.APPLE_PASS_PHRASE,
       },
       {
