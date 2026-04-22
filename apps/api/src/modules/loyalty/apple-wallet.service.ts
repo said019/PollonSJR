@@ -85,12 +85,6 @@ export class AppleWalletService {
       value: pendingReward ? "🎉 PREMIO LISTO" : "CLUB POLLÓN",
     });
 
-    pass.primaryFields.push({
-      key: "name",
-      label: "TITULAR",
-      value: customerName.toUpperCase(),
-    });
-
     pass.secondaryFields.push(
       {
         key: "progress",
