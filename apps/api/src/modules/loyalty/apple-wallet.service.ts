@@ -79,11 +79,7 @@ export class AppleWalletService {
     pass.type = "storeCard";
 
     // ── Fields ───────────────────────────────────────────────
-    pass.headerFields.push({
-      key: "header_club",
-      label: "",
-      value: pendingReward ? "🎉 PREMIO LISTO" : "CLUB POLLÓN",
-    });
+    // headerField omitted — title is embedded in logo.png with brand typography
 
     pass.secondaryFields.push(
       {
