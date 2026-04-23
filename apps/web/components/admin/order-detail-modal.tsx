@@ -62,26 +62,38 @@ const PAYMENT_LABELS = {
   TRANSFER: "Transferencia",
 } as const;
 
-// ── Business origin coordinates (from env or known default) ──────────────
-const BIZ_LAT = process.env.NEXT_PUBLIC_BUSINESS_LATITUDE ?? "20.5881";
-const BIZ_LNG = process.env.NEXT_PUBLIC_BUSINESS_LONGITUDE ?? "-99.9953";
-
 function DeliveryMap({
   address,
   orderNumber,
   customerName,
   customerPhone,
+  adminToken,
 }: {
   address: string;
   orderNumber: number;
   customerName: string;
   customerPhone: string;
+  adminToken: string;
 }) {
   const [copied, setCopied] = useState(false);
 
+  // Fetch the real business location configured in the admin delivery settings
+  const { data: storeLoc } = useQuery({
+    queryKey: ["admin-store-location"],
+    queryFn: () =>
+      api.get<{ lat: number; lng: number; address: string }>(
+        "/api/admin/delivery/store",
+        adminToken
+      ),
+    staleTime: 5 * 60 * 1000, // 5 min — rarely changes
+  });
+
+  const bizLat = storeLoc?.lat ?? 20.5881;
+  const bizLng = storeLoc?.lng ?? -99.9953;
+
   const encodedDest = encodeURIComponent(address);
-  const mapSrc = `https://maps.google.com/maps?f=d&source=s_d&saddr=${BIZ_LAT},${BIZ_LNG}&daddr=${encodedDest}&output=embed&hl=es`;
-  const mapsUrl = `https://www.google.com/maps/dir/${BIZ_LAT},${BIZ_LNG}/${encodedDest}`;
+  const mapSrc = `https://maps.google.com/maps?f=d&source=s_d&saddr=${bizLat},${bizLng}&daddr=${encodedDest}&output=embed&hl=es`;
+  const mapsUrl = `https://www.google.com/maps/dir/${bizLat},${bizLng}/${encodedDest}`;
 
   // WhatsApp message for the delivery person
   const waText = encodeURIComponent(
@@ -364,6 +376,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                           orderNumber={order.orderNumber}
                           customerName={order.customerName ?? "Cliente"}
                           customerPhone={order.customerPhone ?? ""}
+                          adminToken={adminToken ?? ""}
                         />
                       )}
 
