@@ -27,6 +27,13 @@ const NEXT_STATUS: Record<string, OrderStatusType | null> = {
   DELIVERED: null,
 };
 
+const ADVANCE_LABEL: Record<string, string> = {
+  RECEIVED: "Preparar 🔥",
+  PREPARING: "Marcar Listo ✓",
+  READY: "Despachar 🛵",
+  ON_THE_WAY: "Finalizar ✓",
+};
+
 type TypeFilter = "ALL" | "DELIVERY" | "PICKUP";
 
 export function OrdersKanban() {
@@ -271,7 +278,7 @@ function OrderCard({
               disabled={advancePending}
               className="flex-[1.6] bg-primary text-on-primary text-[10px] py-1.5 rounded-lg font-semibold uppercase tracking-wider disabled:opacity-50 transition-all hover:brightness-110"
             >
-              Mover → {COLUMNS.find((c) => c.status === nextStatus)?.label}
+              {ADVANCE_LABEL[colStatus] ?? `→ ${nextStatus}`}
             </button>
           )}
         </div>

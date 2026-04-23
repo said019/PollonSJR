@@ -25,7 +25,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const STATUS_META: Record<
   OrderStatusType,
@@ -188,6 +188,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
   const open = !!orderId;
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [cashReceived, setCashReceived] = useState("");
 
   const { data: order, isLoading } = useQuery({
     queryKey: ["admin-order-detail", orderId],
@@ -238,6 +239,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
     if (!open) {
       setConfirmingCancel(false);
       setCancelReason("");
+      setCashReceived("");
     }
   }, [open]);
 
@@ -404,7 +406,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                               order.cashAmount !== undefined &&
                               order.cashAmount !== null && (
                                 <p className="text-xs text-on-surface-variant/70">
-                                  Paga con: {formatCents(Math.round(order.cashAmount * 100))}
+                                  Cliente indicó pagar con: {formatCents(Math.round(order.cashAmount * 100))}
                                 </p>
                               )}
                             {order.payment && (
@@ -414,6 +416,69 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                             )}
                           </div>
                         </div>
+
+                        {/* Cash change calculator */}
+                        {order.paymentMethod === "CASH" && (
+                          <div className="mt-4 rounded-xl border border-outline-variant/15 bg-surface-container p-3 space-y-2.5">
+                            <div className="flex items-center gap-2 text-xs font-headline font-bold uppercase tracking-wider text-on-surface-variant/60">
+                              <Banknote size={13} />
+                              Calculadora de cambio
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-on-surface-variant whitespace-nowrap">
+                                ¿Cuánto te dieron?
+                              </label>
+                              <div className="relative flex-1">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-on-surface-variant/50 font-bold">$</span>
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  min="0"
+                                  step="any"
+                                  placeholder={
+                                    order.cashAmount
+                                      ? String(order.cashAmount)
+                                      : String(order.total / 100)
+                                  }
+                                  value={cashReceived}
+                                  onChange={(e) => setCashReceived(e.target.value)}
+                                  className="w-full rounded-lg border border-outline-variant/20 bg-surface-container-highest pl-6 pr-3 py-2 text-sm font-bold text-on-surface focus:border-primary/50 focus:ring-1 focus:ring-primary/20 outline-none transition-all [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                />
+                              </div>
+                            </div>
+
+                            {(() => {
+                              const received = cashReceived
+                                ? parseFloat(cashReceived)
+                                : order.cashAmount ?? 0;
+                              const totalPesos = order.total / 100;
+                              const change = received - totalPesos;
+
+                              if (!received) return null;
+
+                              return (
+                                <div className="flex items-center justify-between rounded-lg bg-surface px-3 py-2 border border-outline-variant/10">
+                                  <div className="flex items-center gap-4 text-xs">
+                                    <span className="text-on-surface-variant">
+                                      Total: <span className="font-bold text-on-surface">{formatCents(order.total)}</span>
+                                    </span>
+                                    <span className="text-on-surface-variant">
+                                      Recibido: <span className="font-bold text-on-surface">${received.toFixed(2)}</span>
+                                    </span>
+                                  </div>
+                                  <div className={`text-sm font-headline font-extrabold ${
+                                    change >= 0 ? "text-green-400" : "text-error"
+                                  }`}>
+                                    {change >= 0
+                                      ? `Cambio: $${change.toFixed(2)}`
+                                      : `Faltan: $${Math.abs(change).toFixed(2)}`}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </section>
                     )}
 
