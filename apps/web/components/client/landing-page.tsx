@@ -43,6 +43,9 @@ function NavBar({
           <Link href="/menu" className="text-primary hover:text-primary-fixed transition-colors">
             Menú
           </Link>
+          <a href="#como-pedir" className="text-on-surface-variant hover:text-tertiary transition-colors">
+            Cómo Pedir
+          </a>
           <a href="#proceso" className="text-on-surface-variant hover:text-tertiary transition-colors">
             El Proceso
           </a>
@@ -354,6 +357,176 @@ function MenuHighlights() {
           Ver Menú Completo
           <span className="material-symbols-outlined text-sm">arrow_forward</span>
         </Link>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  How to Order — 4-step guide with icons + food photos          */
+/* ────────────────────────────────────────────────────────────── */
+function HowToOrder() {
+  const steps = [
+    {
+      num: "01",
+      icon: "restaurant_menu",
+      title: "Abre el Menú",
+      desc: "Entra a la plataforma y navega entre nuestras categorías: pollo, hamburguesas, boneless, bebidas y más.",
+      img: "/menu/combo-familiar.jpeg",
+      imgAlt: "Combo familiar Pollón",
+      cta: null,
+    },
+    {
+      num: "02",
+      icon: "add_shopping_cart",
+      title: "Elige tu Antojo",
+      desc: "Toca cualquier producto para ver detalles y agrégalo a tu carrito. Puedes personalizar salsas y guarniciones.",
+      img: "/menu/boneless.jpeg",
+      imgAlt: "Boneless Pollón",
+      cta: null,
+    },
+    {
+      num: "03",
+      icon: "edit_location_alt",
+      title: "Confirma tu Dirección",
+      desc: "Escribe tu calle, número y colonia. Revisamos que estés dentro de nuestra zona de entrega antes de confirmar.",
+      img: "/menu/hamburguesas-dobles.jpeg",
+      imgAlt: "Hamburguesas dobles Pollón",
+      cta: null,
+    },
+    {
+      num: "04",
+      icon: "delivery_dining",
+      title: "¡Espera y Disfruta!",
+      desc: "Paga en línea y recibe tu pedido en casa. Recibirás una confirmación y podrás rastrear el estatus en tiempo real.",
+      img: "/menu/tiras-pollo-papas.jpeg",
+      imgAlt: "Tiras de pollo con papas",
+      cta: { label: "Ordenar Ahora", href: "/menu" },
+    },
+  ];
+
+  return (
+    <section id="como-pedir" className="py-28 px-6 lg:px-12 relative overflow-hidden">
+      {/* subtle grid bg */}
+      <div
+        className="absolute inset-0 opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(249,115,22,1) 1px, transparent 1px), linear-gradient(90deg, rgba(249,115,22,1) 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+        }}
+      />
+
+      <div className="relative z-10 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between mb-16 gap-4">
+          <div>
+            <span className="text-xs font-headline font-bold text-primary uppercase tracking-[0.3em] mb-2 block">
+              Sin Complicaciones
+            </span>
+            <h2 className="text-5xl md:text-7xl font-headline font-extrabold text-tertiary uppercase leading-none tracking-tighter">
+              ¿CÓMO{" "}
+              <span className="text-stroke">PEDIR?</span>
+            </h2>
+          </div>
+          <p className="text-on-surface-variant max-w-sm leading-relaxed md:text-right">
+            En cuatro pasos sencillos tu pedido llega directo a tu puerta.
+            Sin llamadas, sin esperas interminables.
+          </p>
+        </div>
+
+        {/* Steps grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {steps.map((step, idx) => (
+            <div
+              key={step.num}
+              className="group relative flex flex-col bg-surface-container rounded-3xl overflow-hidden border border-outline-variant/15 hover:border-primary/40 transition-all duration-500 hover:-translate-y-1"
+            >
+              {/* Photo thumbnail */}
+              <div className="relative aspect-[4/3] overflow-hidden">
+                <Image
+                  src={step.img}
+                  alt={step.imgAlt}
+                  fill
+                  className="object-cover transition-transform duration-700 group-hover:scale-110 brightness-75"
+                />
+                {/* Dark gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-surface-container via-surface-container/40 to-transparent" />
+
+                {/* Step number — ghost behind */}
+                <span className="absolute bottom-2 right-3 font-headline font-extrabold text-6xl text-white/10 leading-none select-none">
+                  {step.num}
+                </span>
+
+                {/* Icon chip — top left */}
+                <div className="absolute top-4 left-4 w-10 h-10 rounded-2xl bg-primary flex items-center justify-center shadow-lg">
+                  <span
+                    className="material-symbols-outlined text-on-primary text-lg"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    {step.icon}
+                  </span>
+                </div>
+
+                {/* Connector arrow (all except last) */}
+                {idx < steps.length - 1 && (
+                  <div className="hidden lg:flex absolute -right-3 top-1/2 -translate-y-1/2 z-20 w-6 h-6 bg-primary rounded-full items-center justify-center shadow-md">
+                    <span className="material-symbols-outlined text-on-primary text-sm">
+                      chevron_right
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Text body */}
+              <div className="flex flex-col flex-1 p-5">
+                <h3 className="font-headline font-extrabold text-tertiary text-base uppercase tracking-tight mb-2">
+                  {step.title}
+                </h3>
+                <p className="text-on-surface-variant font-body text-sm leading-relaxed flex-1">
+                  {step.desc}
+                </p>
+
+                {step.cta && (
+                  <Link
+                    href={step.cta.href}
+                    className="mt-5 inline-flex items-center justify-center gap-2 bg-primary text-on-primary py-2.5 px-5 rounded-xl font-headline font-bold text-sm hover:brightness-110 transition-all active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-base">
+                      bolt
+                    </span>
+                    {step.cta.label}
+                  </Link>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bottom tip strip */}
+        <div className="mt-10 flex flex-wrap gap-4 items-center justify-center">
+          {[
+            { icon: "lock", label: "Pago 100% seguro" },
+            { icon: "schedule", label: "Entrega en ~22 min" },
+            { icon: "support_agent", label: "Soporte por WhatsApp" },
+            { icon: "star", label: "Sin app extra — todo desde el navegador" },
+          ].map((tip) => (
+            <div
+              key={tip.label}
+              className="flex items-center gap-2 bg-surface-container-low border border-outline-variant/10 px-4 py-2 rounded-full"
+            >
+              <span
+                className="material-symbols-outlined text-primary text-base"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                {tip.icon}
+              </span>
+              <span className="text-on-surface-variant text-xs font-headline font-semibold">
+                {tip.label}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -808,6 +981,7 @@ export function LandingPage() {
         <HeroSection />
         <MarqueeStrip />
         <MenuHighlights />
+        <HowToOrder />
         <SecretProcess />
         <LoyaltySection />
         <LocationSection />
