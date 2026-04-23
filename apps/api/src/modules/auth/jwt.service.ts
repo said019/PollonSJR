@@ -4,7 +4,7 @@ const CUSTOMER_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const ADMIN_SECRET = process.env.JWT_ADMIN_SECRET || "admin-dev-secret";
 
 const CUSTOMER_TTL = "30d";
-const ADMIN_TTL = "8h";
+const ADMIN_TTL = "30d";
 const REFRESH_TTL = "30d";
 
 // ── Customer tokens ─────────────────────────────────────────

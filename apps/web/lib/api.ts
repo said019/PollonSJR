@@ -17,6 +17,14 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });
 
   if (!res.ok) {
+    // If an admin route returns 401, the admin token has expired or is invalid.
+    // Clear it and redirect to login so the admin can re-authenticate.
+    if (res.status === 401 && path.startsWith("/api/admin") && typeof window !== "undefined") {
+      localStorage.removeItem("pollon:admin_token");
+      window.location.href = "/admin/login";
+      // Throw to stop execution in the calling component while redirect happens
+      throw new Error("Sesión de admin expirada. Redirigiendo al login...");
+    }
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Error ${res.status}`);
   }
