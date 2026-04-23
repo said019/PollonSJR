@@ -462,19 +462,36 @@ export class OrdersService {
     }));
   }
 
-  async getHistory(page: number = 1, limit: number = 20) {
+  async getHistory(
+    page: number = 1,
+    limit: number = 20,
+    dateFrom?: Date,
+    dateTo?: Date
+  ) {
     const skip = (page - 1) * limit;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = {
+      status: { in: ["DELIVERED", "CANCELLED"] },
+      ...(dateFrom || dateTo
+        ? {
+            createdAt: {
+              ...(dateFrom ? { gte: dateFrom } : {}),
+              ...(dateTo   ? { lte: dateTo }   : {}),
+            },
+          }
+        : {}),
+    };
+
     const [orders, total] = await this.app.prisma.$transaction([
       this.app.prisma.order.findMany({
-        where: { status: { in: ["DELIVERED", "CANCELLED"] } },
+        where,
         include: { customer: true, _count: { select: { items: true } } },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      this.app.prisma.order.count({
-        where: { status: { in: ["DELIVERED", "CANCELLED"] } },
-      }),
+      this.app.prisma.order.count({ where }),
     ]);
 
     return {

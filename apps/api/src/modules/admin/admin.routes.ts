@@ -60,8 +60,17 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get("/orders", async () => ordersService.getActiveOrders());
 
   app.get("/orders/history", async (request) => {
-    const { page } = request.query as { page?: string };
-    return ordersService.getHistory(Number(page) || 1);
+    const { page, dateFrom, dateTo } = request.query as {
+      page?: string;
+      dateFrom?: string; // ISO date string YYYY-MM-DD
+      dateTo?: string;   // ISO date string YYYY-MM-DD
+    };
+
+    const from = dateFrom ? new Date(dateFrom + "T00:00:00.000Z") : undefined;
+    // End of day so the full day is included
+    const to = dateTo ? new Date(dateTo + "T23:59:59.999Z") : undefined;
+
+    return ordersService.getHistory(Number(page) || 1, 20, from, to);
   });
 
   app.patch<{ Params: { id: string } }>("/orders/:id/status", async (request, reply) => {
