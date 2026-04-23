@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Users, BarChart3, Settings, LogOut, Truck } from "lucide-react";
-import { getAdminToken, removeAdminToken } from "@/lib/auth";
+import { getAdminToken, removeAdminToken, parseJwt } from "@/lib/auth";
 import { useEffect, useState } from "react";
 
 const NAV_ITEMS = [
@@ -31,9 +31,19 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     const token = getAdminToken();
     if (!token) {
       router.replace("/admin/login");
-    } else {
-      setReady(true);
+      return;
     }
+
+    // Check token expiry before any API call
+    const payload = parseJwt(token);
+    const expMs = payload?.exp ? (payload.exp as number) * 1000 : 0;
+    if (!payload || expMs < Date.now()) {
+      removeAdminToken();
+      router.replace("/admin/login");
+      return;
+    }
+
+    setReady(true);
   }, [pathname, router]);
 
   const handleLogout = () => {
