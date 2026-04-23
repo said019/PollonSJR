@@ -12,11 +12,15 @@ import {
   CheckCircle,
   ChefHat,
   Clock,
+  Copy,
   CreditCard,
+  ExternalLink,
   Landmark,
   MapPin,
+  Navigation,
   Package,
   Phone,
+  Share2,
   Truck,
   User,
   X,
@@ -57,6 +61,109 @@ const PAYMENT_LABELS = {
   CASH: "Efectivo",
   TRANSFER: "Transferencia",
 } as const;
+
+// ── Business origin coordinates (from env or known default) ──────────────
+const BIZ_LAT = process.env.NEXT_PUBLIC_BUSINESS_LATITUDE ?? "20.5881";
+const BIZ_LNG = process.env.NEXT_PUBLIC_BUSINESS_LONGITUDE ?? "-99.9953";
+
+function DeliveryMap({
+  address,
+  orderNumber,
+  customerName,
+  customerPhone,
+}: {
+  address: string;
+  orderNumber: number;
+  customerName: string;
+  customerPhone: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const encodedDest = encodeURIComponent(address);
+  const mapSrc = `https://maps.google.com/maps?f=d&source=s_d&saddr=${BIZ_LAT},${BIZ_LNG}&daddr=${encodedDest}&output=embed&hl=es`;
+  const mapsUrl = `https://www.google.com/maps/dir/${BIZ_LAT},${BIZ_LNG}/${encodedDest}`;
+
+  // WhatsApp message for the delivery person
+  const waText = encodeURIComponent(
+    `🛵 *Pedido #${orderNumber}* — Pollón SJR\n\n📍 Entregar en:\n${address}\n\n👤 Cliente: ${customerName}\n📞 Tel: ${customerPhone}\n\n🗺️ Ruta: ${mapsUrl}`
+  );
+  const waUrl = `https://wa.me/?text=${waText}`;
+
+  function copyAddress() {
+    navigator.clipboard.writeText(address).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <section className="rounded-2xl border border-purple-500/30 bg-purple-500/5 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-purple-500/15">
+        <div className="flex items-center gap-2">
+          <Navigation size={14} className="text-purple-400" />
+          <h3 className="font-headline text-[10px] font-bold uppercase tracking-[0.25em] text-purple-400">
+            Ruta de entrega
+          </h3>
+        </div>
+        {/* Share buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={copyAddress}
+            title="Copiar dirección"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold border border-outline-variant/20 text-on-surface-variant hover:border-purple-400/40 hover:text-purple-400 transition-all"
+          >
+            {copied ? (
+              <CheckCircle size={11} className="text-green-400" />
+            ) : (
+              <Copy size={11} />
+            )}
+            {copied ? "Copiado" : "Copiar"}
+          </button>
+          <a
+            href={waUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Compartir por WhatsApp"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-[#25D366]/15 border border-[#25D366]/30 text-[#25D366] hover:bg-[#25D366]/25 transition-all"
+          >
+            <Share2 size={11} />
+            WhatsApp
+          </a>
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Abrir en Google Maps"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-500/10 border border-blue-400/30 text-blue-400 hover:bg-blue-500/20 transition-all"
+          >
+            <ExternalLink size={11} />
+            Maps
+          </a>
+        </div>
+      </div>
+
+      {/* Embedded map */}
+      <div className="relative w-full" style={{ height: 220 }}>
+        <iframe
+          src={mapSrc}
+          title="Ruta de entrega"
+          width="100%"
+          height="100%"
+          style={{ border: 0, display: "block" }}
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+        />
+      </div>
+
+      {/* Address text */}
+      <div className="px-4 py-2.5 flex items-start gap-2">
+        <MapPin size={12} className="mt-0.5 flex-shrink-0 text-purple-400" />
+        <p className="text-xs text-on-surface-variant leading-relaxed">{address}</p>
+      </div>
+    </section>
+  );
+}
 
 interface OrderDetailModalProps {
   orderId: string | null;
@@ -247,6 +354,18 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                         )}
                       </div>
                     </section>
+
+                    {/* Delivery map — only when ON_THE_WAY and has address */}
+                    {order.status === "ON_THE_WAY" &&
+                      order.type === "DELIVERY" &&
+                      order.address && (
+                        <DeliveryMap
+                          address={order.address}
+                          orderNumber={order.orderNumber}
+                          customerName={order.customerName ?? "Cliente"}
+                          customerPhone={order.customerPhone ?? ""}
+                        />
+                      )}
 
                     {/* Payment */}
                     {order.paymentMethod && (
