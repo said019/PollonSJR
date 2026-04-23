@@ -384,7 +384,7 @@ export class OrdersService {
 
     const templateMap: Record<string, string> = {
       PREPARING: "order_preparing",
-      READY: order.type === "PICKUP" ? "order_ready_pickup" : "order_ready_pickup",
+      READY: order.type === "PICKUP" ? "order_ready_pickup" : "order_ready_delivery",
       ON_THE_WAY: "order_on_the_way",
       DELIVERED: "order_delivered",
     };

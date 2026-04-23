@@ -13,6 +13,9 @@ const TEMPLATES: Record<string, (p: TemplateParams) => string> = {
   order_ready_pickup: (p) =>
     `✅ ¡Listo ${p.name}! Tu pedido *#${p.orderNumber}* está listo.\n\nPuedes pasar a recogerlo. Te esperamos 🍗`,
 
+  order_ready_delivery: (p) =>
+    `✅ ¡Listo ${p.name}! Tu pedido *#${p.orderNumber}* está listo.\n\nYa lo estamos asignando a un repartidor. ¡Pronto estará en tu puerta! 🛵`,
+
   order_on_the_way: (p) =>
     `🛵 ¡Tu pedido *#${p.orderNumber}* ya va en camino, ${p.name}!\n\nTiempo estimado: ~${p.minutes} min.`,
 
