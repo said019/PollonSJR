@@ -361,7 +361,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               </span>
             </div>
             <p className="mt-1 text-[11px] text-on-surface-variant/60">
-              Incluye {orderType === "DELIVERY" && delivery.fee ? `envío ($${(delivery.fee / 100).toFixed(0)}) + ` : ""}todos los productos
+              Incluye {orderType === "DELIVERY" && delivery.fee ? `envío (${formatCents(delivery.fee)}) + ` : ""}todos los productos
             </p>
           </div>
 

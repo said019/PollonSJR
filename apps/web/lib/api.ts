@@ -1,9 +1,11 @@
+import { refreshAccessToken, clearTokens } from "./auth";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-type FetchOptions = RequestInit & { token?: string };
+type FetchOptions = RequestInit & { token?: string; _retried?: boolean };
 
 async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const { token, ...init } = options;
+  const { token, _retried, ...init } = options;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -17,14 +19,22 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });
 
   if (!res.ok) {
-    // If an admin route returns 401, the admin token has expired or is invalid.
-    // Clear it and redirect to login so the admin can re-authenticate.
+    // Admin 401 → clear token and redirect to login
     if (res.status === 401 && path.startsWith("/api/admin") && typeof window !== "undefined") {
       localStorage.removeItem("pollon:admin_token");
       window.location.href = "/admin/login";
-      // Throw to stop execution in the calling component while redirect happens
       throw new Error("Sesión de admin expirada. Redirigiendo al login...");
     }
+
+    // Customer 401 → attempt token refresh once
+    if (res.status === 401 && !path.startsWith("/api/admin") && !_retried && typeof window !== "undefined") {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return apiFetch<T>(path, { ...options, token: newToken, _retried: true });
+      }
+      clearTokens();
+    }
+
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Error ${res.status}`);
   }

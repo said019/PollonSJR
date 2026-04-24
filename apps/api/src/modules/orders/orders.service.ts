@@ -210,11 +210,16 @@ export class OrdersService {
       include: { customer: true, _count: { select: { items: true } } },
     });
 
-    // 7. Increment coupon usage
+    // 7. Atomically increment coupon usage (check limit inside transaction)
     if (couponId) {
-      await this.app.prisma.coupon.update({
-        where: { id: couponId },
-        data: { usedCount: { increment: 1 } },
+      await this.app.prisma.$transaction(async (tx) => {
+        const coupon = await tx.coupon.findUnique({ where: { id: couponId } });
+        if (coupon && (coupon.maxUses === null || coupon.usedCount < coupon.maxUses)) {
+          await tx.coupon.update({
+            where: { id: couponId },
+            data: { usedCount: { increment: 1 } },
+          });
+        }
       });
     }
 
@@ -353,23 +358,27 @@ export class OrdersService {
 
     if (!order) throw new Error("Pedido no encontrado");
 
-    await this.app.prisma.$transaction([
-      this.app.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          status: newStatus,
-          ...(newStatus === "CANCELLED" && cancelReason ? { cancelReason } : {}),
-        },
-      }),
-      this.app.prisma.orderStatusLog.create({
-        data: {
-          orderId,
-          from: order.status,
-          to: newStatus,
-          ...(newStatus === "CANCELLED" && cancelReason ? { note: cancelReason } : {}),
-        },
-      }),
-    ]);
+    // Optimistic locking: only update if status hasn't changed since we read it
+    const updated = await this.app.prisma.order.updateMany({
+      where: { id: orderId, status: order.status },
+      data: {
+        status: newStatus,
+        ...(newStatus === "CANCELLED" && cancelReason ? { cancelReason } : {}),
+      },
+    });
+
+    if (updated.count === 0) {
+      throw new Error("El pedido fue modificado por otro usuario. Recarga e intenta de nuevo.");
+    }
+
+    await this.app.prisma.orderStatusLog.create({
+      data: {
+        orderId,
+        from: order.status,
+        to: newStatus,
+        ...(newStatus === "CANCELLED" && cancelReason ? { note: cancelReason } : {}),
+      },
+    });
 
     emitOrderStatus(this.app, order.customerId, orderId, newStatus, {
       orderNumber: order.orderNumber,

@@ -158,7 +158,8 @@ export async function authRoutes(app: FastifyInstance) {
         error: parsed.error.issues[0]?.message || "Datos inválidos",
       });
     }
-    const { name, phone, email, password } = parsed.data;
+    const { name, phone, password } = parsed.data;
+    const email = parsed.data.email?.toLowerCase().trim() || null;
 
     // Check if phone already exists with password
     const existing = await app.prisma.customer.findUnique({ where: { phone } });
@@ -179,8 +180,8 @@ export async function authRoutes(app: FastifyInstance) {
     // Upsert: if customer existed via OTP without password, add password + name + email
     const customer = await app.prisma.customer.upsert({
       where: { phone },
-      update: { name, email: email || null, password: passwordHash },
-      create: { phone, name, email: email || null, password: passwordHash },
+      update: { name, email, password: passwordHash },
+      create: { phone, name, email, password: passwordHash },
     });
 
     // Create loyalty card if first time

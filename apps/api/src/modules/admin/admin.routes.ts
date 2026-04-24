@@ -134,13 +134,22 @@ export async function adminRoutes(app: FastifyInstance) {
     });
   });
 
+  const createCouponSchema = z.object({
+    code: z.string().min(1).max(30),
+    type: z.enum(["PERCENT", "FIXED"]),
+    value: z.number().min(1),
+    minOrderAmount: z.number().min(0).optional(),
+    maxUses: z.number().int().min(1).optional(),
+    firstOrderOnly: z.boolean().optional(),
+    expiresAt: z.string().optional(),
+  });
+
   app.post("/coupons", async (request, reply) => {
-    const { code, type, value, minOrderAmount, maxUses, firstOrderOnly, expiresAt } =
-      request.body as {
-        code: string; type: "PERCENT" | "FIXED"; value: number;
-        minOrderAmount?: number; maxUses?: number;
-        firstOrderOnly?: boolean; expiresAt?: string;
-      };
+    const parsed = createCouponSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const { code, type, value, minOrderAmount, maxUses, firstOrderOnly, expiresAt } = parsed.data;
 
     const coupon = await app.prisma.coupon.create({
       data: {
@@ -175,16 +184,16 @@ export async function adminRoutes(app: FastifyInstance) {
     const order = await app.prisma.order.findUnique({ where: { id: request.params.id } });
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
 
-    await app.prisma.order.update({
+    const updated = await app.prisma.order.update({
       where: { id: order.id },
       data: { estimatedMinutes },
     });
 
-    // Notify customer in real time
-    app.io.to(`customer:${order.customerId}`).emit("order:status", {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      status: order.status as any,
+    // Notify customer with the UPDATED order data
+    app.io.to(`customer:${updated.customerId}`).emit("order:status", {
+      orderId: updated.id,
+      orderNumber: updated.orderNumber,
+      status: updated.status as any,
       message: `Tiempo estimado actualizado: ~${estimatedMinutes} min`,
       estimatedMinutes,
     });
@@ -278,6 +287,15 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!card) return reply.status(404).send({ error: "Cliente sin tarjeta de lealtad" });
     if (!card.pendingReward) return reply.status(400).send({ error: "Este cliente no tiene recompensa pendiente" });
 
+    // Check if the reward has expired
+    if (card.rewardExpiresAt && new Date() > card.rewardExpiresAt) {
+      await app.prisma.loyaltyCard.update({
+        where: { id: card.id },
+        data: { pendingReward: false, pendingProductId: null, rewardEarnedAt: null, rewardExpiresAt: null },
+      });
+      return reply.status(400).send({ error: "La recompensa expiró. Se ha limpiado del registro." });
+    }
+
     const productName = card.pendingProduct?.name ?? "Producto";
 
     await app.prisma.$transaction([
@@ -312,10 +330,38 @@ export async function adminRoutes(app: FastifyInstance) {
     // Update wallet passes to show redeemed state
     const appleWallet = new AppleWalletService(app);
     const googleWallet = new GoogleWalletService(app);
-    Promise.allSettled([
+    void Promise.allSettled([
       appleWallet.updatePassAndNotify(customerId, `¡${productName} canjeado!`),
-      googleWallet.updateLoyaltyObject(customerId, customer?.name ?? "", 0),
-    ]).catch(() => {});
+      (async () => {
+        await googleWallet.updateLoyaltyObject(
+          customerId,
+          customer?.name ?? "",
+          0
+        );
+        await googleWallet.sendMessage(
+          customerId,
+          "Pollón SJR",
+          `¡${productName} canjeado!`
+        );
+      })(),
+    ])
+      .then((results) => {
+        results.forEach((result, index) => {
+          if (result.status === "rejected") {
+            app.log.error(
+              {
+                err: result.reason,
+                customerId,
+                wallet: index === 0 ? "apple" : "google",
+              },
+              "Wallet pass redeem update failed"
+            );
+          }
+        });
+      })
+      .catch((err) => {
+        app.log.error({ err, customerId }, "Wallet pass redeem handler failed");
+      });
 
     return { success: true, message: `Recompensa canjeada: ${productName}` };
   });
@@ -351,6 +397,7 @@ export async function adminRoutes(app: FastifyInstance) {
     "/wallet/force-update/:id",
     async (request, reply) => {
       const customerId = request.params.id;
+      const body = request.body as { message?: string } | undefined;
       const customer = await app.prisma.customer.findUnique({
         where: { id: customerId },
         include: { loyalty: true },
@@ -366,13 +413,44 @@ export async function adminRoutes(app: FastifyInstance) {
 
       const apple = new AppleWalletService(app);
       const google = new GoogleWalletService(app);
+      const message = body?.message?.trim() || "Pase actualizado";
 
-      await Promise.allSettled([
-        apple.updatePassAndNotify(customerId, "Pase actualizado"),
-        google.updateLoyaltyObject(customerId, customer.name ?? "", stamps),
+      const results = await Promise.allSettled([
+        apple.updatePassAndNotify(customerId, message),
+        (async () => {
+          await google.updateLoyaltyObject(
+            customerId,
+            customer.name ?? "",
+            stamps
+          );
+          await google.sendMessage(customerId, "Pollón SJR", message);
+        })(),
       ]);
 
-      return { success: true };
+      const failures: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          const wallet = index === 0 ? "apple" : "google";
+          failures.push(wallet);
+          app.log.error(
+            {
+              err: result.reason,
+              customerId,
+              wallet,
+            },
+            "Wallet force update failed"
+          );
+        }
+      });
+
+      if (failures.length === results.length) {
+        return reply.status(502).send({
+          success: false,
+          error: `Wallet update failed for: ${failures.join(", ")}`,
+        });
+      }
+
+      return { success: true, ...(failures.length > 0 && { warnings: failures }) };
     }
   );
 
@@ -395,13 +473,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
     for (const card of cards) {
       try {
-        // Apple: send alert to all devices
-        const devices = await app.prisma.appleDevice.findMany({
-          where: { serialNumber: card.customerId },
-        });
-        for (const device of devices) {
-          await apple.sendAlertNotification(device.pushToken, title, message);
-        }
+        // Apple Wallet: update the pass so Wallet shows the changeMessage.
+        await apple.updatePassAndNotify(card.customerId, message);
         // Google: add message to loyalty object
         await google.sendMessage(card.customerId, title, message);
         sent++;

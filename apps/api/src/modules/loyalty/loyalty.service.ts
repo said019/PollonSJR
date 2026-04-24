@@ -112,26 +112,21 @@ export class LoyaltyService {
       }),
     ]);
 
-    // Update wallet passes (fire-and-forget, don't block the response)
     const newProgress = pendingReward
       ? ORDERS_PER_REWARD
       : newCompletedOrders % ORDERS_PER_REWARD;
-    const apple = new AppleWalletService(this.app);
-    const google = new GoogleWalletService(this.app);
 
     const walletMessage =
       earnedReward && pendingReward
         ? "¡Felicidades! Ganaste un producto gratis"
         : `Compra registrada — ${newProgress}/${ORDERS_PER_REWARD}`;
 
-    Promise.allSettled([
-      apple.updatePassAndNotify(order.customerId, walletMessage),
-      google.updateLoyaltyObject(
-        order.customerId,
-        order.customer.name ?? "",
-        newProgress
-      ),
-    ]).catch(() => {});
+    this.notifyWalletPasses(
+      order.customerId,
+      order.customer.name ?? "",
+      newProgress,
+      walletMessage
+    );
 
     // Emit progress to customer
     const progressState = this.getProgress(newCompletedOrders, pendingReward);
@@ -199,9 +194,9 @@ export class LoyaltyService {
     // Discount = price of the free product (capped at subtotal)
     const discountAmount = Math.min(card.pendingProduct.price, subtotal);
 
-    // Clear pending reward (now used)
-    await this.app.prisma.loyaltyCard.update({
-      where: { id: card.id },
+    // Atomically clear pending reward (conditional on pendingReward still being true)
+    const updated = await this.app.prisma.loyaltyCard.updateMany({
+      where: { id: card.id, pendingReward: true },
       data: {
         pendingReward: false,
         pendingProductId: null,
@@ -210,6 +205,11 @@ export class LoyaltyService {
         freeProductsUsed: card.freeProductsUsed + 1,
       },
     });
+
+    // If another request already redeemed the reward, don't apply discount
+    if (updated.count === 0) {
+      return { discountAmount: 0, rewardApplied: false, productName: null };
+    }
 
     return {
       discountAmount,
@@ -251,6 +251,44 @@ export class LoyaltyService {
       create: { customerId },
       include: { pendingProduct: true },
     });
+  }
+
+  private notifyWalletPasses(
+    customerId: string,
+    customerName: string,
+    stamps: number,
+    message: string
+  ) {
+    const apple = new AppleWalletService(this.app);
+    const google = new GoogleWalletService(this.app);
+
+    void Promise.allSettled([
+      apple.updatePassAndNotify(customerId, message),
+      (async () => {
+        await google.updateLoyaltyObject(customerId, customerName, stamps);
+        await google.sendMessage(customerId, "Pollón SJR", message);
+      })(),
+    ])
+      .then((results) => {
+        results.forEach((result, index) => {
+          if (result.status === "rejected") {
+            this.app.log.error(
+              {
+                err: result.reason,
+                customerId,
+                wallet: index === 0 ? "apple" : "google",
+              },
+              "Wallet pass update failed"
+            );
+          }
+        });
+      })
+      .catch((err) => {
+        this.app.log.error(
+          { err, customerId },
+          "Wallet pass update handler failed"
+        );
+      });
   }
 
   private getProgress(completedOrders: number, pendingReward: boolean) {
