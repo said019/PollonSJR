@@ -47,6 +47,9 @@ export class AdminService {
     deliveryActive: boolean;
     acceptOrders: boolean;
     closedMessage: string | null;
+    transferClabe: string | null;
+    transferBank: string | null;
+    transferAccountHolder: string | null;
   }>) {
     return updateConfig(this.app, data);
   }

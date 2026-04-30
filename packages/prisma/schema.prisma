@@ -368,16 +368,20 @@ model DailyReport {
 }
 
 model StoreConfig {
-  id             String   @id @default("singleton")
-  isOpen         Boolean  @default(true)
-  deliveryActive Boolean  @default(true)
-  acceptOrders   Boolean  @default(true)
-  closedMessage  String?
-  openTime       String   @default("14:00")
-  closeTime      String   @default("22:00")
-  openDays       Int[]    @default([4, 5, 6, 0])
-  updatedAt      DateTime @updatedAt
-  updatedBy      String?
+  id                    String   @id @default("singleton")
+  isOpen                Boolean  @default(true)
+  deliveryActive        Boolean  @default(true)
+  acceptOrders          Boolean  @default(true)
+  closedMessage         String?
+  openTime              String   @default("14:00")
+  closeTime             String   @default("22:00")
+  openDays              Int[]    @default([4, 5, 6, 0])
+  // Bank transfer details shown to customers when paying via TRANSFER
+  transferClabe         String?
+  transferBank          String?
+  transferAccountHolder String?
+  updatedAt             DateTime @updatedAt
+  updatedBy             String?
 }
 
 // ─── Apple Wallet Web Service ────────────────────────────────

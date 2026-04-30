@@ -35,6 +35,9 @@ export async function updateStoreConfig(
     deliveryActive: boolean;
     acceptOrders: boolean;
     closedMessage: string | null;
+    transferClabe: string | null;
+    transferBank: string | null;
+    transferAccountHolder: string | null;
     updatedBy: string;
   }>
 ) {

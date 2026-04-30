@@ -17,6 +17,16 @@ const storeConfigSchema = z.object({
   deliveryActive: z.boolean().optional(),
   acceptOrders: z.boolean().optional(),
   closedMessage: z.string().nullable().optional(),
+  // Bank transfer details — CLABE in Mexico is exactly 18 digits.
+  transferClabe: z
+    .string()
+    .trim()
+    .regex(/^\d{18}$/, "La CLABE debe tener 18 dígitos")
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null)),
+  transferBank: z.string().trim().max(60).nullable().optional(),
+  transferAccountHolder: z.string().trim().max(120).nullable().optional(),
 });
 
 const hoursSchema = z.object({

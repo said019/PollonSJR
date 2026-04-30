@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
-import { Save, Loader2, Clock, Store, Download, Share, Smartphone, Check } from "lucide-react";
+import { Save, Loader2, Clock, Store, Download, Share, Smartphone, Check, Landmark } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -15,6 +15,9 @@ interface StoreConfig {
   openTime: string;
   closeTime: string;
   openDays: number[];
+  transferClabe?: string | null;
+  transferBank?: string | null;
+  transferAccountHolder?: string | null;
 }
 
 const ALL_DAYS: { label: string; short: string; value: number }[] = [
@@ -45,6 +48,9 @@ export function SettingsPage() {
             openTime: "14:00",
             closeTime: "22:00",
             openDays: [1, 2, 3, 4, 5, 6, 0],
+            transferClabe: null,
+            transferBank: null,
+            transferAccountHolder: null,
           }) as StoreConfig
       ),
   });
@@ -65,6 +71,9 @@ export function SettingsPage() {
             isOpen: data.isOpen,
             deliveryActive: data.deliveryActive,
             acceptOrders: data.acceptOrders,
+            transferClabe: data.transferClabe?.trim() || null,
+            transferBank: data.transferBank?.trim() || null,
+            transferAccountHolder: data.transferAccountHolder?.trim() || null,
           },
           token || undefined
         ),
@@ -87,8 +96,14 @@ export function SettingsPage() {
     },
   });
 
+  const clabeError = form?.transferClabe
+    ? /^\d{18}$/.test(form.transferClabe.trim())
+      ? null
+      : "La CLABE debe tener exactamente 18 dígitos"
+    : null;
+
   const handleSave = () => {
-    if (form) saveMut.mutate(form);
+    if (form && !clabeError) saveMut.mutate(form);
   };
 
   const toggleDay = (day: number) => {
@@ -113,7 +128,7 @@ export function SettingsPage() {
         <h1 className="text-2xl font-bold">Configuración</h1>
         <button
           onClick={handleSave}
-          disabled={saveMut.isPending}
+          disabled={saveMut.isPending || !!clabeError}
           className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-on-primary disabled:opacity-50"
         >
           {saveMut.isPending ? (
@@ -232,6 +247,72 @@ export function SettingsPage() {
         <p className="mt-2 text-xs text-on-surface-variant/60">
           Horario en tiempo de México (CST/CDT)
         </p>
+      </section>
+
+      {/* ── Datos de transferencia ── */}
+      <section className="mb-6 rounded-xl border border-outline-variant/20 bg-surface-container-high p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <Landmark size={20} className="text-primary" />
+          <h2 className="font-bold">Datos de transferencia</h2>
+        </div>
+        <p className="mb-4 text-xs text-on-surface-variant/70">
+          Los clientes que paguen por transferencia verán estos datos en su
+          pedido. La CLABE debe tener 18 dígitos.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">CLABE interbancaria</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={18}
+              placeholder="012345678901234567"
+              value={form.transferClabe ?? ""}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, "").slice(0, 18);
+                setForm({ ...form, transferClabe: digits });
+              }}
+              className={`w-full rounded-xl border bg-surface-container p-3 font-mono text-sm tracking-wider text-on-surface ${
+                clabeError
+                  ? "border-error/60 focus:border-error"
+                  : "border-outline-variant/30 focus:border-primary/60"
+              } outline-none transition-colors`}
+            />
+            {clabeError && (
+              <p className="mt-1 text-xs font-semibold text-error">{clabeError}</p>
+            )}
+            <p className="mt-1 text-[11px] text-on-surface-variant/60">
+              {form.transferClabe?.length ?? 0} / 18 dígitos
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Banco</label>
+            <input
+              type="text"
+              maxLength={60}
+              placeholder="BBVA"
+              value={form.transferBank ?? ""}
+              onChange={(e) => setForm({ ...form, transferBank: e.target.value })}
+              className="w-full rounded-xl border border-outline-variant/30 bg-surface-container p-3 text-sm text-on-surface outline-none transition-colors focus:border-primary/60"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Titular de la cuenta</label>
+            <input
+              type="text"
+              maxLength={120}
+              placeholder="Pollón SJR"
+              value={form.transferAccountHolder ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, transferAccountHolder: e.target.value })
+              }
+              className="w-full rounded-xl border border-outline-variant/30 bg-surface-container p-3 text-sm text-on-surface outline-none transition-colors focus:border-primary/60"
+            />
+          </div>
+        </div>
       </section>
 
       {/* ── Instalar app ── */}

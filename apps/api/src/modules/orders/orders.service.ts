@@ -256,13 +256,7 @@ export class OrdersService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         paymentMethod: "TRANSFER",
-        transferInfo: {
-          clabe: process.env.STORE_CLABE || "",
-          bank: process.env.STORE_BANK || "BBVA",
-          accountHolder: process.env.STORE_ACCOUNT_HOLDER || "Pollón SJR",
-          amount: total / 100,
-          concept: `Pedido #${order.orderNumber}`,
-        },
+        transferInfo: await buildTransferInfo(this.app, order.orderNumber, total),
         message: "Realiza la transferencia y sube el comprobante. Tu pedido empezará a prepararse en cuanto confirmemos el pago.",
         rewardApplied: reward.rewardApplied,
         rewardMessage,
@@ -316,13 +310,7 @@ export class OrdersService {
       cashAmount: order.cashAmount,
       transferInfo:
         order.paymentMethod === "TRANSFER"
-          ? {
-              clabe: process.env.STORE_CLABE || "",
-              bank: process.env.STORE_BANK || "BBVA",
-              accountHolder: process.env.STORE_ACCOUNT_HOLDER || "Pollón SJR",
-              amount: order.total / 100,
-              concept: `Pedido #${order.orderNumber}`,
-            }
+          ? await buildTransferInfo(this.app, order.orderNumber, order.total)
           : null,
       transferProofUrl: order.transferProofUrl ?? null,
       transferProofUploadedAt: order.transferProofUploadedAt?.toISOString() ?? null,
@@ -571,4 +559,27 @@ export class OrdersService {
           : null,
     };
   }
+}
+
+/**
+ * Build the TransferInfo object shown to customers paying by bank transfer.
+ * Reads from the StoreConfig row in DB; env vars are kept as a backstop
+ * so legacy deploys without configured rows keep working.
+ */
+async function buildTransferInfo(
+  app: FastifyInstance,
+  orderNumber: number,
+  totalCents: number
+) {
+  const config = await getStoreConfig(app);
+  return {
+    clabe: config.transferClabe || process.env.STORE_CLABE || "",
+    bank: config.transferBank || process.env.STORE_BANK || "BBVA",
+    accountHolder:
+      config.transferAccountHolder ||
+      process.env.STORE_ACCOUNT_HOLDER ||
+      "Pollón SJR",
+    amount: totalCents / 100,
+    concept: `Pedido #${orderNumber}`,
+  };
 }
