@@ -7,10 +7,9 @@ import { useSocket } from "@/hooks/useSocket";
 import type { OrderSummary, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { Clock, ChefHat, Package, Truck, CheckCircle, Eye, Store, MapPin, Landmark, FileCheck2 } from "lucide-react";
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { ConnectionStatus } from "./connection-status";
 import { OrderDetailModal } from "./order-detail-modal";
-import { playNewOrderSound, preloadNewOrderSound } from "@/lib/notification-sound";
 
 const COLUMNS: { status: OrderStatusType; label: string; icon: React.ReactNode; color: string }[] = [
   { status: "PENDING_PAYMENT", label: "Por confirmar", icon: <Landmark size={18} />, color: "border-amber-400" },
@@ -50,14 +49,9 @@ export function OrdersKanban() {
     refetchInterval: 15000,
   });
 
-  // Pre-load audio file so it plays instantly when a new order arrives
-  useEffect(() => {
-    preloadNewOrderSound();
-  }, []);
-
-  // Real-time updates with admin auth
+  // Sound + global toast are handled by AdminNewOrderNotifier in the layout.
+  // Here we only refetch the kanban data when a new order arrives.
   const { connected } = useSocket("order:new", () => {
-    playNewOrderSound();
     qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
   }, socketAuth);
 

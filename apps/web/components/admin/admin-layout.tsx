@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Users, BarChart3, Settings, LogOut, Truck } from "lucide-react";
 import { getAdminToken, removeAdminToken, parseJwt } from "@/lib/auth";
 import { useEffect, useState } from "react";
+import { AdminNewOrderNotifier } from "./new-order-notifier";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -142,6 +143,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 md:overflow-y-auto mt-14 md:mt-0">
         {children}
       </main>
+
+      {/* Global new-order toast + sound — works on every admin page */}
+      <AdminNewOrderNotifier />
     </div>
   );
 }
