@@ -6,13 +6,14 @@ import { getAdminToken } from "@/lib/auth";
 import { useSocket } from "@/hooks/useSocket";
 import type { OrderSummary, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
-import { Clock, ChefHat, Package, Truck, CheckCircle, Eye, Store, MapPin } from "lucide-react";
+import { Clock, ChefHat, Package, Truck, CheckCircle, Eye, Store, MapPin, Landmark, FileCheck2 } from "lucide-react";
 import { useCallback, useState, useEffect } from "react";
 import { ConnectionStatus } from "./connection-status";
 import { OrderDetailModal } from "./order-detail-modal";
 import { playNewOrderSound, preloadNewOrderSound } from "@/lib/notification-sound";
 
 const COLUMNS: { status: OrderStatusType; label: string; icon: React.ReactNode; color: string }[] = [
+  { status: "PENDING_PAYMENT", label: "Por confirmar", icon: <Landmark size={18} />, color: "border-amber-400" },
   { status: "RECEIVED", label: "Recibidos", icon: <Clock size={18} />, color: "border-blue-400" },
   { status: "PREPARING", label: "Preparando", icon: <ChefHat size={18} />, color: "border-orange-400" },
   { status: "READY", label: "Listos", icon: <Package size={18} />, color: "border-green-400" },
@@ -125,7 +126,7 @@ export function OrdersKanban() {
         </FilterTab>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {COLUMNS.map((col) => {
           const colOrders = filtered.filter((o) => o.status === col.status);
           return (
@@ -221,6 +222,9 @@ function OrderCard({
 }) {
   const isDelivery = order.type === "DELIVERY";
   const nextStatus = NEXT_STATUS[colStatus];
+  const isPendingTransfer =
+    colStatus === "PENDING_PAYMENT" && order.paymentMethod === "TRANSFER";
+  const hasProof = !!order.transferProofUrl;
 
   return (
     <div
@@ -264,12 +268,25 @@ function OrderCard({
           {order.itemCount} producto{order.itemCount > 1 ? "s" : ""} — <span className="font-semibold text-primary">{formatCents(order.total)}</span>
         </p>
 
+        {isPendingTransfer && (
+          <div
+            className={`mb-2 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+              hasProof
+                ? "bg-green-500/15 text-green-400"
+                : "bg-amber-500/15 text-amber-400"
+            }`}
+          >
+            <FileCheck2 size={10} />
+            {hasProof ? "Comprobante recibido" : "Sin comprobante"}
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5">
           <span className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-outline-variant/25 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant transition-colors group-hover:border-primary/40 group-hover:text-primary">
             <Eye size={11} />
             Ver detalle
           </span>
-          {nextStatus && (
+          {nextStatus && !isPendingTransfer && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -279,6 +296,18 @@ function OrderCard({
               className="flex-[1.6] bg-primary text-on-primary text-[10px] py-1.5 rounded-lg font-semibold uppercase tracking-wider disabled:opacity-50 transition-all hover:brightness-110"
             >
               {ADVANCE_LABEL[colStatus] ?? `→ ${nextStatus}`}
+            </button>
+          )}
+          {isPendingTransfer && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDetail();
+              }}
+              disabled={!hasProof}
+              className="flex-[1.6] bg-green-500 text-white text-[10px] py-1.5 rounded-lg font-semibold uppercase tracking-wider transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-on-surface-variant/40"
+            >
+              {hasProof ? "Verificar y confirmar" : "Esperando…"}
             </button>
           )}
         </div>

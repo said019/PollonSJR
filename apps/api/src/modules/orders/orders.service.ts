@@ -163,8 +163,11 @@ export class OrdersService {
       initialStatus = "SCHEDULED";
       depositAmount = Math.round(total * 0.5);
       remainingAmount = total - depositAmount;
+    } else if (paymentMethod === "CASH") {
+      initialStatus = "RECEIVED";
     } else {
-      initialStatus = paymentMethod === "CARD" ? "PENDING_PAYMENT" : "RECEIVED";
+      // CARD waits for MP webhook; TRANSFER waits for receipt upload + admin confirmation
+      initialStatus = "PENDING_PAYMENT";
     }
 
     const order = await this.app.prisma.order.create({
@@ -223,9 +226,9 @@ export class OrdersService {
       });
     }
 
-    // 8. Handle non-CARD payment methods
-    if (paymentMethod !== "CARD") {
-      // Emit immediately since no MP flow needed
+    // 8. CASH → received immediately. TRANSFER → waits for receipt + admin confirm,
+    //    but admin still gets a "new order" alert so it appears in "Por confirmar".
+    if (!isScheduled && (paymentMethod === "CASH" || paymentMethod === "TRANSFER")) {
       emitOrderNew(this.app, {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -239,10 +242,12 @@ export class OrdersService {
         paymentMethod,
       });
 
-      emitOrderStatus(this.app, order.customerId, order.id, "RECEIVED", {
-        orderNumber: order.orderNumber,
-        estimatedMinutes: 30,
-      });
+      if (paymentMethod === "CASH") {
+        emitOrderStatus(this.app, order.customerId, order.id, "RECEIVED", {
+          orderNumber: order.orderNumber,
+          estimatedMinutes: 30,
+        });
+      }
     }
 
     // 9. Return appropriate response per payment method
@@ -258,7 +263,7 @@ export class OrdersService {
           amount: total / 100,
           concept: `Pedido #${order.orderNumber}`,
         },
-        message: "Realiza tu transferencia y tu pedido empezará a prepararse en cuanto confirmemos el pago.",
+        message: "Realiza la transferencia y sube el comprobante. Tu pedido empezará a prepararse en cuanto confirmemos el pago.",
         rewardApplied: reward.rewardApplied,
         rewardMessage,
       };
@@ -319,6 +324,8 @@ export class OrdersService {
               concept: `Pedido #${order.orderNumber}`,
             }
           : null,
+      transferProofUrl: order.transferProofUrl ?? null,
+      transferProofUploadedAt: order.transferProofUploadedAt?.toISOString() ?? null,
       total: order.total,
       subtotal: order.subtotal,
       deliveryFee: order.deliveryFee,
@@ -452,7 +459,11 @@ export class OrdersService {
   async getActiveOrders(): Promise<OrderSummary[]> {
     const orders = await this.app.prisma.order.findMany({
       where: {
-        status: { in: ["RECEIVED", "PREPARING", "READY", "ON_THE_WAY"] },
+        OR: [
+          { status: { in: ["RECEIVED", "PREPARING", "READY", "ON_THE_WAY"] } },
+          // TRANSFER orders awaiting receipt verification
+          { status: "PENDING_PAYMENT", paymentMethod: "TRANSFER" },
+        ],
       },
       include: { customer: true, _count: { select: { items: true } } },
       orderBy: { createdAt: "asc" },
@@ -463,11 +474,13 @@ export class OrdersService {
       orderNumber: o.orderNumber,
       status: o.status as OrderStatusType,
       type: o.type as any,
+      paymentMethod: o.paymentMethod as any,
       total: o.total,
       customerName: o.customer.name,
       customerPhone: o.customer.phone,
       itemCount: o._count.items,
       createdAt: o.createdAt.toISOString(),
+      transferProofUrl: o.transferProofUrl ?? null,
     }));
   }
 

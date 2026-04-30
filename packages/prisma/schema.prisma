@@ -138,6 +138,9 @@ model Order {
   depositAmount    Int?
   depositPaidAt    DateTime?
   remainingAmount  Int?
+  // Transfer payment proof
+  transferProofUrl       String?
+  transferProofUploadedAt DateTime?
   coupon           Coupon?          @relation(fields: [couponId], references: [id])
   couponId         String?
   items            OrderItem[]

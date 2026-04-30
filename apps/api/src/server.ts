@@ -6,6 +6,7 @@ import { registerSocket } from "./plugins/socket";
 import { registerAuth } from "./plugins/auth";
 import { registerCors } from "./plugins/cors";
 import { registerRateLimit } from "./plugins/rate-limit";
+import { registerUploads } from "./plugins/uploads";
 import { menuRoutes } from "./modules/menu/menu.routes";
 import { ordersRoutes } from "./modules/orders/orders.routes";
 import { paymentsRoutes } from "./modules/payments/payments.routes";
@@ -43,6 +44,7 @@ async function bootstrap() {
   await registerPrisma(app);
   await registerRedis(app);
   await registerAuth(app);
+  await registerUploads(app);
 
   const io = await registerSocket(httpServer, app);
 

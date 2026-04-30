@@ -12,7 +12,9 @@
   "dependencies": {
     "@fastify/cors": "^9.0.0",
     "@fastify/jwt": "^8.0.0",
+    "@fastify/multipart": "^8.3.1",
     "@fastify/rate-limit": "^9.1.0",
+    "@fastify/static": "^7.0.4",
     "@pollon/prisma": "*",
     "@pollon/types": "*",
     "@pollon/utils": "*",

@@ -66,6 +66,7 @@ export interface OrderSummary {
   customerPhone: string;
   itemCount: number;
   createdAt: string;
+  transferProofUrl?: string | null;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -73,6 +74,8 @@ export interface OrderDetail extends OrderSummary {
   paymentMethod?: PaymentMethodType;
   cashAmount?: number | null;
   transferInfo?: TransferInfo | null;
+  transferProofUrl?: string | null;
+  transferProofUploadedAt?: string | null;
   subtotal: number;
   deliveryFee: number;
   discountAmount: number;

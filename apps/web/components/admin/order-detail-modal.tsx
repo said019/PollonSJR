@@ -15,6 +15,7 @@ import {
   Copy,
   CreditCard,
   ExternalLink,
+  FileCheck2,
   Landmark,
   MapPin,
   Navigation,
@@ -221,6 +222,15 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
     },
   });
 
+  const confirmPaymentMut = useMutation({
+    mutationFn: (id: string) =>
+      api.patch(`/api/admin/orders/${id}/confirm-payment`, {}, adminToken || undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
+      qc.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
+    },
+  });
+
   // Esc to close
   useEffect(() => {
     if (!open) return;
@@ -416,6 +426,37 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                             )}
                           </div>
                         </div>
+
+                        {/* Transfer proof + confirm payment */}
+                        {order.paymentMethod === "TRANSFER" && (
+                          <div className="mt-4 rounded-xl border border-outline-variant/15 bg-surface-container p-3">
+                            <div className="flex items-center gap-2 text-xs font-headline font-bold uppercase tracking-wider text-on-surface-variant/60">
+                              <FileCheck2 size={13} />
+                              Comprobante
+                            </div>
+                            <TransferProofPreview
+                              proofUrl={order.transferProofUrl ?? null}
+                              uploadedAt={order.transferProofUploadedAt ?? null}
+                            />
+                            {order.status === "PENDING_PAYMENT" && (
+                              <button
+                                disabled={
+                                  !order.transferProofUrl ||
+                                  confirmPaymentMut.isPending
+                                }
+                                onClick={() => confirmPaymentMut.mutate(order.id)}
+                                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-green-500/25 transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-on-surface-variant/40 disabled:shadow-none"
+                              >
+                                <CheckCircle size={14} />
+                                {confirmPaymentMut.isPending
+                                  ? "Confirmando…"
+                                  : order.transferProofUrl
+                                    ? "Confirmar pago y pasar a cocina"
+                                    : "Esperando comprobante"}
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         {/* Cash change calculator */}
                         {order.paymentMethod === "CASH" && (
@@ -706,5 +747,67 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+function TransferProofPreview({
+  proofUrl,
+  uploadedAt,
+}: {
+  proofUrl: string | null;
+  uploadedAt: string | null;
+}) {
+  if (!proofUrl) {
+    return (
+      <p className="mt-2 text-xs text-on-surface-variant/70">
+        El cliente aún no ha subido su comprobante.
+      </p>
+    );
+  }
+
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
+  const fullUrl = proofUrl.startsWith("http") ? proofUrl : `${apiBase}${proofUrl}`;
+  const isPdf = /\.pdf(\?|$)/i.test(proofUrl);
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="overflow-hidden rounded-lg border border-outline-variant/20 bg-surface">
+        {isPdf ? (
+          <div className="flex items-center justify-center gap-2 px-3 py-6 text-xs text-on-surface-variant/70">
+            <FileCheck2 size={16} />
+            Comprobante en PDF
+          </div>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={fullUrl}
+            alt="Comprobante de transferencia"
+            className="block max-h-64 w-full object-contain"
+          />
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2 text-[11px] text-on-surface-variant/70">
+        {uploadedAt && (
+          <span>
+            Subido{" "}
+            {new Date(uploadedAt).toLocaleString("es-MX", {
+              day: "2-digit",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        )}
+        <a
+          href={fullUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
+        >
+          <ExternalLink size={11} />
+          Abrir
+        </a>
+      </div>
+    </div>
   );
 }

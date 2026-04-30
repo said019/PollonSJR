@@ -14,6 +14,7 @@ import {
   CheckCircle,
   ChefHat,
   CreditCard,
+  FileCheck2,
   Home,
   Landmark,
   Loader2,
@@ -21,6 +22,7 @@ import {
   ShoppingBag,
   Sparkles,
   Truck,
+  Upload,
   X,
   Star,
   RotateCcw,
@@ -153,9 +155,9 @@ export function OrderTracker({ orderId }: { orderId: string }) {
 
       <main className="relative z-10 mx-auto max-w-2xl px-4 pb-32 pt-6">
         {/* ═══════════════════════════════════════════════════════ */}
-        {/*  PENDING_PAYMENT — waiting for MP webhook               */}
+        {/*  PENDING_PAYMENT — waiting for MP webhook (CARD only)   */}
         {/* ═══════════════════════════════════════════════════════ */}
-        {currentStatus === "PENDING_PAYMENT" && (
+        {currentStatus === "PENDING_PAYMENT" && order.paymentMethod === "CARD" && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -206,6 +208,17 @@ export function OrderTracker({ orderId }: { orderId: string }) {
             </div>
           </motion.div>
         )}
+
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/*  TRANSFER + PENDING_PAYMENT — comprobante upload flow   */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        {currentStatus === "PENDING_PAYMENT" &&
+          order.paymentMethod === "TRANSFER" && (
+            <TransferPendingBanner
+              hasProof={!!order.transferProofUrl}
+              uploadedAt={order.transferProofUploadedAt ?? null}
+            />
+          )}
 
         {/* ═══════════════════════════════════════════════════════ */}
         {/*  Rappi-style status pill — clickable to open full view  */}
@@ -453,6 +466,16 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                 </div>
               </div>
             )}
+
+            {order.paymentMethod === "TRANSFER" &&
+              currentStatus === "PENDING_PAYMENT" && (
+                <TransferProofUploader
+                  orderId={order.id}
+                  token={token}
+                  initialProofUrl={order.transferProofUrl ?? null}
+                  onUploaded={() => void refetch()}
+                />
+              )}
           </motion.div>
         )}
 
@@ -906,5 +929,231 @@ function ExpandedTrackerModal({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Transfer payment — pending banner + proof uploader            */
+/* ────────────────────────────────────────────────────────────── */
+
+function TransferPendingBanner({
+  hasProof,
+  uploadedAt,
+}: {
+  hasProof: boolean;
+  uploadedAt: string | null;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="mb-5 overflow-hidden rounded-3xl border border-primary/25 bg-gradient-to-br from-surface-container-high to-surface-container"
+    >
+      <div className="flex items-center gap-4 p-5">
+        <div className="relative flex-shrink-0">
+          <div
+            className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg ${
+              hasProof
+                ? "bg-gradient-to-br from-green-500 to-green-600 shadow-green-500/30"
+                : "bg-gradient-to-br from-primary to-primary-dim shadow-primary/30"
+            }`}
+          >
+            {hasProof ? (
+              <FileCheck2 size={22} className="text-white" />
+            ) : (
+              <Upload size={22} className="text-on-primary" />
+            )}
+          </div>
+          {!hasProof && (
+            <motion.span
+              className="absolute inset-0 rounded-2xl border-2 border-primary"
+              animate={{ scale: [1, 1.25, 1], opacity: [0.6, 0, 0.6] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+            />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <span
+            className={`font-headline text-[10px] font-bold uppercase tracking-[0.2em] ${
+              hasProof ? "text-green-400" : "text-primary"
+            }`}
+          >
+            {hasProof ? "Comprobante recibido" : "Esperando comprobante"}
+          </span>
+          <p className="mt-0.5 font-headline text-lg font-extrabold leading-tight text-tertiary">
+            {hasProof
+              ? "Estamos verificando tu pago"
+              : "Sube tu comprobante de transferencia"}
+          </p>
+          <p className="mt-0.5 text-[11px] text-on-surface-variant/70">
+            {hasProof
+              ? uploadedAt
+                ? `Recibido ${new Date(uploadedAt).toLocaleString("es-MX", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}. En cuanto lo confirmemos, tu pedido entra a cocina.`
+                : "En cuanto lo confirmemos, tu pedido entra a cocina."
+              : "Tu pedido empezará a prepararse cuando confirmemos el pago."}
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function TransferProofUploader({
+  orderId,
+  token,
+  initialProofUrl,
+  onUploaded,
+}: {
+  orderId: string;
+  token: string | null;
+  initialProofUrl: string | null;
+  onUploaded: () => void;
+}) {
+  const [proofUrl, setProofUrl] = useState<string | null>(initialProofUrl);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setProofUrl(initialProofUrl);
+  }, [initialProofUrl]);
+
+  const apiBase =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  const fullProofUrl = proofUrl
+    ? proofUrl.startsWith("http")
+      ? proofUrl
+      : `${apiBase}${proofUrl}`
+    : null;
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      if (!token) return;
+      setError(null);
+
+      const allowed = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/heic",
+        "application/pdf",
+      ];
+      if (!allowed.includes(file.type)) {
+        setError("Sube una imagen (JPG/PNG/WEBP) o PDF.");
+        return;
+      }
+      if (file.size > 8 * 1024 * 1024) {
+        setError("El archivo no puede pesar más de 8 MB.");
+        return;
+      }
+
+      const form = new FormData();
+      form.append("file", file);
+
+      setUploading(true);
+      try {
+        const res = await fetch(
+          `${apiBase}/api/orders/${orderId}/transfer-proof`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body: form,
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || `Error ${res.status}`);
+        }
+        setProofUrl(data.transferProofUrl);
+        onUploaded();
+      } catch (err: any) {
+        setError(err.message || "No se pudo subir el comprobante");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [apiBase, orderId, token, onUploaded]
+  );
+
+  const inputId = `transfer-proof-${orderId}`;
+
+  return (
+    <div className="mt-4 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
+      <div className="flex items-start gap-3">
+        <div
+          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${
+            proofUrl
+              ? "bg-green-500/15 text-green-400"
+              : "bg-primary/15 text-primary"
+          }`}
+        >
+          {proofUrl ? <FileCheck2 size={19} /> : <Upload size={19} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-headline text-sm font-bold uppercase tracking-tight text-tertiary">
+            {proofUrl ? "Comprobante enviado" : "Sube tu comprobante"}
+          </h3>
+          <p className="mt-0.5 text-[12px] text-on-surface-variant/80">
+            {proofUrl
+              ? "Estamos verificando tu pago. Puedes reemplazarlo si te equivocaste."
+              : "JPG, PNG, WEBP o PDF. Máximo 8 MB."}
+          </p>
+
+          {fullProofUrl && (
+            <a
+              href={fullProofUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/25 bg-surface px-2.5 py-1.5 text-[11px] font-semibold text-on-surface transition-colors hover:border-primary/40 hover:text-primary"
+            >
+              <FileCheck2 size={12} />
+              Ver comprobante
+            </a>
+          )}
+
+          {error && (
+            <p className="mt-2 text-[11px] font-semibold text-error">{error}</p>
+          )}
+
+          <label
+            htmlFor={inputId}
+            className={`mt-3 inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider transition-all ${
+              uploading
+                ? "cursor-wait bg-surface-variant/50 text-on-surface-variant/60"
+                : proofUrl
+                  ? "cursor-pointer border border-outline-variant/25 bg-surface-container text-tertiary hover:border-primary/40"
+                  : "cursor-pointer bg-primary text-on-primary shadow-lg shadow-primary/25 active:scale-[0.98]"
+            }`}
+          >
+            {uploading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Subiendo…
+              </>
+            ) : (
+              <>
+                <Upload size={14} />
+                {proofUrl ? "Reemplazar" : "Subir comprobante"}
+              </>
+            )}
+          </label>
+          <input
+            id={inputId}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+            className="hidden"
+            disabled={uploading || !token}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
