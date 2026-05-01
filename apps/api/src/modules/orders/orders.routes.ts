@@ -124,6 +124,79 @@ export async function ordersRoutes(app: FastifyInstance) {
     return { success: true, rating };
   });
 
+  // Cliente: cancelar pedido propio (solo antes de cocinar)
+  app.post<{ Params: { id: string } }>(
+    "/:id/cancel",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as { id: string };
+      const orderId = request.params.id;
+      const { reason } = (request.body as { reason?: string } | undefined) ?? {};
+
+      const order = await app.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { customer: true },
+      });
+      if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
+      if (order.customerId !== user.id) {
+        return reply.status(403).send({ error: "No autorizado" });
+      }
+      // Cancellation window: only before the kitchen takes the order.
+      // SCHEDULED orders involve a 50% deposit, customer must contact the store.
+      if (!["PENDING_PAYMENT", "RECEIVED"].includes(order.status)) {
+        return reply.status(409).send({
+          error:
+            order.status === "SCHEDULED"
+              ? "Pedidos programados se cancelan contactando al negocio."
+              : "Tu pedido ya está en preparación y no se puede cancelar desde aquí.",
+        });
+      }
+
+      const trimmedReason = reason?.trim().slice(0, 200) || null;
+
+      // Optimistic update — guard against status-race with the admin.
+      const updated = await app.prisma.order.updateMany({
+        where: { id: orderId, status: order.status },
+        data: {
+          status: "CANCELLED",
+          cancelReason: trimmedReason ?? "Cancelado por el cliente",
+        },
+      });
+      if (updated.count === 0) {
+        return reply.status(409).send({
+          error: "El pedido ya cambió de estado. Recarga la página.",
+        });
+      }
+
+      await app.prisma.orderStatusLog.create({
+        data: {
+          orderId,
+          from: order.status,
+          to: "CANCELLED",
+          note: trimmedReason ?? "Cancelado por el cliente",
+        },
+      });
+
+      // Free up the coupon use that was reserved at creation
+      if (order.couponId) {
+        await app.prisma.coupon
+          .update({
+            where: { id: order.couponId },
+            data: { usedCount: { decrement: 1 } },
+          })
+          .catch(() => undefined);
+      }
+
+      const { emitOrderStatus } = await import("./orders.events");
+      emitOrderStatus(app, order.customerId, orderId, "CANCELLED", {
+        orderNumber: order.orderNumber,
+        cancelReason: trimmedReason ?? "Cancelado por el cliente",
+      });
+
+      return { ok: true };
+    }
+  );
+
   // Cliente: subir comprobante de transferencia
   app.post<{ Params: { id: string } }>(
     "/:id/transfer-proof",

@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  Ban,
   Banknote,
   Bell,
   CheckCircle,
@@ -99,6 +100,9 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   const isCancelled = currentStatus === "CANCELLED";
   const isActive =
     !!currentStatus && !["DELIVERED", "CANCELLED"].includes(currentStatus);
+  // Customer can self-cancel only before the kitchen picks it up.
+  const canCustomerCancel =
+    currentStatus === "PENDING_PAYMENT" || currentStatus === "RECEIVED";
 
   if (isLoading) {
     return (
@@ -538,6 +542,15 @@ export function OrderTracker({ orderId }: { orderId: string }) {
             </div>
           </div>
         </motion.div>
+
+        {canCustomerCancel && (
+          <CancelOrderButton
+            orderId={order.id}
+            orderNumber={order.orderNumber}
+            token={token}
+            onCancelled={() => void refetch()}
+          />
+        )}
       </main>
 
       {/* Sticky bottom CTA — always-visible exit */}
@@ -1214,5 +1227,123 @@ function TransferProofUploader({
         </div>
       </div>
     </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  CancelOrderButton — customer self-cancel before kitchen takes  */
+/* ────────────────────────────────────────────────────────────── */
+
+function CancelOrderButton({
+  orderId,
+  orderNumber,
+  token,
+  onCancelled,
+}: {
+  orderId: string;
+  orderNumber: number;
+  token: string | null;
+  onCancelled: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCancel = async () => {
+    if (!token) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.post(
+        `/api/orders/${orderId}/cancel`,
+        { reason: reason.trim() || undefined },
+        token
+      );
+      setConfirming(false);
+      setReason("");
+      onCancelled();
+    } catch (err: any) {
+      setError(err.message || "No se pudo cancelar el pedido");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container/70 py-3 font-headline text-xs font-bold uppercase tracking-wider text-on-surface-variant transition-all hover:border-error/40 hover:text-error"
+      >
+        <Ban size={14} />
+        Cancelar pedido
+      </button>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-4 rounded-2xl border border-error/30 bg-error/5 p-4"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-error/15 text-error">
+          <Ban size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-headline text-sm font-bold uppercase tracking-tight text-tertiary">
+            ¿Cancelar el pedido #{orderNumber}?
+          </h3>
+          <p className="mt-0.5 text-[12px] text-on-surface-variant/80">
+            Esto no se puede deshacer. Sólo puedes cancelar antes de que tu
+            pedido pase a cocina.
+          </p>
+
+          <textarea
+            rows={2}
+            maxLength={200}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="¿Motivo? (opcional)"
+            className="mt-3 w-full rounded-lg border border-outline-variant/25 bg-surface-container p-2.5 text-sm text-on-surface outline-none focus:border-error/50"
+          />
+
+          {error && (
+            <p className="mt-2 text-[12px] font-semibold text-error">{error}</p>
+          )}
+
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setConfirming(false);
+                setReason("");
+                setError(null);
+              }}
+              disabled={submitting}
+              className="rounded-xl border border-outline-variant/25 px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant"
+            >
+              No, conservar
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCancel()}
+              disabled={submitting}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-error px-3 py-2 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-error/25 active:scale-[0.98] disabled:opacity-60"
+            >
+              {submitting ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Ban size={12} />
+              )}
+              Sí, cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }
