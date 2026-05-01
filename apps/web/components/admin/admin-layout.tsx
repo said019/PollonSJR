@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Users, BarChart3, Settings, LogOut, Truck } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, UtensilsCrossed, Sparkles, Users, BarChart3, Settings, LogOut, Truck } from "lucide-react";
 import { getAdminToken, removeAdminToken, parseJwt } from "@/lib/auth";
 import { useEffect, useState } from "react";
 import { AdminNewOrderNotifier } from "./new-order-notifier";
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/orders", label: "Pedidos", icon: ShoppingBag },
   { href: "/admin/menu", label: "Menú", icon: UtensilsCrossed },
+  { href: "/admin/promotions", label: "Promociones", icon: Sparkles },
   { href: "/admin/delivery", label: "Envíos", icon: Truck },
   { href: "/admin/customers", label: "Clientes", icon: Users },
   { href: "/admin/reports", label: "Reportes", icon: BarChart3 },

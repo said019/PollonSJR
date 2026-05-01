@@ -53,4 +53,84 @@ export class PromotionsService {
       data: { active },
     });
   }
+
+  /**
+   * Create a promotion plus its items in a single transaction.
+   * `price` is in cents.
+   */
+  async create(data: {
+    name: string;
+    description?: string | null;
+    dayOfWeek?: number | null;
+    price: number;
+    active?: boolean;
+    items: Array<{ productId: string; qty: number; variant?: string | null }>;
+  }) {
+    return this.app.prisma.promotion.create({
+      data: {
+        name: data.name,
+        description: data.description ?? null,
+        dayOfWeek: data.dayOfWeek ?? null,
+        price: data.price,
+        active: data.active ?? true,
+        items: {
+          create: data.items.map((it) => ({
+            productId: it.productId,
+            qty: it.qty,
+            variant: it.variant ?? null,
+          })),
+        },
+      },
+      include: { items: { include: { product: true } } },
+    });
+  }
+
+  /**
+   * Update a promotion. If `items` is provided, the existing items are
+   * fully replaced inside a single transaction.
+   */
+  async update(
+    id: string,
+    data: {
+      name?: string;
+      description?: string | null;
+      dayOfWeek?: number | null;
+      price?: number;
+      active?: boolean;
+      items?: Array<{ productId: string; qty: number; variant?: string | null }>;
+    }
+  ) {
+    return this.app.prisma.$transaction(async (tx) => {
+      if (data.items) {
+        await tx.promotionItem.deleteMany({ where: { promotionId: id } });
+      }
+      return tx.promotion.update({
+        where: { id },
+        data: {
+          ...(data.name !== undefined && { name: data.name }),
+          ...(data.description !== undefined && { description: data.description }),
+          ...(data.dayOfWeek !== undefined && { dayOfWeek: data.dayOfWeek }),
+          ...(data.price !== undefined && { price: data.price }),
+          ...(data.active !== undefined && { active: data.active }),
+          ...(data.items && {
+            items: {
+              create: data.items.map((it) => ({
+                productId: it.productId,
+                qty: it.qty,
+                variant: it.variant ?? null,
+              })),
+            },
+          }),
+        },
+        include: { items: { include: { product: true } } },
+      });
+    });
+  }
+
+  async remove(id: string) {
+    return this.app.prisma.$transaction([
+      this.app.prisma.promotionItem.deleteMany({ where: { promotionId: id } }),
+      this.app.prisma.promotion.delete({ where: { id } }),
+    ]);
+  }
 }

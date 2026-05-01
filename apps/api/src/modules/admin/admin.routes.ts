@@ -11,6 +11,7 @@ import { getStoreConfig, updateStoreConfig } from "./store-config.service";
 import { LoyaltyService } from "../loyalty/loyalty.service";
 import { AppleWalletService } from "../loyalty/apple-wallet.service";
 import { GoogleWalletService } from "../loyalty/google-wallet.service";
+import { PromotionsService } from "../menu/promotions.service";
 
 const storeConfigSchema = z.object({
   isOpen: z.boolean().optional(),
@@ -39,6 +40,7 @@ export async function adminRoutes(app: FastifyInstance) {
   const adminService = new AdminService(app);
   const ordersService = new OrdersService(app);
   const menuService = new MenuService(app);
+  const promotionsService = new PromotionsService(app);
 
   // All admin routes require admin auth
   app.addHook("preHandler", adminOnly);
@@ -181,6 +183,61 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id: request.params.id },
       data: { active },
     });
+  });
+
+  // ─── Promotions ──────────────────────────────────────────
+
+  const promotionItemSchema = z.object({
+    productId: z.string().min(1),
+    qty: z.number().int().min(1).max(99),
+    variant: z.string().nullable().optional(),
+  });
+
+  const createPromotionSchema = z.object({
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(280).nullable().optional(),
+    dayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
+    price: z.number().int().min(0), // cents
+    active: z.boolean().optional(),
+    items: z.array(promotionItemSchema).min(1),
+  });
+
+  const updatePromotionSchema = createPromotionSchema.partial();
+
+  app.get("/promotions", async () => promotionsService.listAll());
+
+  app.post("/promotions", async (request, reply) => {
+    const parsed = createPromotionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const promo = await promotionsService.create(parsed.data);
+    return reply.status(201).send(promo);
+  });
+
+  app.patch<{ Params: { id: string } }>("/promotions/:id", async (request, reply) => {
+    const parsed = updatePromotionSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .status(400)
+        .send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    try {
+      return await promotionsService.update(request.params.id, parsed.data);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/promotions/:id", async (request, reply) => {
+    try {
+      await promotionsService.remove(request.params.id);
+      return { ok: true };
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
   });
 
   // ─── ETA Update ───────────────────────────────────────────
