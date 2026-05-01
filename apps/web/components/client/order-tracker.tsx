@@ -11,6 +11,7 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Banknote,
+  Bell,
   CheckCircle,
   ChefHat,
   CreditCard,
@@ -28,6 +29,10 @@ import {
   RotateCcw,
   MessageCircle,
 } from "lucide-react";
+import {
+  notificationPermission,
+  requestNotificationPermission,
+} from "@/lib/customer-notifications";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 
@@ -92,6 +97,8 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   const progressPct = activeStep < 0 ? 0 : ((activeStep + 1) / STATUS_STEPS.length) * 100;
   const isDelivered = currentStatus === "DELIVERED";
   const isCancelled = currentStatus === "CANCELLED";
+  const isActive =
+    !!currentStatus && !["DELIVERED", "CANCELLED"].includes(currentStatus);
 
   if (isLoading) {
     return (
@@ -154,6 +161,8 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       </header>
 
       <main className="relative z-10 mx-auto max-w-2xl px-4 pb-32 pt-6">
+        {isActive && <NotificationOptInBanner />}
+
         {/* ═══════════════════════════════════════════════════════ */}
         {/*  PENDING_PAYMENT — waiting for MP webhook (CARD only)   */}
         {/* ═══════════════════════════════════════════════════════ */}
@@ -929,6 +938,56 @@ function ExpandedTrackerModal({
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  Notification opt-in banner — Rappi-style status alerts         */
+/* ────────────────────────────────────────────────────────────── */
+
+function NotificationOptInBanner() {
+  const [perm, setPerm] = useState<NotificationPermission | "unsupported" | null>(
+    null
+  );
+  const [requesting, setRequesting] = useState(false);
+
+  useEffect(() => {
+    setPerm(notificationPermission());
+  }, []);
+
+  if (perm !== "default") return null;
+
+  const handleEnable = async () => {
+    setRequesting(true);
+    const next = await requestNotificationPermission();
+    setPerm(next);
+    setRequesting(false);
+  };
+
+  return (
+    <motion.button
+      type="button"
+      onClick={handleEnable}
+      disabled={requesting}
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-3 flex w-full items-center gap-3 rounded-2xl border border-primary/25 bg-primary/10 p-3 text-left transition-colors hover:border-primary/45 active:scale-[0.99] disabled:opacity-60"
+    >
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary">
+        <Bell size={17} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="font-headline text-sm font-bold text-tertiary">
+          Activa los avisos de tu pedido
+        </p>
+        <p className="text-[11px] text-on-surface-variant/80">
+          Te avisamos cuando esté en cocina, listo y en camino.
+        </p>
+      </div>
+      <span className="flex-shrink-0 rounded-lg bg-primary px-3 py-1.5 font-headline text-[10px] font-bold uppercase tracking-wider text-on-primary">
+        {requesting ? "..." : "Activar"}
+      </span>
+    </motion.button>
   );
 }
 
