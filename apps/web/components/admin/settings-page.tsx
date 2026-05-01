@@ -7,6 +7,7 @@ import { Save, Loader2, Clock, Store, Download, Share, Smartphone, Check, Landma
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { EvolutionApiSection } from "./evolution-api-section";
 
 interface StoreConfig {
   isOpen: boolean;
@@ -314,6 +315,9 @@ export function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* ── Evolution API (WhatsApp) ── */}
+      <EvolutionApiSection />
 
       {/* ── Instalar app ── */}
       <InstallAppSection />
