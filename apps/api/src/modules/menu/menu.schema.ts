@@ -49,6 +49,7 @@ export const modifierSchema = z.object({
   required: z.boolean().default(false),
   minSelect: z.number().int().min(0).default(0),
   maxSelect: z.number().int().min(1).default(1),
+  totalQuota: z.number().int().min(1).max(99).nullable().optional(),
   options: z.array(
     z.object({
       label: z.string().min(1).max(60),

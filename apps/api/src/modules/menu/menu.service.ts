@@ -36,7 +36,19 @@ export class MenuService {
         variants: p.variants as any,
         tags: (p as any).tags ?? [],
         ...((p as any).emoji ? { emoji: (p as any).emoji } : {}),
-        ...((p as any).modifiers ? { modifiers: (p as any).modifiers } : {}),
+        ...((p as any).modifiers
+          ? {
+              modifiers: ((p as any).modifiers as any[]).map((m) => ({
+                id: m.id,
+                name: m.name,
+                required: m.required,
+                minSelect: m.minSelect,
+                maxSelect: m.maxSelect,
+                totalQuota: m.totalQuota ?? null,
+                options: m.options,
+              })),
+            }
+          : {}),
       } as any);
     }
 

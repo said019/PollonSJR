@@ -5,7 +5,7 @@ import type { CartItem, CartItemModifier } from "@pollon/types";
 function modifierSignature(mods?: CartItemModifier[] | null): string {
   if (!mods || mods.length === 0) return "";
   return mods
-    .map((m) => `${m.name}:${m.option}`)
+    .map((m) => `${m.name}:${m.option}:${m.qty ?? 1}`)
     .sort()
     .join("|");
 }

@@ -18,7 +18,7 @@ export class OrdersService {
       isScheduled?: boolean;
       scheduledFor?: string;
       items: Array<CreateOrderPayload["items"][number] & {
-        modifiers?: Array<{ name: string; option: string; price: number }>;
+        modifiers?: Array<{ name: string; option: string; price: number; qty?: number }>;
       }>;
     }
   ): Promise<{
@@ -111,10 +111,10 @@ export class OrdersService {
         if (v) price = v.price;
       }
 
-      const itemModifiers: Array<{ name: string; option: string; price: number }> =
+      const itemModifiers: Array<{ name: string; option: string; price: number; qty?: number }> =
         item.modifiers || [];
       const modifiersTotal = itemModifiers.reduce(
-        (sum: number, m) => sum + (m.price || 0),
+        (sum: number, m) => sum + (m.price || 0) * (m.qty ?? 1),
         0
       );
       subtotal += (price + modifiersTotal) * item.qty;
@@ -223,8 +223,13 @@ export class OrdersService {
             modifiers:
               item.modifiers && item.modifiers.length > 0
                 ? {
-                    create: (item.modifiers as Array<{ name: string; option: string; price: number }>).map(
-                      (m) => ({ name: m.name, option: m.option, price: m.price })
+                    create: (item.modifiers as Array<{ name: string; option: string; price: number; qty?: number }>).map(
+                      (m) => ({
+                        name: m.name,
+                        option: m.option,
+                        price: m.price,
+                        qty: m.qty ?? 1,
+                      })
                     ),
                   }
                 : undefined,

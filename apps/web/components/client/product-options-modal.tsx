@@ -26,7 +26,17 @@ interface Props {
   }) => void;
 }
 
-type Selection = Record<string, string[]>; // modifierId -> selected option labels
+// modifierId -> { optionLabel -> qty }
+type Selection = Record<string, Record<string, number>>;
+
+function isQuotaMod(m: ProductModifierPublic): boolean {
+  return typeof m.totalQuota === "number" && m.totalQuota > 0;
+}
+
+function totalPicks(picks: Record<string, number> | undefined): number {
+  if (!picks) return 0;
+  return Object.values(picks).reduce((s, n) => s + n, 0);
+}
 
 export function ProductOptionsModal({
   open,
@@ -48,10 +58,9 @@ export function ProductOptionsModal({
     setQty(1);
     setNotes("");
     setError(null);
-    // Pre-fill required modifiers with first option if minSelect > 0
     const initial: Selection = {};
     (product.modifiers ?? []).forEach((m) => {
-      initial[m.id] = [];
+      initial[m.id] = {};
     });
     setSelections(initial);
   }, [open, product, defaultVariant]);
@@ -69,10 +78,10 @@ export function ProductOptionsModal({
     if (!product) return 0;
     let total = 0;
     for (const mod of product.modifiers ?? []) {
-      const picked = selections[mod.id] ?? [];
-      for (const label of picked) {
+      const picks = selections[mod.id] ?? {};
+      for (const [label, n] of Object.entries(picks)) {
         const opt = mod.options.find((o) => o.label === label);
-        if (opt) total += opt.price;
+        if (opt) total += opt.price * n;
       }
     }
     return total;
@@ -80,32 +89,56 @@ export function ProductOptionsModal({
 
   const finalUnitPrice = basePrice + modsTotal;
 
-  const togglePick = (mod: ProductModifierPublic, optionLabel: string) => {
+  const setQtyFor = (modId: string, label: string, next: number) => {
     setSelections((s) => {
-      const current = s[mod.id] ?? [];
-      const has = current.includes(optionLabel);
-      let next: string[];
-      if (has) {
-        next = current.filter((l) => l !== optionLabel);
-      } else if (mod.maxSelect === 1) {
-        next = [optionLabel];
-      } else if (current.length >= mod.maxSelect) {
-        return s; // can't pick more
-      } else {
-        next = [...current, optionLabel];
-      }
-      return { ...s, [mod.id]: next };
+      const current = { ...(s[modId] ?? {}) };
+      if (next <= 0) delete current[label];
+      else current[label] = next;
+      return { ...s, [modId]: current };
     });
+  };
+
+  const togglePick = (mod: ProductModifierPublic, optionLabel: string) => {
+    const picks = selections[mod.id] ?? {};
+    const has = (picks[optionLabel] ?? 0) > 0;
+
+    if (mod.maxSelect === 1 && !isQuotaMod(mod)) {
+      // single-select: replace
+      setSelections((s) => ({
+        ...s,
+        [mod.id]: has ? {} : { [optionLabel]: 1 },
+      }));
+      return;
+    }
+
+    if (has) {
+      setQtyFor(mod.id, optionLabel, 0);
+      return;
+    }
+
+    const total = totalPicks(picks);
+    if (!isQuotaMod(mod) && total >= mod.maxSelect) return;
+    setQtyFor(mod.id, optionLabel, 1);
   };
 
   const validate = (): string | null => {
     if (!product) return null;
     for (const mod of product.modifiers ?? []) {
-      const picked = selections[mod.id] ?? [];
-      if (mod.required && picked.length === 0) {
+      const picks = selections[mod.id] ?? {};
+      const total = totalPicks(picks);
+
+      if (isQuotaMod(mod)) {
+        const quota = mod.totalQuota!;
+        if (total !== quota) {
+          return `"${mod.name}" debe sumar ${quota} (vas ${total})`;
+        }
+        continue;
+      }
+
+      if (mod.required && total === 0) {
         return `Selecciona una opción para "${mod.name}"`;
       }
-      if (picked.length < mod.minSelect) {
+      if (total < mod.minSelect) {
         return `"${mod.name}" requiere al menos ${mod.minSelect} opción${
           mod.minSelect > 1 ? "es" : ""
         }`;
@@ -123,11 +156,17 @@ export function ProductOptionsModal({
     }
     const flatMods: CartItemModifier[] = [];
     for (const mod of product.modifiers ?? []) {
-      for (const label of selections[mod.id] ?? []) {
+      const picks = selections[mod.id] ?? {};
+      for (const [label, n] of Object.entries(picks)) {
+        if (n <= 0) continue;
         const opt = mod.options.find((o) => o.label === label);
-        if (opt) {
-          flatMods.push({ name: mod.name, option: label, price: opt.price });
-        }
+        if (!opt) continue;
+        flatMods.push({
+          name: mod.name,
+          option: label,
+          price: opt.price,
+          qty: n,
+        });
       }
     }
     onConfirm({
@@ -159,7 +198,6 @@ export function ProductOptionsModal({
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
             className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92vh] flex-col rounded-t-3xl border-t border-outline-variant/15 bg-surface-container shadow-2xl sm:inset-x-auto sm:left-1/2 sm:top-[6vh] sm:max-h-[88vh] sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:rounded-3xl"
           >
-            {/* Header with image */}
             <div className="relative overflow-hidden rounded-t-3xl">
               <button
                 onClick={onClose}
@@ -220,61 +258,139 @@ export function ProductOptionsModal({
 
               {/* Modifiers */}
               {product.modifiers?.map((mod) => {
-                const picked = selections[mod.id] ?? [];
+                const picks = selections[mod.id] ?? {};
+                const total = totalPicks(picks);
+                const isQuota = isQuotaMod(mod);
+                const remaining = isQuota ? (mod.totalQuota ?? 0) - total : 0;
+
                 return (
                   <Section
                     key={mod.id}
                     title={mod.name}
-                    required={mod.required || mod.minSelect > 0}
+                    required={
+                      isQuota ||
+                      mod.required ||
+                      mod.minSelect > 0
+                    }
                     hint={
-                      mod.maxSelect > 1
-                        ? `Elige hasta ${mod.maxSelect}${
-                            mod.minSelect > 0 ? ` (mín. ${mod.minSelect})` : ""
-                          }`
+                      isQuota
+                        ? `Elige ${mod.totalQuota} en total · puedes repetir`
+                        : mod.maxSelect > 1
+                          ? `Elige hasta ${mod.maxSelect}${
+                              mod.minSelect > 0 ? ` (mín. ${mod.minSelect})` : ""
+                            }`
+                          : undefined
+                    }
+                    badge={
+                      isQuota
+                        ? `${total} / ${mod.totalQuota}`
                         : undefined
                     }
                   >
-                    <div className="space-y-1.5">
-                      {mod.options.map((opt) => {
-                        const isPicked = picked.includes(opt.label);
-                        const disabled =
-                          !isPicked &&
-                          mod.maxSelect > 1 &&
-                          picked.length >= mod.maxSelect;
-                        return (
-                          <button
-                            key={opt.label}
-                            onClick={() => togglePick(mod, opt.label)}
-                            disabled={disabled}
-                            className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all disabled:opacity-40 ${
-                              isPicked
-                                ? "border-primary bg-primary/10 text-primary"
-                                : "border-outline-variant/25 bg-surface-container-high text-on-surface hover:border-primary/40"
-                            }`}
-                          >
-                            <span className="flex items-center gap-2">
-                              <span
-                                className={`flex h-4 w-4 items-center justify-center rounded-full border ${
-                                  isPicked
-                                    ? "border-primary bg-primary"
-                                    : "border-outline-variant/40"
-                                } ${
-                                  mod.maxSelect === 1 ? "rounded-full" : "rounded"
-                                }`}
-                              >
-                                {isPicked && (
-                                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    {isQuota ? (
+                      <div className="space-y-1.5">
+                        {mod.options.map((opt) => {
+                          const n = picks[opt.label] ?? 0;
+                          const canAdd = remaining > 0;
+                          return (
+                            <div
+                              key={opt.label}
+                              className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition-all ${
+                                n > 0
+                                  ? "border-primary/40 bg-primary/5 text-on-surface"
+                                  : "border-outline-variant/25 bg-surface-container-high text-on-surface"
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate font-medium">{opt.label}</p>
+                                {opt.price > 0 && (
+                                  <p className="text-[10px] text-on-surface-variant">
+                                    +{formatCents(opt.price)} c/u
+                                  </p>
                                 )}
+                              </div>
+                              <div className="flex items-center gap-1 rounded-full border border-outline-variant/30 bg-surface px-1 py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setQtyFor(mod.id, opt.label, Math.max(0, n - 1))
+                                  }
+                                  disabled={n <= 0}
+                                  aria-label="Quitar uno"
+                                  className="rounded-full p-1 text-on-surface-variant disabled:opacity-30"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <span
+                                  className={`w-5 text-center text-sm font-bold ${
+                                    n > 0 ? "text-primary" : "text-on-surface-variant/50"
+                                  }`}
+                                >
+                                  {n}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setQtyFor(mod.id, opt.label, n + 1)}
+                                  disabled={!canAdd}
+                                  aria-label="Agregar uno"
+                                  className="rounded-full p-1 text-on-surface-variant disabled:opacity-30"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {remaining > 0 && (
+                          <p className="text-[11px] text-amber-500">
+                            Te {remaining === 1 ? "falta" : "faltan"}{" "}
+                            <strong>{remaining}</strong> por elegir
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {mod.options.map((opt) => {
+                          const isPicked = (picks[opt.label] ?? 0) > 0;
+                          const disabled =
+                            !isPicked &&
+                            mod.maxSelect > 1 &&
+                            total >= mod.maxSelect;
+                          return (
+                            <button
+                              key={opt.label}
+                              onClick={() => togglePick(mod, opt.label)}
+                              disabled={disabled}
+                              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-all disabled:opacity-40 ${
+                                isPicked
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-outline-variant/25 bg-surface-container-high text-on-surface hover:border-primary/40"
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className={`flex h-4 w-4 items-center justify-center border ${
+                                    isPicked
+                                      ? "border-primary bg-primary"
+                                      : "border-outline-variant/40"
+                                  } ${
+                                    mod.maxSelect === 1 ? "rounded-full" : "rounded"
+                                  }`}
+                                >
+                                  {isPicked && (
+                                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                                  )}
+                                </span>
+                                {opt.label}
                               </span>
-                              {opt.label}
-                            </span>
-                            <span className="text-[11px] font-semibold text-on-surface-variant">
-                              {opt.price > 0 ? `+${formatCents(opt.price)}` : "Incluido"}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                              <span className="text-[11px] font-semibold text-on-surface-variant">
+                                {opt.price > 0 ? `+${formatCents(opt.price)}` : "Incluido"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </Section>
                 );
               })}
@@ -340,21 +456,28 @@ function Section({
   children,
   required,
   hint,
+  badge,
 }: {
   title: string;
   children: React.ReactNode;
   required?: boolean;
   hint?: string;
+  badge?: string;
 }) {
   return (
     <div>
-      <div className="mb-2 flex items-baseline gap-2">
+      <div className="mb-2 flex flex-wrap items-baseline gap-2">
         <h3 className="font-headline text-[11px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">
           {title}
         </h3>
         {required && (
           <span className="rounded bg-error/10 px-1.5 text-[9px] font-bold uppercase tracking-wider text-error">
             Obligatorio
+          </span>
+        )}
+        {badge && (
+          <span className="ml-auto rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+            {badge}
           </span>
         )}
         {hint && (

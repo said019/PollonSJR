@@ -108,7 +108,13 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                         </p>
                         {item.modifiers && item.modifiers.length > 0 && (
                           <p className="text-[11px] text-on-surface-variant/70 mt-0.5">
-                            {item.modifiers.map((m) => m.option).join(" · ")}
+                            {item.modifiers
+                              .map((m) =>
+                                (m.qty ?? 1) > 1
+                                  ? `${m.qty}× ${m.option}`
+                                  : m.option
+                              )
+                              .join(" · ")}
                           </p>
                         )}
                         <p className="text-sm text-primary font-headline font-bold mt-0.5">

@@ -109,6 +109,7 @@ export interface CartItemModifier {
   name: string;
   option: string;
   price: number;
+  qty?: number;
 }
 
 export interface CartItem {
@@ -274,6 +275,7 @@ export interface ProductModifierPublic {
   required: boolean;
   minSelect: number;
   maxSelect: number;
+  totalQuota?: number | null;
   options: { label: string; price: number }[];
 }
 

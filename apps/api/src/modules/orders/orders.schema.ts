@@ -30,6 +30,7 @@ export const createOrderSchema = z.object({
               name: z.string(),
               option: z.string(),
               price: z.number().int().min(0),
+              qty: z.number().int().min(1).max(50).optional(),
             })
           )
           .optional(),

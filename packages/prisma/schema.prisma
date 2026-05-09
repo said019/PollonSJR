@@ -80,15 +80,16 @@ model Product {
 }
 
 model ProductModifier {
-  id        String   @id @default(cuid())
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  name      String
-  options   Json
-  required  Boolean  @default(false)
-  maxSelect Int      @default(1)
-  minSelect Int      @default(0)
-  sortOrder Int      @default(0)
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  name        String
+  options     Json
+  required    Boolean  @default(false)
+  maxSelect   Int      @default(1)
+  minSelect   Int      @default(0)
+  totalQuota  Int?
+  sortOrder   Int      @default(0)
 }
 
 // ─── Promotions ─────────────────────────────────────────────
@@ -216,6 +217,7 @@ model OrderItemModifier {
   name        String
   option      String
   price       Int
+  qty         Int       @default(1)
 }
 
 model OrderStatusLog {

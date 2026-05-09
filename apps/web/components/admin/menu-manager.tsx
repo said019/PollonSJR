@@ -28,6 +28,7 @@ interface Modifier {
   required: boolean;
   minSelect: number;
   maxSelect: number;
+  totalQuota?: number | null;
   options: { label: string; price: number }[];
   sortOrder: number;
 }
@@ -302,6 +303,7 @@ function ProductFormModal({
         required: false,
         minSelect: 0,
         maxSelect: 1,
+        totalQuota: null,
         options: [{ label: "", price: 0 }],
         sortOrder: ms.length,
       },
@@ -372,6 +374,7 @@ function ProductFormModal({
             required: mod.required,
             minSelect: mod.minSelect,
             maxSelect: mod.maxSelect,
+            totalQuota: mod.totalQuota ?? null,
             options: cleanOpts,
             sortOrder: mod.sortOrder,
           };
@@ -699,7 +702,7 @@ function ModifierEditor({
         </button>
       </div>
 
-      <div className="mb-2 grid grid-cols-3 items-center gap-2 text-[11px]">
+      <div className="mb-2 grid grid-cols-2 items-center gap-2 text-[11px] sm:grid-cols-4">
         <label className="flex items-center gap-1.5">
           <input
             type="checkbox"
@@ -718,7 +721,8 @@ function ModifierEditor({
             onChange={(e) =>
               onChange({ minSelect: parseInt(e.target.value || "0", 10) })
             }
-            className="w-12 rounded-md border border-outline-variant/25 bg-surface-container px-1 py-0.5 text-center text-xs"
+            disabled={!!modifier.totalQuota}
+            className="w-12 rounded-md border border-outline-variant/25 bg-surface-container px-1 py-0.5 text-center text-xs disabled:opacity-40"
           />
         </label>
         <label className="flex items-center gap-1.5">
@@ -732,10 +736,37 @@ function ModifierEditor({
                 maxSelect: Math.max(1, parseInt(e.target.value || "1", 10)),
               })
             }
-            className="w-12 rounded-md border border-outline-variant/25 bg-surface-container px-1 py-0.5 text-center text-xs"
+            disabled={!!modifier.totalQuota}
+            className="w-12 rounded-md border border-outline-variant/25 bg-surface-container px-1 py-0.5 text-center text-xs disabled:opacity-40"
+          />
+        </label>
+        <label
+          className="flex items-center gap-1.5"
+          title="Si lo activas, el cliente reparte N cupos entre las opciones (ej: 3 complementos para Combo Familiar)"
+        >
+          Cupos
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={modifier.totalQuota ?? ""}
+            placeholder="—"
+            onChange={(e) => {
+              const v = e.target.value.trim();
+              onChange({
+                totalQuota: v === "" ? null : Math.max(0, parseInt(v, 10) || 0),
+              });
+            }}
+            className="w-14 rounded-md border border-tertiary/30 bg-tertiary/5 px-1 py-0.5 text-center text-xs font-bold text-tertiary"
           />
         </label>
       </div>
+      {modifier.totalQuota ? (
+        <p className="mb-2 rounded-md bg-tertiary/10 px-2 py-1 text-[10px] text-tertiary">
+          Cliente repartirá <strong>{modifier.totalQuota}</strong> cupo
+          {modifier.totalQuota === 1 ? "" : "s"} entre las opciones (puede repetir).
+        </p>
+      ) : null}
 
       <div className="space-y-1.5">
         {modifier.options.map((o, i) => (
