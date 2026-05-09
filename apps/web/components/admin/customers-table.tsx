@@ -102,7 +102,10 @@ export function CustomersTable() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [segmentFilter, setSegmentFilter] = useState<Segment | "ALL" | "BLOCKED">("ALL");
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRow | null>(null);
+  // Track only the ID — the actual customer object is always derived
+  // from the latest query data so the modal reflects fresh state after
+  // mutations (e.g. blocking a customer).
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-customers", page, search],
@@ -112,6 +115,13 @@ export function CustomersTable() {
         token || undefined
       ),
   });
+
+  const selectedCustomer =
+    selectedId
+      ? (data?.customers ?? []).find((c) => c.id === selectedId) ?? null
+      : null;
+  const setSelectedCustomer = (c: CustomerRow | null) =>
+    setSelectedId(c?.id ?? null);
 
   const filteredCustomers = (data?.customers ?? []).filter((c) => {
     if (segmentFilter === "ALL") return true;
