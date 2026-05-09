@@ -203,7 +203,12 @@ export class GoogleWalletService {
   ): Promise<void> {
     const issuerId = process.env.GOOGLE_ISSUER_ID;
     const sa = this.loadServiceAccount();
-    if (!issuerId || !sa) return;
+    if (!issuerId || !sa) {
+      this.app.log.warn(
+        "Google Wallet message skipped: issuer or service account not configured"
+      );
+      return;
+    }
 
     const accessToken = await this.getAccessToken(sa);
     const objectId = `${issuerId}.${this.safeId(customerId)}`;
@@ -216,7 +221,7 @@ export class GoogleWalletService {
         header: title,
         body,
         id: msgId,
-        messageType: "TEXT",
+        messageType: "TEXT_AND_NOTIFY",
         displayInterval: {
           start: { date: now.toISOString() },
           end: { date: end.toISOString() },
@@ -224,7 +229,7 @@ export class GoogleWalletService {
       },
     });
 
-    await this.httpsRequest(
+    const result = await this.httpsRequest(
       {
         hostname: "walletobjects.googleapis.com",
         port: 443,
@@ -238,6 +243,12 @@ export class GoogleWalletService {
       },
       payload
     );
+
+    if (result.statusCode >= 400) {
+      throw new Error(
+        `Google Wallet: failed to add message (${result.statusCode}): ${result.body}`
+      );
+    }
   }
 
   /**
@@ -297,7 +308,7 @@ export class GoogleWalletService {
   /**
    * Updates an existing Google Wallet loyalty object via the REST API.
    * Creates one if it doesn't exist yet.
-   * Silently skips when GOOGLE_ISSUER_ID is not configured.
+   * Logs and skips when Google Wallet credentials are not configured.
    */
   async updateLoyaltyObject(
     customerId: string,
@@ -305,7 +316,10 @@ export class GoogleWalletService {
     stamps: number
   ): Promise<void> {
     const issuerId = process.env.GOOGLE_ISSUER_ID;
-    if (!issuerId) return; // silently skip
+    if (!issuerId) {
+      this.app.log.warn("Google Wallet update skipped: issuer not configured");
+      return;
+    }
 
     const sa = this.loadServiceAccount();
     if (!sa) {
@@ -382,12 +396,12 @@ export class GoogleWalletService {
       };
       const postResult = await this.httpsRequest(postOptions, bodyStr);
       if (postResult.statusCode >= 400) {
-        this.app.log.error(
+        throw new Error(
           `Google Wallet: failed to create object (${postResult.statusCode}): ${postResult.body}`
         );
       }
     } else if (putResult.statusCode >= 400) {
-      this.app.log.error(
+      throw new Error(
         `Google Wallet: failed to update object (${putResult.statusCode}): ${putResult.body}`
       );
     }

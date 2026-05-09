@@ -5,14 +5,23 @@ export class PromotionsService {
 
   /**
    * Get promotions for today (or a specific day of week).
+   * Filters out: inactive, exhausted (maxUses reached), outside time window,
+   * and private promotions (with a code — only shown when redeemed by code).
    */
   async getToday() {
     const today = new Date();
-    const dayOfWeek = today.getDay(); // 0=Sun, 6=Sat
+    const dayOfWeek = today.getDay();
+    const nowHHMM = today.toLocaleTimeString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "America/Mexico_City",
+    });
 
     const promotions = await this.app.prisma.promotion.findMany({
       where: {
         active: true,
+        code: null, // hide private promos from public listing
         OR: [{ dayOfWeek }, { dayOfWeek: null }],
       },
       include: {
@@ -20,7 +29,21 @@ export class PromotionsService {
       },
     });
 
-    return promotions.map((p) => ({
+    const visible = promotions.filter((p) => {
+      if (p.maxUses != null && p.usedCount >= p.maxUses) return false;
+      if (p.startTime || p.endTime) {
+        const start = p.startTime ?? "00:00";
+        const end = p.endTime ?? "23:59";
+        if (start <= end) {
+          if (nowHHMM < start || nowHHMM > end) return false;
+        } else if (nowHHMM < start && nowHHMM > end) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    return visible.map((p) => ({
       id: p.id,
       name: p.name,
       description: p.description,
@@ -34,6 +57,50 @@ export class PromotionsService {
         variant: i.variant,
       })),
     }));
+  }
+
+  /**
+   * Lookup a promotion by its private code (case-insensitive).
+   * Validates active, within time window, and not exhausted.
+   * Returns null if not redeemable.
+   */
+  async findByCode(rawCode: string) {
+    const code = rawCode.trim().toUpperCase();
+    if (!code) return null;
+
+    const promo = await this.app.prisma.promotion.findUnique({
+      where: { code },
+      include: { items: { include: { product: true } } },
+    });
+    if (!promo || !promo.active) return null;
+    if (promo.maxUses != null && promo.usedCount >= promo.maxUses) return null;
+
+    const now = new Date();
+    if (promo.dayOfWeek != null && promo.dayOfWeek !== now.getDay()) return null;
+
+    if (promo.startTime || promo.endTime) {
+      const nowHHMM = now.toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "America/Mexico_City",
+      });
+      const start = promo.startTime ?? "00:00";
+      const end = promo.endTime ?? "23:59";
+      if (start <= end) {
+        if (nowHHMM < start || nowHHMM > end) return null;
+      } else if (nowHHMM < start && nowHHMM > end) {
+        return null;
+      }
+    }
+    return promo;
+  }
+
+  async incrementUsage(id: string) {
+    return this.app.prisma.promotion.update({
+      where: { id },
+      data: { usedCount: { increment: 1 } },
+    });
   }
 
   /**
@@ -62,6 +129,10 @@ export class PromotionsService {
     name: string;
     description?: string | null;
     dayOfWeek?: number | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    code?: string | null;
+    maxUses?: number | null;
     price: number;
     active?: boolean;
     items: Array<{ productId: string; qty: number; variant?: string | null }>;
@@ -71,6 +142,10 @@ export class PromotionsService {
         name: data.name,
         description: data.description ?? null,
         dayOfWeek: data.dayOfWeek ?? null,
+        startTime: data.startTime ?? null,
+        endTime: data.endTime ?? null,
+        code: data.code ? data.code.toUpperCase().trim() : null,
+        maxUses: data.maxUses ?? null,
         price: data.price,
         active: data.active ?? true,
         items: {
@@ -95,6 +170,10 @@ export class PromotionsService {
       name?: string;
       description?: string | null;
       dayOfWeek?: number | null;
+      startTime?: string | null;
+      endTime?: string | null;
+      code?: string | null;
+      maxUses?: number | null;
       price?: number;
       active?: boolean;
       items?: Array<{ productId: string; qty: number; variant?: string | null }>;
@@ -110,6 +189,12 @@ export class PromotionsService {
           ...(data.name !== undefined && { name: data.name }),
           ...(data.description !== undefined && { description: data.description }),
           ...(data.dayOfWeek !== undefined && { dayOfWeek: data.dayOfWeek }),
+          ...(data.startTime !== undefined && { startTime: data.startTime }),
+          ...(data.endTime !== undefined && { endTime: data.endTime }),
+          ...(data.code !== undefined && {
+            code: data.code ? data.code.toUpperCase().trim() : null,
+          }),
+          ...(data.maxUses !== undefined && { maxUses: data.maxUses }),
           ...(data.price !== undefined && { price: data.price }),
           ...(data.active !== undefined && { active: data.active }),
           ...(data.items && {

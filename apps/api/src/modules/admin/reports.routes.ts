@@ -12,8 +12,11 @@ export async function reportsRoutes(app: FastifyInstance) {
 
   // Reports view (N days with summary + comparison)
   app.get("/reports", async (request) => {
-    const { days } = request.query as { days?: string };
-    return service.getReportsView(Number(days) || 7);
+    const { days, type } = request.query as { days?: string; type?: string };
+    return service.getReportsView(
+      Number(days) || 7,
+      type === "DELIVERY" || type === "PICKUP" ? type : undefined
+    );
   });
 
   // Daily report for a specific date

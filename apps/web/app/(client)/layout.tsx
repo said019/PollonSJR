@@ -1,4 +1,5 @@
 import { CustomerNotificationsBootstrap } from "@/components/client/customer-notifications-bootstrap";
+import { BlockedBanner } from "@/components/client/blocked-banner";
 
 export default function ClientLayout({
   children,
@@ -8,6 +9,7 @@ export default function ClientLayout({
   return (
     <>
       <CustomerNotificationsBootstrap />
+      <BlockedBanner />
       {children}
     </>
   );

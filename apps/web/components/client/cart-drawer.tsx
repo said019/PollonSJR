@@ -94,8 +94,11 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
             ) : (
               <>
                 <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
-                  {items.map((item) => (
-                    <div key={`${item.productId}-${item.variant}`} className="flex items-center gap-3 bg-surface-container-high rounded-xl p-3.5 border border-outline-variant/10">
+                  {items.map((item, idx) => (
+                    <div
+                      key={`${item.productId}-${item.variant}-${idx}`}
+                      className="flex items-start gap-3 bg-surface-container-high rounded-xl p-3.5 border border-outline-variant/10"
+                    >
                       <div className="flex-1 min-w-0">
                         <p className="font-headline font-semibold text-sm text-tertiary">
                           {item.name}
@@ -103,26 +106,31 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                             <span className="text-xs text-on-surface-variant/60 ml-1 font-body">({item.variant})</span>
                           )}
                         </p>
+                        {item.modifiers && item.modifiers.length > 0 && (
+                          <p className="text-[11px] text-on-surface-variant/70 mt-0.5">
+                            {item.modifiers.map((m) => m.option).join(" · ")}
+                          </p>
+                        )}
                         <p className="text-sm text-primary font-headline font-bold mt-0.5">
                           {formatCents(item.price * item.qty)}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => updateQty(item.productId, item.variant, item.qty - 1)}
+                          onClick={() => updateQty(item.productId, item.variant, item.qty - 1, item.modifiers)}
                           className="w-7 h-7 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface-variant hover:bg-outline-variant transition-colors"
                         >
                           <Minus size={13} />
                         </button>
                         <span className="text-sm font-headline font-bold w-6 text-center text-tertiary">{item.qty}</span>
                         <button
-                          onClick={() => updateQty(item.productId, item.variant, item.qty + 1)}
+                          onClick={() => updateQty(item.productId, item.variant, item.qty + 1, item.modifiers)}
                           className="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:brightness-110 transition-all"
                         >
                           <Plus size={13} />
                         </button>
                         <button
-                          onClick={() => removeItem(item.productId, item.variant)}
+                          onClick={() => removeItem(item.productId, item.variant, item.modifiers)}
                           className="ml-1 text-on-surface-variant/40 hover:text-error transition-colors"
                         >
                           <Trash2 size={15} />

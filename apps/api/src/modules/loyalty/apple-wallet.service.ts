@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { PKPass } from "passkit-generator";
-import https from "https";
+import http2 from "http2";
 import jwt from "jsonwebtoken";
 import fs from "fs";
 import path from "path";
@@ -10,6 +10,97 @@ const ASSETS_DIR = path.join(__dirname, "pass-assets");
 
 export class AppleWalletService {
   constructor(private app: FastifyInstance) {}
+
+  private async sendApnsRequest(
+    pushToken: string,
+    payload: object,
+    pushType: "background" | "alert",
+    priority: "5" | "10"
+  ): Promise<void> {
+    const keyId = process.env.APPLE_KEY_ID;
+    const teamId = process.env.APPLE_TEAM_ID;
+    const apnsKeyB64 = process.env.APPLE_APNS_KEY_BASE64;
+
+    if (!keyId || !teamId || !apnsKeyB64) {
+      this.app.log.warn(
+        `APNs ${pushType} push skipped: missing APPLE_KEY_ID, APPLE_TEAM_ID, or APPLE_APNS_KEY_BASE64`
+      );
+      return;
+    }
+
+    const apnsKey = Buffer.from(apnsKeyB64, "base64").toString("utf-8");
+    const token = jwt.sign({}, apnsKey, {
+      algorithm: "ES256",
+      issuer: teamId,
+      keyid: keyId,
+      expiresIn: "1h",
+    });
+
+    const passTypeId =
+      process.env.APPLE_PASS_TYPE_ID ?? "pass.com.pollon.loyalty";
+    const body = JSON.stringify(payload);
+
+    await new Promise<void>((resolve, reject) => {
+      const client = http2.connect("https://api.push.apple.com");
+      let settled = false;
+
+      const finish = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        client.close();
+        if (err) reject(err);
+        else resolve();
+      };
+
+      client.on("error", (err) => finish(err));
+
+      const req = client.request({
+        ":method": "POST",
+        ":path": `/3/device/${pushToken}`,
+        authorization: `bearer ${token}`,
+        "apns-push-type": pushType,
+        "apns-topic": passTypeId,
+        "apns-priority": priority,
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(body),
+      });
+
+      let statusCode = 0;
+      let responseBody = "";
+
+      req.setEncoding("utf8");
+      req.on("response", (headers) => {
+        const rawStatus = headers[":status"];
+        statusCode = Array.isArray(rawStatus)
+          ? Number(rawStatus[0])
+          : Number(rawStatus ?? 0);
+      });
+      req.on("data", (chunk) => {
+        responseBody += chunk;
+      });
+      req.on("error", (err) => finish(err));
+      req.on("end", () => {
+        if (statusCode === 410) {
+          this.app.prisma.appleDevice
+            .deleteMany({ where: { pushToken } })
+            .catch(() => {});
+        }
+
+        if (statusCode >= 400) {
+          finish(
+            new Error(
+              `APNs ${pushType} push failed (${statusCode}): ${responseBody}`
+            )
+          );
+          return;
+        }
+
+        finish();
+      });
+
+      req.end(body);
+    });
+  }
 
   /**
    * Generates a .pkpass buffer for a given customer.
@@ -38,6 +129,21 @@ export class AppleWalletService {
     const completedOrders = customer?.loyalty?.completedOrders ?? 0;
     const pendingReward = customer?.loyalty?.pendingReward ?? false;
     const stamps = pendingReward ? 5 : completedOrders % 5;
+    let lastUpdateMessage = pendingReward
+      ? "¡Felicidades! Ganaste un producto gratis"
+      : `Compra registrada — ${stamps}/5`;
+
+    try {
+      const storedMessage = await this.app.redis.get(
+        `apple_pass_message:${customerId}`
+      );
+      if (storedMessage) lastUpdateMessage = storedMessage;
+    } catch (err) {
+      this.app.log.warn(
+        { err, customerId },
+        "Apple Wallet: failed to read last pass message"
+      );
+    }
 
     const apiUrl = process.env.API_URL ?? "https://api.pollon.mx";
     const authToken = process.env.APPLE_AUTH_TOKEN ?? "changeme";
@@ -109,6 +215,12 @@ export class AppleWalletService {
 
     pass.backFields.push(
       {
+        key: "last_update",
+        label: "Última actualización",
+        value: lastUpdateMessage,
+        changeMessage: "%@",
+      },
+      {
         key: "how_it_works",
         label: "¿Cómo funciona?",
         value: "Cada pedido entregado suma 1 compra. Al llegar a 5 compras recibes un producto gratis de tu elección. La recompensa tiene vigencia de 6 meses.",
@@ -167,63 +279,7 @@ export class AppleWalletService {
    * On HTTP 410 (device no longer valid), removes the device record.
    */
   async sendWalletPush(pushToken: string): Promise<void> {
-    const keyId = process.env.APPLE_KEY_ID;
-    const teamId = process.env.APPLE_TEAM_ID;
-    const apnsKeyB64 = process.env.APPLE_APNS_KEY_BASE64;
-
-    if (!keyId || !teamId || !apnsKeyB64) {
-      this.app.log.warn(
-        "APNs push skipped: missing APPLE_KEY_ID, APPLE_TEAM_ID, or APPLE_APNS_KEY_BASE64"
-      );
-      return;
-    }
-
-    const apnsKey = Buffer.from(apnsKeyB64, "base64").toString("utf-8");
-
-    const token = jwt.sign({}, apnsKey, {
-      algorithm: "ES256",
-      issuer: teamId,
-      keyid: keyId,
-      expiresIn: "1h",
-    });
-
-    const passTypeId =
-      process.env.APPLE_PASS_TYPE_ID ?? "pass.com.pollon.loyalty";
-    const host = "api.push.apple.com";
-    const path = `/3/device/${pushToken}`;
-
-    await new Promise<void>((resolve, reject) => {
-      const body = JSON.stringify({});
-      const options: https.RequestOptions = {
-        hostname: host,
-        port: 443,
-        path,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-          authorization: `bearer ${token}`,
-          "apns-push-type": "background",
-          "apns-topic": passTypeId,
-          "apns-priority": "5",
-        },
-      };
-
-      const req = https.request(options, (res) => {
-        if (res.statusCode === 410) {
-          // Device is no longer registered — clean up async
-          this.app.prisma.appleDevice
-            .deleteMany({ where: { pushToken } })
-            .catch(() => {});
-        }
-        res.resume();
-        resolve();
-      });
-
-      req.on("error", reject);
-      req.write(body);
-      req.end();
-    });
+    await this.sendApnsRequest(pushToken, {}, "background", "5");
   }
 
   /**
@@ -235,67 +291,17 @@ export class AppleWalletService {
     title: string,
     body: string
   ): Promise<void> {
-    const keyId = process.env.APPLE_KEY_ID;
-    const teamId = process.env.APPLE_TEAM_ID;
-    const apnsKeyB64 = process.env.APPLE_APNS_KEY_BASE64;
-
-    if (!keyId || !teamId || !apnsKeyB64) {
-      this.app.log.warn(
-        "APNs alert push skipped: missing APPLE_KEY_ID, APPLE_TEAM_ID, or APPLE_APNS_KEY_BASE64"
-      );
-      return;
-    }
-
-    const apnsKey = Buffer.from(apnsKeyB64, "base64").toString("utf-8");
-
-    const token = jwt.sign({}, apnsKey, {
-      algorithm: "ES256",
-      issuer: teamId,
-      keyid: keyId,
-      expiresIn: "1h",
-    });
-
-    const passTypeId =
-      process.env.APPLE_PASS_TYPE_ID ?? "pass.com.pollon.loyalty";
-    const host = "api.push.apple.com";
-    const reqPath = `/3/device/${pushToken}`;
-
-    await new Promise<void>((resolve, reject) => {
-      const payload = JSON.stringify({
+    await this.sendApnsRequest(
+      pushToken,
+      {
         aps: {
           alert: { title, body },
           sound: "default",
         },
-      });
-      const options: https.RequestOptions = {
-        hostname: host,
-        port: 443,
-        path: reqPath,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(payload),
-          authorization: `bearer ${token}`,
-          "apns-push-type": "alert",
-          "apns-topic": passTypeId,
-          "apns-priority": "10",
-        },
-      };
-
-      const req = https.request(options, (res) => {
-        if (res.statusCode === 410) {
-          this.app.prisma.appleDevice
-            .deleteMany({ where: { pushToken } })
-            .catch(() => {});
-        }
-        res.resume();
-        resolve();
-      });
-
-      req.on("error", reject);
-      req.write(payload);
-      req.end();
-    });
+      },
+      "alert",
+      "10"
+    );
   }
 
   /**
@@ -306,6 +312,19 @@ export class AppleWalletService {
     customerId: string,
     message?: string
   ): Promise<void> {
+    if (message) {
+      try {
+        await this.app.redis.set(`apple_pass_message:${customerId}`, message, {
+          EX: 60 * 60 * 24 * 14,
+        });
+      } catch (err) {
+        this.app.log.warn(
+          { err, customerId },
+          "Apple Wallet: failed to store pass update message"
+        );
+      }
+    }
+
     const devices = await this.app.prisma.appleDevice.findMany({
       where: { serialNumber: customerId },
     });
@@ -315,20 +334,34 @@ export class AppleWalletService {
       data: { serialNumber: customerId },
     });
 
+    if (devices.length === 0) {
+      this.app.log.info(
+        { customerId },
+        "Apple Wallet pass update recorded with no registered devices"
+      );
+      return;
+    }
+
     // Push to each device
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       devices.map(async (d) => {
-        // Send background push to trigger pass refresh
+        // Apple Wallet notifications are triggered by the refreshed pass field
+        // changeMessage, so the APNs payload only wakes Wallet to fetch it.
         await this.sendWalletPush(d.pushToken);
-        // Send visible alert notification
-        if (message) {
-          await this.sendAlertNotification(
-            d.pushToken,
-            "Pollón SJR",
-            message
-          );
-        }
       })
     );
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        this.app.log.error(
+          {
+            err: result.reason,
+            customerId,
+            deviceId: devices[index]?.deviceId,
+          },
+          "Apple Wallet push failed"
+        );
+      }
+    });
   }
 }

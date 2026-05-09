@@ -3,11 +3,33 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
-import { Save, Loader2, Clock, Store, Download, Share, Smartphone, Check, Landmark } from "lucide-react";
+import {
+  Save,
+  Loader2,
+  Clock,
+  Store,
+  Download,
+  Share,
+  Smartphone,
+  Check,
+  Landmark,
+  Bell,
+  Volume2,
+  Play as PlayIcon,
+  MessageSquare,
+} from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { EvolutionApiSection } from "./evolution-api-section";
+import {
+  type AdminSound,
+  getCurrentSound,
+  setCurrentSound,
+  getVolume,
+  setVolume,
+  playNewOrderSound,
+} from "@/lib/notification-sound";
 
 interface StoreConfig {
   isOpen: boolean;
@@ -16,6 +38,7 @@ interface StoreConfig {
   openTime: string;
   closeTime: string;
   openDays: number[];
+  closedMessage?: string | null;
   transferClabe?: string | null;
   transferBank?: string | null;
   transferAccountHolder?: string | null;
@@ -72,6 +95,7 @@ export function SettingsPage() {
             isOpen: data.isOpen,
             deliveryActive: data.deliveryActive,
             acceptOrders: data.acceptOrders,
+            closedMessage: data.closedMessage?.trim() || null,
             transferClabe: data.transferClabe?.trim() || null,
             transferBank: data.transferBank?.trim() || null,
             transferAccountHolder: data.transferAccountHolder?.trim() || null,
@@ -316,12 +340,118 @@ export function SettingsPage() {
         </div>
       </section>
 
+      {/* ── Mensaje cuando está cerrado ── */}
+      <section className="mb-6 rounded-xl border border-outline-variant/20 bg-surface-container-high p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <MessageSquare size={20} className="text-primary" />
+          <h2 className="font-bold">Mensaje cuando está cerrado</h2>
+        </div>
+        <p className="mb-3 text-xs text-on-surface-variant/70">
+          Texto que verán los clientes cuando la tienda esté cerrada o no acepte
+          pedidos. Déjalo vacío para usar el mensaje por defecto.
+        </p>
+        <textarea
+          rows={3}
+          maxLength={280}
+          value={form.closedMessage ?? ""}
+          onChange={(e) => setForm({ ...form, closedMessage: e.target.value })}
+          placeholder="Volvemos a las 14:00. ¡Te esperamos!"
+          className="w-full rounded-xl border border-outline-variant/30 bg-surface-container p-3 text-sm text-on-surface outline-none transition-colors focus:border-primary/60"
+        />
+        <p className="mt-1 text-[11px] text-on-surface-variant/60">
+          {(form.closedMessage ?? "").length} / 280
+        </p>
+      </section>
+
+      {/* ── Sonido de notificación ── */}
+      <NotificationSoundSection />
+
       {/* ── Evolution API (WhatsApp) ── */}
       <EvolutionApiSection />
 
       {/* ── Instalar app ── */}
       <InstallAppSection />
     </div>
+  );
+}
+
+/* ─── Sonido de notificación ───────────────────────────────── */
+
+function NotificationSoundSection() {
+  const [sound, setSound] = useState<AdminSound>("ringtone");
+  const [volume, setVolumeState] = useState<number>(0.7);
+
+  useEffect(() => {
+    setSound(getCurrentSound());
+    setVolumeState(getVolume());
+  }, []);
+
+  const handleSelect = (s: AdminSound) => {
+    setSound(s);
+    setCurrentSound(s);
+    // Preview the sound on selection
+    setTimeout(() => playNewOrderSound(), 50);
+  };
+
+  const handleVolumeChange = (v: number) => {
+    setVolumeState(v);
+    setVolume(v);
+  };
+
+  const options: { id: AdminSound; label: string; desc: string }[] = [
+    { id: "ringtone", label: "Ringtone clásico", desc: "MP3 incluido" },
+    { id: "campana", label: "Campana", desc: "Doble ding-ding" },
+    { id: "chime", label: "Chime", desc: "4 notas ascendentes" },
+    { id: "fanfare", label: "Fanfarria", desc: "3 notas alegres" },
+  ];
+
+  return (
+    <section className="mb-6 rounded-xl border border-outline-variant/20 bg-surface-container-high p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Bell size={20} className="text-primary" />
+        <h2 className="font-bold">Sonido de notificación</h2>
+      </div>
+      <p className="mb-3 text-xs text-on-surface-variant/70">
+        Sonido que se reproduce cuando llega un nuevo pedido al admin.
+      </p>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => handleSelect(opt.id)}
+            className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-left transition-all ${
+              sound === opt.id
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-outline-variant/30 bg-surface-container text-on-surface-variant hover:border-primary/40"
+            }`}
+          >
+            <div>
+              <p className="text-sm font-bold">{opt.label}</p>
+              <p className="text-[11px] opacity-80">{opt.desc}</p>
+            </div>
+            <PlayIcon size={14} />
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <Volume2 size={14} className="text-on-surface-variant" />
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+          className="flex-1 accent-primary"
+        />
+        <span className="w-10 text-right text-xs font-semibold text-on-surface-variant">
+          {Math.round(volume * 100)}%
+        </span>
+      </div>
+    </section>
   );
 }
 

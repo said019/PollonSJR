@@ -15,6 +15,18 @@ export const updateZonesSchema = z.array(
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     active: z.boolean(),
     sortOrder: z.number().int().min(0),
+    startTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
+    endTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
   })
 );
 

@@ -39,8 +39,9 @@ export async function customersRoutes(app: FastifyInstance) {
 
   app.get("/me/orders", { preHandler: [authenticate] }, async (request) => {
     const user = request.user as { id: string };
-    const { page } = request.query as { page?: string };
-    return service.getOrders(user.id, Number(page) || 1);
+    const { page, limit } = request.query as { page?: string; limit?: string };
+    const limitNum = Math.min(50, Math.max(1, Number(limit) || 20));
+    return service.getOrders(user.id, Number(page) || 1, limitNum);
   });
 
   // ─── Saved Addresses ───────────────────────────────────────

@@ -4,7 +4,7 @@ import { AdminService } from "./admin.service";
 import { OrdersService } from "../orders/orders.service";
 import { MenuService } from "../menu/menu.service";
 import { adminOnly } from "../../middlewares/admin-only";
-import { createProductSchema, updateProductSchema } from "../menu/menu.schema";
+import { createProductSchema, updateProductSchema, modifierSchema } from "../menu/menu.schema";
 import { updateStatusSchema } from "../orders/orders.schema";
 import { emitMenuUpdated, emitOrderStatus } from "../orders/orders.events";
 import { getStoreConfig, updateStoreConfig } from "./store-config.service";
@@ -72,17 +72,23 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get("/orders", async () => ordersService.getActiveOrders());
 
   app.get("/orders/history", async (request) => {
-    const { page, dateFrom, dateTo } = request.query as {
+    const { page, dateFrom, dateTo, search, status, type } = request.query as {
       page?: string;
-      dateFrom?: string; // ISO date string YYYY-MM-DD
-      dateTo?: string;   // ISO date string YYYY-MM-DD
+      dateFrom?: string;
+      dateTo?: string;
+      search?: string;
+      status?: "DELIVERED" | "CANCELLED";
+      type?: "DELIVERY" | "PICKUP";
     };
 
     const from = dateFrom ? new Date(dateFrom + "T00:00:00.000Z") : undefined;
-    // End of day so the full day is included
     const to = dateTo ? new Date(dateTo + "T23:59:59.999Z") : undefined;
 
-    return ordersService.getHistory(Number(page) || 1, 20, from, to);
+    return ordersService.getHistory(Number(page) || 1, 20, from, to, {
+      search,
+      status: status === "DELIVERED" || status === "CANCELLED" ? status : undefined,
+      type: type === "DELIVERY" || type === "PICKUP" ? type : undefined,
+    });
   });
 
   app.patch<{ Params: { id: string } }>("/orders/:id/status", async (request, reply) => {
@@ -94,6 +100,20 @@ export async function adminRoutes(app: FastifyInstance) {
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
     }
+  });
+
+  // Update ETA (estimated minutes) inline from kanban
+  const updateEtaSchema = z.object({
+    estimatedMinutes: z.number().int().min(1).max(240).nullable(),
+  });
+  app.patch<{ Params: { id: string } }>("/orders/:id/eta", async (request, reply) => {
+    const parsed = updateEtaSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: "ETA inválido" });
+    return app.prisma.order.update({
+      where: { id: request.params.id },
+      data: { estimatedMinutes: parsed.data.estimatedMinutes },
+      select: { id: true, estimatedMinutes: true },
+    });
   });
 
   // Products
@@ -108,7 +128,13 @@ export async function adminRoutes(app: FastifyInstance) {
     const parsed = createProductSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
 
-    const product = await app.prisma.product.create({ data: parsed.data });
+    const { variants, ...rest } = parsed.data;
+    const data: any = { ...rest };
+    if (variants !== undefined) {
+      data.variants = variants ?? undefined;
+    }
+
+    const product = await app.prisma.product.create({ data });
     await menuService.invalidateCache();
     emitMenuUpdated(app, product.id, true, false);
     return reply.status(201).send(product);
@@ -116,11 +142,17 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string } }>("/products/:id", async (request, reply) => {
     const parsed = updateProductSchema.safeParse(request.body);
-    if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos" });
+    if (!parsed.success) return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+
+    const { variants, ...rest } = parsed.data;
+    const data: any = { ...rest };
+    if (variants !== undefined) {
+      data.variants = variants ?? undefined;
+    }
 
     const product = await app.prisma.product.update({
       where: { id: request.params.id },
-      data: parsed.data,
+      data,
     });
 
     await menuService.invalidateCache();
@@ -129,10 +161,146 @@ export async function adminRoutes(app: FastifyInstance) {
     return product;
   });
 
+  app.delete<{ Params: { id: string } }>("/products/:id", async (request, reply) => {
+    const id = request.params.id;
+    const orderCount = await app.prisma.orderItem.count({ where: { productId: id } });
+    if (orderCount > 0) {
+      return reply.status(409).send({
+        error: `No se puede eliminar: el producto tiene ${orderCount} pedidos asociados. Desactívalo en su lugar.`,
+      });
+    }
+    await app.prisma.productModifier.deleteMany({ where: { productId: id } });
+    await app.prisma.promotionItem.deleteMany({ where: { productId: id } });
+    await app.prisma.product.delete({ where: { id } });
+    await menuService.invalidateCache();
+    return reply.status(204).send();
+  });
+
+  // Product modifiers
+  app.get<{ Params: { id: string } }>("/products/:id/modifiers", async (request) => {
+    return app.prisma.productModifier.findMany({
+      where: { productId: request.params.id },
+      orderBy: { sortOrder: "asc" },
+    });
+  });
+
+  app.post<{ Params: { id: string } }>("/products/:id/modifiers", async (request, reply) => {
+    const parsed = modifierSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const modifier = await app.prisma.productModifier.create({
+      data: {
+        productId: request.params.id,
+        name: parsed.data.name,
+        required: parsed.data.required,
+        minSelect: parsed.data.minSelect,
+        maxSelect: parsed.data.maxSelect,
+        sortOrder: parsed.data.sortOrder,
+        options: parsed.data.options,
+      },
+    });
+    await menuService.invalidateCache();
+    return reply.status(201).send(modifier);
+  });
+
+  app.patch<{ Params: { id: string } }>("/modifiers/:id", async (request, reply) => {
+    const parsed = modifierSchema.partial().safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos" });
+    }
+    const modifier = await app.prisma.productModifier.update({
+      where: { id: request.params.id },
+      data: parsed.data,
+    });
+    await menuService.invalidateCache();
+    return modifier;
+  });
+
+  app.delete<{ Params: { id: string } }>("/modifiers/:id", async (request, reply) => {
+    await app.prisma.productModifier.delete({ where: { id: request.params.id } });
+    await menuService.invalidateCache();
+    return reply.status(204).send();
+  });
+
   // Customers
   app.get("/customers", async (request) => {
     const { page, search } = request.query as { page?: string; search?: string };
     return adminService.getCustomers(Number(page) || 1, 20, search);
+  });
+
+  app.get<{ Params: { id: string } }>("/customers/:id/orders", async (request) => {
+    return adminService.getCustomerOrders(request.params.id);
+  });
+
+  const updateCustomerSchema = z.object({
+    internalNote: z.string().max(500).nullable().optional(),
+    blocked: z.boolean().optional(),
+    blockedReason: z.string().max(200).nullable().optional(),
+  });
+
+  app.patch<{ Params: { id: string } }>("/customers/:id", async (request, reply) => {
+    const parsed = updateCustomerSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos" });
+    }
+    return app.prisma.customer.update({
+      where: { id: request.params.id },
+      data: parsed.data,
+    });
+  });
+
+  app.get("/customers/export.csv", async (_, reply) => {
+    const customers = await app.prisma.customer.findMany({
+      include: {
+        orders: { select: { total: true, status: true, createdAt: true } },
+        loyalty: { select: { completedOrders: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const rows = [
+      [
+        "Nombre",
+        "Telefono",
+        "Pedidos",
+        "Entregados",
+        "Total gastado (MXN)",
+        "Lealtad",
+        "Bloqueado",
+        "Ultimo pedido",
+        "Creado",
+        "Nota interna",
+      ],
+    ];
+    for (const c of customers) {
+      const delivered = c.orders.filter((o) => o.status === "DELIVERED");
+      const total = delivered.reduce((s, o) => s + o.total, 0) / 100;
+      const last = c.orders[0]?.createdAt?.toISOString().split("T")[0] ?? "";
+      rows.push([
+        (c.name ?? "").replaceAll('"', '""'),
+        c.phone,
+        String(c.orders.length),
+        String(delivered.length),
+        total.toFixed(2),
+        String(c.loyalty?.completedOrders ?? 0),
+        c.blocked ? "Sí" : "No",
+        last,
+        c.createdAt.toISOString().split("T")[0],
+        (c.internalNote ?? "").replaceAll('"', '""').replaceAll("\n", " "),
+      ]);
+    }
+    const csv =
+      "﻿" + // BOM for Excel
+      rows
+        .map((r) => r.map((v) => `"${v}"`).join(","))
+        .join("\n");
+    reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="clientes-${new Date().toISOString().split("T")[0]}.csv"`
+      )
+      .send(csv);
   });
 
   // Reports are handled by reports.routes.ts
@@ -177,12 +345,46 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.status(201).send(coupon);
   });
 
-  app.patch<{ Params: { id: string } }>("/coupons/:id", async (request) => {
-    const { active } = request.body as { active: boolean };
+  const updateCouponSchema = z.object({
+    code: z.string().min(1).max(30).optional(),
+    type: z.enum(["PERCENT", "FIXED"]).optional(),
+    value: z.number().min(1).optional(),
+    minOrderAmount: z.number().min(0).nullable().optional(),
+    maxUses: z.number().int().min(1).nullable().optional(),
+    firstOrderOnly: z.boolean().optional(),
+    expiresAt: z.string().nullable().optional(),
+    active: z.boolean().optional(),
+  });
+
+  app.patch<{ Params: { id: string } }>("/coupons/:id", async (request, reply) => {
+    const parsed = updateCouponSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Datos inválidos", details: parsed.error.flatten() });
+    }
+    const data: any = { ...parsed.data };
+    if (data.code !== undefined) data.code = data.code.toUpperCase().trim();
+    if (data.expiresAt !== undefined) {
+      data.expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+    }
     return app.prisma.coupon.update({
       where: { id: request.params.id },
-      data: { active },
+      data,
     });
+  });
+
+  app.delete<{ Params: { id: string } }>("/coupons/:id", async (request, reply) => {
+    const coupon = await app.prisma.coupon.findUnique({
+      where: { id: request.params.id },
+      include: { _count: { select: { orders: true } } },
+    });
+    if (!coupon) return reply.status(404).send({ error: "Cupón no encontrado" });
+    if (coupon._count.orders > 0) {
+      return reply.status(409).send({
+        error: "No se puede eliminar: el cupón tiene pedidos asociados. Desactívalo en su lugar.",
+      });
+    }
+    await app.prisma.coupon.delete({ where: { id: request.params.id } });
+    return reply.status(204).send();
   });
 
   // ─── Promotions ──────────────────────────────────────────
@@ -193,11 +395,28 @@ export async function adminRoutes(app: FastifyInstance) {
     variant: z.string().nullable().optional(),
   });
 
+  const timeStringSchema = z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "Formato HH:MM")
+    .nullable()
+    .optional()
+    .or(z.literal("").transform(() => null));
+
   const createPromotionSchema = z.object({
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().max(280).nullable().optional(),
     dayOfWeek: z.number().int().min(0).max(6).nullable().optional(),
-    price: z.number().int().min(0), // cents
+    startTime: timeStringSchema,
+    endTime: timeStringSchema,
+    code: z
+      .string()
+      .trim()
+      .max(30)
+      .nullable()
+      .optional()
+      .or(z.literal("").transform(() => null)),
+    maxUses: z.number().int().min(1).nullable().optional(),
+    price: z.number().int().min(0),
     active: z.boolean().optional(),
     items: z.array(promotionItemSchema).min(1),
   });

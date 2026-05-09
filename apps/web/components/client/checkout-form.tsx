@@ -15,7 +15,21 @@ import type {
 } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Banknote, CreditCard, Gift, Landmark, Loader2, ShieldCheck, Lock, ExternalLink } from "lucide-react";
+import {
+  ArrowLeft,
+  Banknote,
+  CalendarClock,
+  CreditCard,
+  Gift,
+  Landmark,
+  Loader2,
+  ShieldCheck,
+  Lock,
+  ExternalLink,
+  Ticket,
+  Heart,
+  Check,
+} from "lucide-react";
 import { DeliveryMap } from "./delivery-map";
 
 const checkoutSchema = z.object({
@@ -94,6 +108,23 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Coupon state
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+  } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  // Schedule state
+  const [scheduleMode, setScheduleMode] = useState<"NOW" | "LATER">("NOW");
+  const [scheduledTime, setScheduledTime] = useState<string>("13:00"); // HH:MM tomorrow
+
+  // Tip state
+  const [tipPercent, setTipPercent] = useState<0 | 10 | 15 | 20 | -1>(0); // -1 = custom
+  const [tipCustom, setTipCustom] = useState<string>(""); // pesos as string
+
   // Hydration-safe token for loyalty query
   const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
   useEffect(() => {
@@ -113,11 +144,68 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
   const orderType = watch("type");
   const paymentMethod = watch("paymentMethod");
-  const totalCents = useMemo(
+
+  const subtotalWithDelivery = useMemo(
     () => total + (orderType === "DELIVERY" ? delivery.fee || 0 : 0),
     [delivery.fee, orderType, total]
   );
+
+  const tipCents = useMemo(() => {
+    if (tipPercent === -1) {
+      const v = parseFloat(tipCustom);
+      return isNaN(v) ? 0 : Math.max(0, Math.round(v * 100));
+    }
+    if (tipPercent === 0) return 0;
+    return Math.round((total * tipPercent) / 100);
+  }, [tipPercent, tipCustom, total]);
+
+  const couponDiscount = appliedCoupon?.discountAmount ?? 0;
+  const totalCents = Math.max(0, subtotalWithDelivery + tipCents - couponDiscount);
   const cardBlocked = orderType === "DELIVERY" && delivery.available !== true;
+
+  const validateCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    setCouponLoading(true);
+    setCouponError(null);
+    try {
+      const result = await api.post<{
+        valid: boolean;
+        couponId?: string;
+        discountAmount?: number;
+        message?: string;
+        error?: string;
+      }>(
+        "/api/orders/coupons/validate",
+        { code, subtotal: total },
+        getToken() || undefined
+      );
+      if (!result.valid) {
+        setCouponError(result.error || "Cupón inválido");
+        return;
+      }
+      setAppliedCoupon({ code, discountAmount: result.discountAmount ?? 0 });
+    } catch (err: any) {
+      setCouponError(err.message || "Cupón inválido");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError(null);
+  };
+
+  const buildScheduledISO = (): string | undefined => {
+    if (scheduleMode !== "LATER") return undefined;
+    const [hh, mm] = scheduledTime.split(":").map(Number);
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    t.setHours(hh ?? 13, mm ?? 0, 0, 0);
+    return t.toISOString();
+  };
 
   const submitLabel =
     paymentMethod === "TRANSFER"
@@ -127,8 +215,9 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         : "Confirmar pedido en efectivo";
 
   const createOrder = useCallback(
-    async (data: CheckoutData, token: string) =>
-      api.post<CreateOrderResponse>(
+    async (data: CheckoutData, token: string) => {
+      const scheduledFor = buildScheduledISO();
+      return api.post<CreateOrderResponse>(
         "/api/orders",
         {
           type: data.type,
@@ -140,15 +229,40 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
           deliveryAddress: data.address || delivery.zoneName,
           deliveryFee: delivery.fee || 0,
           notes: data.notes,
+          couponCode: appliedCoupon?.code || undefined,
+          tipAmount: tipCents > 0 ? tipCents : undefined,
+          isScheduled: scheduleMode === "LATER",
+          scheduledFor,
           items: items.map((i) => ({
             productId: i.productId,
             qty: i.qty,
             variant: i.variant || undefined,
+            notes: i.notes || undefined,
+            modifiers:
+              i.modifiers && i.modifiers.length > 0
+                ? i.modifiers.map((m) => ({
+                    name: m.name,
+                    option: m.option,
+                    price: m.price,
+                  }))
+                : undefined,
           })),
         },
         token
-      ),
-    [delivery.fee, delivery.lat, delivery.lng, delivery.zoneId, delivery.zoneName, items]
+      );
+    },
+    [
+      delivery.fee,
+      delivery.lat,
+      delivery.lng,
+      delivery.zoneId,
+      delivery.zoneName,
+      items,
+      appliedCoupon,
+      tipCents,
+      scheduleMode,
+      scheduledTime,
+    ]
   );
 
   const getCheckoutData = useCallback(
@@ -325,6 +439,21 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               setValue("address", nextAddress, { shouldDirty: true })
             }
           />
+          {delivery.available &&
+            delivery.outsideTimeWindow &&
+            scheduleMode === "NOW" && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-500">
+                <CalendarClock size={14} className="mt-0.5 flex-shrink-0" />
+                <p className="text-xs">
+                  La zona <strong>{delivery.zoneName}</strong> entrega entre{" "}
+                  <strong>
+                    {delivery.zoneStartTime ?? "—"} y{" "}
+                    {delivery.zoneEndTime ?? "—"}
+                  </strong>
+                  . Para pedir ahora, cambia a otra zona o usa "Para mañana".
+                </p>
+              </div>
+            )}
           <div>
             <label className="text-sm font-medium mb-1 block text-on-surface">Dirección y referencias</label>
             <textarea
@@ -336,6 +465,154 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
           </div>
         </div>
       )}
+
+      {/* Schedule (today vs tomorrow) */}
+      <div className="mb-4">
+        <label className="text-sm font-medium mb-2 block text-on-surface">¿Cuándo lo quieres?</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setScheduleMode("NOW")}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 p-3 text-sm font-semibold transition-all ${
+              scheduleMode === "NOW"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-outline-variant text-on-surface-variant hover:border-primary/40"
+            }`}
+          >
+            Ahora
+          </button>
+          <button
+            type="button"
+            onClick={() => setScheduleMode("LATER")}
+            className={`flex items-center justify-center gap-2 rounded-xl border-2 p-3 text-sm font-semibold transition-all ${
+              scheduleMode === "LATER"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-outline-variant text-on-surface-variant hover:border-primary/40"
+            }`}
+          >
+            <CalendarClock size={14} />
+            Para mañana
+          </button>
+        </div>
+        {scheduleMode === "LATER" && (
+          <div className="mt-2 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
+            <label className="block text-[11px] text-on-surface-variant mb-1">
+              Hora deseada (mañana)
+            </label>
+            <input
+              type="time"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              className="w-full rounded-lg border border-outline-variant/40 bg-white text-neutral-900 p-2 text-sm [color-scheme:light]"
+            />
+            <p className="mt-1 text-[10px] text-on-surface-variant/70">
+              Confirmamos por WhatsApp. Pago se procesa hoy, te entregamos mañana.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Coupon */}
+      <div className="mb-4">
+        <label className="text-sm font-medium mb-2 block text-on-surface">
+          ¿Tienes un cupón?
+        </label>
+        {appliedCoupon ? (
+          <div className="flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3">
+            <div className="flex items-center gap-2">
+              <Check size={14} className="text-emerald-500" />
+              <div>
+                <p className="text-sm font-bold text-emerald-500">
+                  {appliedCoupon.code}
+                </p>
+                <p className="text-[11px] text-on-surface-variant">
+                  Descuento: {formatCents(appliedCoupon.discountAmount)}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={removeCoupon}
+              className="text-xs text-on-surface-variant hover:text-error"
+            >
+              Quitar
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Ticket
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
+              />
+              <input
+                value={couponInput}
+                onChange={(e) =>
+                  setCouponInput(e.target.value.toUpperCase().slice(0, 30))
+                }
+                placeholder="POLLON10"
+                className="w-full rounded-xl border border-outline-variant/40 bg-white text-neutral-900 py-2.5 pl-9 pr-3 text-sm font-mono placeholder:text-neutral-400 focus:border-primary focus:ring-2 focus:ring-primary"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={validateCoupon}
+              disabled={couponLoading || !couponInput.trim()}
+              className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-on-primary disabled:opacity-50"
+            >
+              {couponLoading ? <Loader2 size={14} className="animate-spin" /> : "Aplicar"}
+            </button>
+          </div>
+        )}
+        {couponError && (
+          <p className="mt-1 text-xs text-error">{couponError}</p>
+        )}
+      </div>
+
+      {/* Tip */}
+      <div className="mb-4">
+        <label className="text-sm font-medium mb-2 flex items-center gap-1.5 text-on-surface">
+          <Heart size={13} className="text-error" />
+          Propina (opcional)
+        </label>
+        <div className="grid grid-cols-5 gap-1.5">
+          {([0, 10, 15, 20, -1] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setTipPercent(p)}
+              className={`rounded-lg border py-2 text-xs font-semibold transition-all ${
+                tipPercent === p
+                  ? "border-primary bg-primary text-on-primary"
+                  : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40"
+              }`}
+            >
+              {p === 0 ? "Sin" : p === -1 ? "Otro" : `${p}%`}
+            </button>
+          ))}
+        </div>
+        {tipPercent === -1 && (
+          <div className="relative mt-2">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant/60">
+              $
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={tipCustom}
+              onChange={(e) => setTipCustom(e.target.value)}
+              placeholder="20"
+              className="w-full rounded-xl border border-outline-variant/40 bg-white text-neutral-900 py-2.5 pl-7 pr-3 text-sm placeholder:text-neutral-400 focus:border-primary focus:ring-2 focus:ring-primary"
+            />
+          </div>
+        )}
+        {tipCents > 0 && (
+          <p className="mt-1 text-[11px] text-on-surface-variant">
+            Propina: {formatCents(tipCents)} para tu repartidor
+          </p>
+        )}
+      </div>
 
       {/* Notes */}
       <div className="mb-4">

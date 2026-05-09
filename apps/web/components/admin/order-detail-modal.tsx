@@ -33,6 +33,7 @@ const STATUS_META: Record<
   { label: string; icon: React.ReactNode; color: string }
 > = {
   PENDING_PAYMENT: { label: "Pendiente de pago", icon: <Clock size={14} />, color: "text-amber-400 bg-amber-400/15" },
+  SCHEDULED: { label: "Programado", icon: <Clock size={14} />, color: "text-sky-400 bg-sky-400/15" },
   RECEIVED: { label: "Recibido", icon: <CheckCircle size={14} />, color: "text-blue-400 bg-blue-400/15" },
   PREPARING: { label: "Preparando", icon: <ChefHat size={14} />, color: "text-orange-400 bg-orange-400/15" },
   READY: { label: "Listo", icon: <Package size={14} />, color: "text-green-400 bg-green-400/15" },

@@ -6,7 +6,7 @@ import { getAdminToken } from "@/lib/auth";
 import type { OrderSummary } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState } from "react";
-import { Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, X, Search } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: "Pago pendiente",
@@ -45,11 +45,17 @@ const PRESETS = [
   { label: "Mes pasado", getDates: () => { const n = new Date(); const s = new Date(n.getFullYear(), n.getMonth() - 1, 1); const e = new Date(n.getFullYear(), n.getMonth(), 0); return { from: toLocalISO(s), to: toLocalISO(e) }; } },
 ];
 
+type StatusFilter = "" | "DELIVERED" | "CANCELLED";
+type TypeFilter = "" | "DELIVERY" | "PICKUP";
+
 export function OrdersHistory() {
   const token = getAdminToken();
   const [page, setPage]         = useState(1);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo]     = useState("");
+  const [search, setSearch]     = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
+  const [typeFilter, setTypeFilter]     = useState<TypeFilter>("");
   const [activePreset, setActivePreset] = useState<string | null>(null);
 
   function applyPreset(preset: typeof PRESETS[number]) {
@@ -63,19 +69,24 @@ export function OrdersHistory() {
   function clearFilters() {
     setDateFrom("");
     setDateTo("");
+    setSearch("");
+    setStatusFilter("");
+    setTypeFilter("");
     setActivePreset(null);
     setPage(1);
   }
 
-  const hasFilter = dateFrom || dateTo;
+  const hasFilter = dateFrom || dateTo || search.trim() || statusFilter || typeFilter;
 
-  // Build query string
   const qs = new URLSearchParams({ page: String(page) });
   if (dateFrom) qs.set("dateFrom", dateFrom);
   if (dateTo)   qs.set("dateTo", dateTo);
+  if (search.trim()) qs.set("search", search.trim());
+  if (statusFilter)  qs.set("status", statusFilter);
+  if (typeFilter)    qs.set("type", typeFilter);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-orders-history", page, dateFrom, dateTo],
+    queryKey: ["admin-orders-history", page, dateFrom, dateTo, search, statusFilter, typeFilter],
     queryFn: () =>
       api.get<{ orders: OrderSummary[]; total: number; pages: number }>(
         `/api/admin/orders/history?${qs.toString()}`,
@@ -96,6 +107,47 @@ export function OrdersHistory() {
 
       {/* ── Filters bar ─────────────────────────────────────── */}
       <div className="bg-surface-container-high rounded-xl border border-outline-variant/20 p-4 space-y-3">
+        {/* Search + dropdowns */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Buscar por #pedido, cliente o teléfono"
+              className="w-full bg-surface-container rounded-lg border border-outline-variant/20 text-xs text-on-surface pl-8 pr-3 py-1.5 focus:border-primary/50 outline-none transition-all"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as StatusFilter);
+              setPage(1);
+            }}
+            className="bg-surface-container rounded-lg border border-outline-variant/20 text-xs text-on-surface px-2.5 py-1.5 focus:border-primary/50 outline-none"
+          >
+            <option value="">Todos los estados</option>
+            <option value="DELIVERED">Entregados</option>
+            <option value="CANCELLED">Cancelados</option>
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value as TypeFilter);
+              setPage(1);
+            }}
+            className="bg-surface-container rounded-lg border border-outline-variant/20 text-xs text-on-surface px-2.5 py-1.5 focus:border-primary/50 outline-none"
+          >
+            <option value="">Todos los tipos</option>
+            <option value="DELIVERY">Envío</option>
+            <option value="PICKUP">Sucursal</option>
+          </select>
+        </div>
+
         {/* Preset buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <Calendar size={15} className="text-on-surface-variant shrink-0" />

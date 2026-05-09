@@ -181,7 +181,7 @@ export class ReportsService {
   /**
    * Reports for the frontend view (N days with summary + comparison).
    */
-  async getReportsView(days: number = 7) {
+  async getReportsView(days: number = 7, type?: "DELIVERY" | "PICKUP") {
     const from = new Date();
     from.setDate(from.getDate() - days);
     from.setHours(0, 0, 0, 0);
@@ -189,15 +189,25 @@ export class ReportsService {
     const prevFrom = new Date(from);
     prevFrom.setDate(prevFrom.getDate() - days);
 
+    const typeWhere = type ? { type } : {};
+
     // Current period
     const currentOrders = await this.app.prisma.order.findMany({
-      where: { createdAt: { gte: from }, status: { notIn: ["PENDING_PAYMENT"] } },
+      where: {
+        createdAt: { gte: from },
+        status: { notIn: ["PENDING_PAYMENT"] },
+        ...typeWhere,
+      },
       select: { total: true, subtotal: true, type: true, status: true, customerId: true, createdAt: true },
     });
 
     // Previous period for comparison
     const prevOrders = await this.app.prisma.order.findMany({
-      where: { createdAt: { gte: prevFrom, lt: from }, status: { notIn: ["PENDING_PAYMENT"] } },
+      where: {
+        createdAt: { gte: prevFrom, lt: from },
+        status: { notIn: ["PENDING_PAYMENT"] },
+        ...typeWhere,
+      },
       select: { total: true },
     });
 

@@ -99,6 +99,7 @@ export class AdminService {
       this.app.prisma.customer.count({ where }),
     ]);
 
+    const now = Date.now();
     const mapped = customers.map((c) => {
       const delivered = c.orders.filter((o) => o.status === "DELIVERED");
       const totalSpent = delivered.reduce((sum, o) => sum + o.total, 0);
@@ -108,11 +109,33 @@ export class AdminService {
           ? Math.round((rated.reduce((sum, o) => sum + (o.rating ?? 0), 0) / rated.length) * 10) / 10
           : null;
 
+      const lastOrderAt = c.orders[0]?.createdAt;
+      const daysSinceLast = lastOrderAt
+        ? Math.floor((now - lastOrderAt.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      // Auto segment based on behavior
+      let segment: "VIP" | "REGULAR" | "NEW" | "AT_RISK" | "INACTIVE" = "NEW";
+      if (delivered.length === 0) {
+        segment = "NEW";
+      } else if (delivered.length >= 10 && totalSpent >= 100000 /* $1000 */) {
+        segment = "VIP";
+      } else if (daysSinceLast != null && daysSinceLast > 60) {
+        segment = "INACTIVE";
+      } else if (daysSinceLast != null && daysSinceLast > 30 && delivered.length >= 3) {
+        segment = "AT_RISK";
+      } else if (delivered.length >= 3) {
+        segment = "REGULAR";
+      }
+
       return {
         id: c.id,
         name: c.name,
         phone: c.phone,
         createdAt: c.createdAt.toISOString(),
+        internalNote: c.internalNote ?? null,
+        blocked: c.blocked,
+        blockedReason: c.blockedReason ?? null,
         totalOrders: c.orders.length,
         deliveredOrders: delivered.length,
         totalSpent,
@@ -121,11 +144,33 @@ export class AdminService {
         loyaltyProgress: c.loyalty?.completedOrders ?? 0,
         pendingReward: c.loyalty?.pendingReward ?? false,
         freeProductsEarned: c.loyalty?.freeProductsEarned ?? 0,
-        lastOrderAt: c.orders[0]?.createdAt.toISOString() ?? null,
+        lastOrderAt: lastOrderAt?.toISOString() ?? null,
+        segment,
       };
     });
 
     return { customers: mapped, total, page, pages: Math.ceil(total / limit) };
+  }
+
+  async getCustomerOrders(customerId: string, limit = 20) {
+    const orders = await this.app.prisma.order.findMany({
+      where: { customerId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        type: true,
+        total: true,
+        createdAt: true,
+        rating: true,
+      },
+    });
+    return orders.map((o) => ({
+      ...o,
+      createdAt: o.createdAt.toISOString(),
+    }));
   }
 
   async getDailyReport() {

@@ -13,6 +13,9 @@ interface DeliveryState {
   reason: string;
   lat: number | null;
   lng: number | null;
+  zoneStartTime: string | null;
+  zoneEndTime: string | null;
+  outsideTimeWindow: boolean;
 }
 
 const INITIAL: DeliveryState = {
@@ -26,6 +29,9 @@ const INITIAL: DeliveryState = {
   reason: "",
   lat: null,
   lng: null,
+  zoneStartTime: null,
+  zoneEndTime: null,
+  outsideTimeWindow: false,
 };
 
 export function useDelivery() {
@@ -43,6 +49,9 @@ export function useDelivery() {
       reason: result.reason ?? "",
       lat,
       lng,
+      zoneStartTime: result.zoneStartTime ?? null,
+      zoneEndTime: result.zoneEndTime ?? null,
+      outsideTimeWindow: !!result.outsideTimeWindow,
     });
   }
 

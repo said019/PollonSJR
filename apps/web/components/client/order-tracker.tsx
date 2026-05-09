@@ -15,12 +15,14 @@ import {
   Bell,
   CheckCircle,
   ChefHat,
+  Clock,
   CreditCard,
   FileCheck2,
   Home,
   Landmark,
   Loader2,
   Package,
+  Share2,
   ShoppingBag,
   Sparkles,
   Truck,
@@ -28,6 +30,7 @@ import {
   X,
   Star,
   RotateCcw,
+  RefreshCw,
   MessageCircle,
 } from "lucide-react";
 import {
@@ -153,14 +156,17 @@ export function OrderTracker({ orderId }: { orderId: string }) {
             </div>
           </div>
 
-          <Link
-            href="/menu"
-            className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 font-headline text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20"
-          >
-            <ShoppingBag size={14} />
-            <span className="hidden sm:inline">Seguir comprando</span>
-            <span className="sm:hidden">Menú</span>
-          </Link>
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            {isActive && <ShareTrackingButton orderNumber={order.orderNumber} />}
+            <Link
+              href="/menu"
+              className="flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 font-headline text-xs font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20"
+            >
+              <ShoppingBag size={14} />
+              <span className="hidden sm:inline">Seguir</span>
+              <span className="sm:hidden">Menú</span>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -219,6 +225,11 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                 transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
               />
             </div>
+
+            {/* Retry payment button — shown only if pago=error or after 30s */}
+            {(pagoParam === "error" || pagoParam === "fallido") && (
+              <RetryPaymentButton orderId={order.id} />
+            )}
           </motion.div>
         )}
 
@@ -294,7 +305,7 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-headline text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
                     {isDelivered ? "Completado" : "En curso"}
                   </span>
@@ -305,6 +316,15 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                       transition={{ duration: 1.2, repeat: Infinity }}
                     />
                   )}
+                  {!isDelivered &&
+                    !isCancelled &&
+                    typeof (order as any).estimatedMinutes === "number" &&
+                    (order as any).estimatedMinutes > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 font-headline text-[10px] font-bold uppercase tracking-wider text-primary">
+                        <Clock size={10} />
+                        ~{(order as any).estimatedMinutes} min
+                      </span>
+                    )}
                 </div>
                 <AnimatePresence mode="wait">
                   <motion.p
@@ -1345,5 +1365,82 @@ function CancelOrderButton({
         </div>
       </div>
     </motion.div>
+  );
+}
+
+/* ─── Retry payment (CARD) ────────────────────────────────── */
+
+function RetryPaymentButton({ orderId }: { orderId: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRetry = async () => {
+    const token = getToken();
+    if (!token) {
+      setError("Inicia sesión para reintentar el pago");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { checkoutUrl } = await api.post<{
+        preferenceId: string;
+        checkoutUrl: string;
+      }>("/api/payments/create", { orderId }, token);
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      setError(err.message || "No se pudo generar el link de pago.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-outline-variant/15 p-4">
+      <button
+        type="button"
+        onClick={handleRetry}
+        disabled={loading}
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#009EE3] py-2.5 font-headline text-sm font-bold text-white shadow-lg shadow-[#009EE3]/25 active:scale-[0.98] disabled:opacity-60"
+      >
+        {loading ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <RefreshCw size={14} />
+        )}
+        Reintentar pago
+      </button>
+      {error && <p className="mt-2 text-center text-xs text-error">{error}</p>}
+    </div>
+  );
+}
+
+/* ─── Share tracking link ─────────────────────────────────── */
+
+function ShareTrackingButton({ orderNumber }: { orderNumber: number }) {
+  const handleShare = async () => {
+    if (typeof window === "undefined") return;
+    const url = window.location.href;
+    const text = `Sigue mi pedido #${orderNumber} de Pollón SJR en tiempo real`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Mi pedido Pollón", text, url });
+        return;
+      } catch {
+        // user cancelled — fall through to WhatsApp
+      }
+    }
+    const wa = `https://wa.me/?text=${encodeURIComponent(text + "\n" + url)}`;
+    window.open(wa, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleShare}
+      className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/25 bg-surface-container px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-on-surface-variant hover:border-primary/40 hover:text-primary"
+    >
+      <Share2 size={12} />
+      Compartir mi pedido
+    </button>
   );
 }

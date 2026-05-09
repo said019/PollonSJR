@@ -44,6 +44,11 @@ interface Promotion {
   name: string;
   description: string | null;
   dayOfWeek: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  code: string | null;
+  maxUses: number | null;
+  usedCount: number;
   price: number; // cents
   active: boolean;
   createdAt: string;
@@ -59,8 +64,12 @@ interface PromotionFormItem {
 interface PromotionFormData {
   name: string;
   description: string;
-  dayOfWeek: number | null; // null = todos los días
-  price: string; // pesos as string (UI input)
+  dayOfWeek: number | null;
+  startTime: string;
+  endTime: string;
+  code: string;
+  maxUses: string;
+  price: string;
   active: boolean;
   items: PromotionFormItem[];
 }
@@ -82,6 +91,10 @@ const emptyForm: PromotionFormData = {
   name: "",
   description: "",
   dayOfWeek: null,
+  startTime: "",
+  endTime: "",
+  code: "",
+  maxUses: "",
   price: "",
   active: true,
   items: [],
@@ -261,6 +274,21 @@ function PromotionCard({
           <Calendar size={11} />
           {dayLabel(promotion.dayOfWeek)}
         </span>
+        {(promotion.startTime || promotion.endTime) && (
+          <span className="rounded-md bg-surface px-2 py-0.5 font-semibold text-on-surface-variant">
+            {promotion.startTime ?? "—"} a {promotion.endTime ?? "—"}
+          </span>
+        )}
+        {promotion.code && (
+          <code className="rounded-md bg-primary/10 px-2 py-0.5 font-mono font-bold text-primary">
+            {promotion.code}
+          </code>
+        )}
+        {promotion.maxUses != null && (
+          <span className="rounded-md bg-surface px-2 py-0.5 font-semibold text-on-surface-variant">
+            {promotion.usedCount}/{promotion.maxUses} usos
+          </span>
+        )}
         {!promotion.active && (
           <span className="rounded-md bg-error/15 px-2 py-0.5 font-bold uppercase tracking-wider text-error">
             Inactiva
@@ -345,6 +373,10 @@ function PromotionFormDialog({
         name: promotion.name,
         description: promotion.description ?? "",
         dayOfWeek: promotion.dayOfWeek,
+        startTime: promotion.startTime ?? "",
+        endTime: promotion.endTime ?? "",
+        code: promotion.code ?? "",
+        maxUses: promotion.maxUses != null ? String(promotion.maxUses) : "",
         price: (promotion.price / 100).toString(),
         active: promotion.active,
         items: promotion.items.map((it) => ({
@@ -375,6 +407,10 @@ function PromotionFormDialog({
         name: form.name.trim(),
         description: form.description.trim() || null,
         dayOfWeek: form.dayOfWeek,
+        startTime: form.startTime.trim() || null,
+        endTime: form.endTime.trim() || null,
+        code: form.code.trim() ? form.code.trim().toUpperCase() : null,
+        maxUses: form.maxUses ? parseInt(form.maxUses, 10) : null,
         price: priceCents,
         active: form.active,
         items: form.items.map((it) => ({
@@ -519,6 +555,52 @@ function PromotionFormDialog({
               ))}
             </div>
           </Field>
+
+          {/* Time window */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Hora inicio (opcional)">
+              <input
+                type="time"
+                value={form.startTime}
+                onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                className={inputCls + " [color-scheme:dark]"}
+              />
+            </Field>
+            <Field label="Hora fin (opcional)">
+              <input
+                type="time"
+                value={form.endTime}
+                onChange={(e) => setForm({ ...form, endTime: e.target.value })}
+                className={inputCls + " [color-scheme:dark]"}
+              />
+            </Field>
+          </div>
+
+          {/* Code + Max uses */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Código (opcional)">
+              <input
+                type="text"
+                maxLength={30}
+                value={form.code}
+                onChange={(e) =>
+                  setForm({ ...form, code: e.target.value.toUpperCase() })
+                }
+                placeholder="COMBO2X1"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Usos máx (opcional)">
+              <input
+                type="number"
+                min={1}
+                value={form.maxUses}
+                onChange={(e) => setForm({ ...form, maxUses: e.target.value })}
+                placeholder="50"
+                className={inputCls}
+              />
+            </Field>
+          </div>
 
           {/* Price */}
           <Field label="Precio (MXN)">

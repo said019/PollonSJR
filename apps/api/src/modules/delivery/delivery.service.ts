@@ -49,13 +49,21 @@ export class DeliveryService {
     color: string;
     active: boolean;
     sortOrder: number;
+    startTime?: string | null;
+    endTime?: string | null;
   }>) {
     // Delete existing zones and recreate
     await this.app.prisma.$transaction(async (tx) => {
       await tx.deliveryZone.deleteMany();
       for (const zone of zones) {
         const { id, ...data } = zone;
-        await tx.deliveryZone.create({ data });
+        await tx.deliveryZone.create({
+          data: {
+            ...data,
+            startTime: data.startTime ?? null,
+            endTime: data.endTime ?? null,
+          },
+        });
       }
     });
 

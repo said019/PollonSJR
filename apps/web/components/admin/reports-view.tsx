@@ -48,10 +48,17 @@ interface DashboardStats {
 export function ReportsView() {
   const token = getAdminToken();
   const [period, setPeriod] = useState<"7" | "14" | "30">("7");
+  const [typeFilter, setTypeFilter] = useState<"" | "DELIVERY" | "PICKUP">("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-reports", period],
-    queryFn: () => api.get<ReportsData>(`/api/admin/reports?days=${period}`, token || undefined),
+    queryKey: ["admin-reports", period, typeFilter],
+    queryFn: () =>
+      api.get<ReportsData>(
+        `/api/admin/reports?days=${period}${
+          typeFilter ? `&type=${typeFilter}` : ""
+        }`,
+        token || undefined
+      ),
   });
 
   const { data: dashboard } = useQuery({
@@ -84,9 +91,30 @@ export function ReportsView() {
   return (
     <div className="p-6">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Reportes</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-lg bg-surface-container p-0.5">
+            {(
+              [
+                { v: "", l: "Todo" },
+                { v: "DELIVERY", l: "Envío" },
+                { v: "PICKUP", l: "Sucursal" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.v}
+                onClick={() => setTypeFilter(opt.v as typeof typeFilter)}
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                  typeFilter === opt.v
+                    ? "bg-primary text-on-primary shadow-sm"
+                    : "text-on-surface-variant hover:text-on-surface"
+                }`}
+              >
+                {opt.l}
+              </button>
+            ))}
+          </div>
           <button
             onClick={handleCsvExport}
             className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"

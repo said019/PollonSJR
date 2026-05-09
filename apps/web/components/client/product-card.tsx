@@ -7,6 +7,7 @@ import { Plus, Flame, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import Image from "next/image";
 import { resolveProductImage } from "@/lib/product-images";
+import { ProductOptionsModal } from "./product-options-modal";
 
 // Social proof — these are the crowd-pleasers that sell fastest.
 // Showing a badge activates herd-behaviour (Cialdini social proof).
@@ -60,9 +61,15 @@ interface ProductCardProps {
 export function ProductCard({ product, variant = "row", featured = false }: ProductCardProps) {
   const { addItem } = useCart();
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+  const [showOptions, setShowOptions] = useState(false);
   const imageUrl = resolveProductImage(product.name, product.imageUrl);
+  const hasModifiers = !!(product.modifiers && product.modifiers.length > 0);
 
   const handleAdd = () => {
+    if (hasModifiers) {
+      setShowOptions(true);
+      return;
+    }
     const price =
       selectedVariant && product.variants
         ? product.variants.find((v) => v.label === selectedVariant)?.price ?? product.price
@@ -79,6 +86,29 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
     });
   };
 
+  const optionsModal = hasModifiers ? (
+    <ProductOptionsModal
+      open={showOptions}
+      product={product}
+      defaultVariant={selectedVariant}
+      imageUrl={imageUrl}
+      onClose={() => setShowOptions(false)}
+      onConfirm={({ variant: v, modifiers, qty, notes, finalUnitPrice }) => {
+        addItem({
+          productId: product.id,
+          name: product.name,
+          price: finalUnitPrice,
+          qty,
+          variant: v,
+          notes,
+          imageUrl,
+          modifiers,
+        });
+        setShowOptions(false);
+      }}
+    />
+  ) : null;
+
   const priceRange = (() => {
     if (product.variants && product.variants.length > 0) {
       const sorted = [...product.variants].sort((a, b) => a.price - b.price);
@@ -94,6 +124,8 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   // ═══════════════════════════════════════════════════════════
   if (variant === "hero") {
     return (
+      <>
+      {optionsModal}
       <div
         className={`group relative overflow-hidden rounded-3xl border border-outline-variant/15 bg-surface-container transition-all duration-500 hover:border-primary/30 ${
           product.soldOut ? "opacity-50" : ""
@@ -172,6 +204,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
           )}
         </div>
       </div>
+      </>
     );
   }
 
@@ -180,6 +213,8 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   // ═══════════════════════════════════════════════════════════
   if (variant === "grid") {
     return (
+      <>
+      {optionsModal}
       <div
         className={`group relative flex flex-col overflow-hidden rounded-2xl border border-outline-variant/10 bg-surface-container transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-2xl hover:shadow-black/40 ${
           product.soldOut ? "opacity-50" : ""
@@ -240,6 +275,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
           </div>
         </div>
       </div>
+      </>
     );
   }
 
@@ -247,6 +283,8 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   // ROW — horizontal layout (default) for dense mobile lists
   // ═══════════════════════════════════════════════════════════
   return (
+    <>
+    {optionsModal}
     <div
       className={`group flex gap-3.5 rounded-2xl border border-outline-variant/10 bg-surface-container p-3 transition-all duration-300 hover:border-primary/25 ${
         product.soldOut ? "opacity-40" : ""
@@ -317,5 +355,6 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
         <Plus size={16} strokeWidth={2.5} />
       </button>
     </div>
+    </>
   );
 }

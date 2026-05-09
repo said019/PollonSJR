@@ -37,6 +37,22 @@ export class OrdersService {
     const paymentMethod = data.paymentMethod || "CARD";
     const isScheduled = data.isScheduled === true;
 
+    // 0. Validate customer is not blocked
+    const customer = await this.app.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { blocked: true, blockedReason: true },
+    });
+    if (!customer) {
+      throw new Error("Cliente no encontrado");
+    }
+    if (customer.blocked) {
+      throw new Error(
+        customer.blockedReason
+          ? `No es posible procesar tu pedido. Motivo: ${customer.blockedReason}`
+          : "No es posible procesar tu pedido. Contacta a la tienda."
+      );
+    }
+
     // Scheduled orders: validate date is next day
     if (isScheduled) {
       if (!data.scheduledFor) {
@@ -113,16 +129,19 @@ export class OrdersService {
       };
     });
 
-    // 4. Delivery fee
+    // 4. Delivery fee + zone time-window validation
     let deliveryFee = 0;
     if (data.type === "DELIVERY") {
-      if (data.deliveryFee) {
-        deliveryFee = data.deliveryFee;
-      } else if (data.deliveryZoneId) {
+      if (data.deliveryZoneId) {
         const zone = await this.app.prisma.deliveryZone.findUnique({
           where: { id: data.deliveryZoneId },
         });
-        deliveryFee = zone?.fee ?? 0;
+        if (zone && !isScheduled) {
+          assertZoneOpen(zone);
+        }
+        deliveryFee = data.deliveryFee ?? zone?.fee ?? 0;
+      } else if (data.deliveryFee) {
+        deliveryFee = data.deliveryFee;
       }
     }
 
@@ -152,7 +171,8 @@ export class OrdersService {
       ? `Se aplicó tu ${reward.productName ?? "producto"} gratis (-${formatCents(reward.discountAmount)})`
       : null;
 
-    const total = Math.max(0, subtotal - discountAmount + deliveryFee);
+    const tipAmount = Math.max(0, (data as any).tipAmount ?? 0);
+    const total = Math.max(0, subtotal - discountAmount + deliveryFee + tipAmount);
 
     // Scheduled orders: 50% deposit, status SCHEDULED
     let initialStatus: "PENDING_PAYMENT" | "RECEIVED" | "SCHEDULED";
@@ -185,6 +205,7 @@ export class OrdersService {
         subtotal,
         deliveryFee,
         discountAmount,
+        tipAmount,
         total,
         notes: data.notes || null,
         couponId,
@@ -220,6 +241,25 @@ export class OrdersService {
         if (coupon && (coupon.maxUses === null || coupon.usedCount < coupon.maxUses)) {
           await tx.coupon.update({
             where: { id: couponId },
+            data: { usedCount: { increment: 1 } },
+          });
+        }
+      });
+    }
+
+    // 7b. Increment promotion usage if a promotionId was passed in.
+    // Atomically check maxUses inside the transaction.
+    if ((data as any).promotionId) {
+      const promoId = (data as any).promotionId as string;
+      await this.app.prisma.$transaction(async (tx) => {
+        const promo = await tx.promotion.findUnique({ where: { id: promoId } });
+        if (
+          promo &&
+          promo.active &&
+          (promo.maxUses === null || promo.usedCount < promo.maxUses)
+        ) {
+          await tx.promotion.update({
+            where: { id: promoId },
             data: { usedCount: { increment: 1 } },
           });
         }
@@ -318,6 +358,8 @@ export class OrdersService {
       subtotal: order.subtotal,
       deliveryFee: order.deliveryFee,
       discountAmount: order.discountAmount,
+      tipAmount: order.tipAmount,
+      estimatedMinutes: order.estimatedMinutes ?? null,
       address: order.address,
       notes: order.notes,
       cancelReason: order.cancelReason,
@@ -448,7 +490,7 @@ export class OrdersService {
     const orders = await this.app.prisma.order.findMany({
       where: {
         OR: [
-          { status: { in: ["RECEIVED", "PREPARING", "READY", "ON_THE_WAY"] } },
+          { status: { in: ["RECEIVED", "PREPARING", "READY", "ON_THE_WAY", "SCHEDULED"] } },
           // TRANSFER orders awaiting receipt verification
           { status: "PENDING_PAYMENT", paymentMethod: "TRANSFER" },
         ],
@@ -469,6 +511,11 @@ export class OrdersService {
       itemCount: o._count.items,
       createdAt: o.createdAt.toISOString(),
       transferProofUrl: o.transferProofUrl ?? null,
+      estimatedMinutes: o.estimatedMinutes ?? null,
+      isScheduled: o.isScheduled,
+      scheduledFor: o.scheduledFor ? o.scheduledFor.toISOString() : null,
+      depositAmount: o.depositAmount ?? null,
+      remainingAmount: o.remainingAmount ?? null,
     }));
   }
 
@@ -476,13 +523,35 @@ export class OrdersService {
     page: number = 1,
     limit: number = 20,
     dateFrom?: Date,
-    dateTo?: Date
+    dateTo?: Date,
+    filters?: {
+      search?: string;
+      status?: "DELIVERED" | "CANCELLED";
+      type?: "DELIVERY" | "PICKUP";
+    }
   ) {
     const skip = (page - 1) * limit;
 
+    const statusFilter = filters?.status
+      ? { status: filters.status }
+      : { status: { in: ["DELIVERED", "CANCELLED"] as const } };
+
+    const search = filters?.search?.trim();
+    const searchFilter: Record<string, unknown> = {};
+    if (search) {
+      const numeric = parseInt(search.replace(/^#/, ""), 10);
+      const orFilters: any[] = [
+        { customer: { name: { contains: search, mode: "insensitive" } } },
+        { customer: { phone: { contains: search } } },
+      ];
+      if (!isNaN(numeric)) orFilters.push({ orderNumber: numeric });
+      searchFilter.OR = orFilters;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = {
-      status: { in: ["DELIVERED", "CANCELLED"] },
+      ...statusFilter,
+      ...(filters?.type ? { type: filters.type } : {}),
       ...(dateFrom || dateTo
         ? {
             createdAt: {
@@ -491,6 +560,7 @@ export class OrdersService {
             },
           }
         : {}),
+      ...searchFilter,
     };
 
     const [orders, total] = await this.app.prisma.$transaction([
@@ -518,6 +588,7 @@ export class OrdersService {
       })),
       total,
       page,
+      pages: Math.ceil(total / limit),
       totalPages: Math.ceil(total / limit),
     };
   }
@@ -566,6 +637,39 @@ export class OrdersService {
  * Reads from the StoreConfig row in DB; env vars are kept as a backstop
  * so legacy deploys without configured rows keep working.
  */
+
+/**
+ * Throws if the zone has a time window and the current time is outside of it.
+ * Times are HH:MM in México local time.
+ */
+function assertZoneOpen(zone: { name: string; startTime: string | null; endTime: string | null }) {
+  if (!zone.startTime && !zone.endTime) return;
+  // Current local time as HH:MM in MX timezone
+  const now = new Date().toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Mexico_City",
+  });
+  const start = zone.startTime ?? "00:00";
+  const end = zone.endTime ?? "23:59";
+  // Same-day window
+  if (start <= end) {
+    if (now < start || now > end) {
+      throw new Error(
+        `La zona "${zone.name}" solo entrega entre ${start} y ${end}. Hora actual: ${now}.`
+      );
+    }
+    return;
+  }
+  // Overnight window (e.g. 18:00 - 02:00)
+  if (now < start && now > end) {
+    throw new Error(
+      `La zona "${zone.name}" solo entrega entre ${start} y ${end}. Hora actual: ${now}.`
+    );
+  }
+}
+
 async function buildTransferInfo(
   app: FastifyInstance,
   orderNumber: number,

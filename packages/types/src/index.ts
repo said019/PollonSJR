@@ -37,6 +37,7 @@ export interface ClientToServerEvents {
 
 export type OrderStatusType =
   | "PENDING_PAYMENT"
+  | "SCHEDULED"
   | "RECEIVED"
   | "PREPARING"
   | "READY"
@@ -67,6 +68,11 @@ export interface OrderSummary {
   itemCount: number;
   createdAt: string;
   transferProofUrl?: string | null;
+  estimatedMinutes?: number | null;
+  isScheduled?: boolean;
+  scheduledFor?: string | null;
+  depositAmount?: number | null;
+  remainingAmount?: number | null;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -79,6 +85,8 @@ export interface OrderDetail extends OrderSummary {
   subtotal: number;
   deliveryFee: number;
   discountAmount: number;
+  tipAmount?: number;
+  estimatedMinutes?: number | null;
   notes: string | null;
   cancelReason?: string | null;
   rating?: number | null;
@@ -97,6 +105,12 @@ export interface OrderItemDetail {
 
 // ─── Cart Types ─────────────────────────────────────────────
 
+export interface CartItemModifier {
+  name: string;
+  option: string;
+  price: number;
+}
+
 export interface CartItem {
   productId: string;
   name: string;
@@ -105,6 +119,7 @@ export interface CartItem {
   variant: string | null;
   notes: string;
   imageUrl: string | null;
+  modifiers?: CartItemModifier[];
 }
 
 export interface CreateOrderPayload {
@@ -253,6 +268,15 @@ export interface ProductVariant {
   price: number;
 }
 
+export interface ProductModifierPublic {
+  id: string;
+  name: string;
+  required: boolean;
+  minSelect: number;
+  maxSelect: number;
+  options: { label: string; price: number }[];
+}
+
 export interface ProductPublic {
   id: string;
   name: string;
@@ -262,6 +286,8 @@ export interface ProductPublic {
   imageUrl: string | null;
   soldOut: boolean;
   variants: ProductVariant[] | null;
+  emoji?: string | null;
+  modifiers?: ProductModifierPublic[];
 }
 
 export interface MenuByCategory {

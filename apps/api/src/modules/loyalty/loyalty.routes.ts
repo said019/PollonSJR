@@ -12,6 +12,24 @@ import crypto from "crypto";
 
 const PASS_TOKEN_TTL = 5 * 60; // 5 minutes in seconds
 
+function parseAppleUpdateTag(value: string): Date | null {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return new Date(numeric * 1000 - 2000);
+  }
+
+  const parsed = Date.parse(value);
+  if (Number.isFinite(parsed)) {
+    return new Date(parsed - 2000);
+  }
+
+  return null;
+}
+
+function appleUpdateTag(): string {
+  return String(Math.floor(Date.now() / 1000));
+}
+
 // ─── Apple Web Service Protocol v1 ──────────────────────────
 // Mounted at /v1 relative to the prefix loyaltyRoutes is registered with.
 // server.ts registers loyaltyRoutes with prefix "/api/loyalty", so these
@@ -27,12 +45,23 @@ const appleWebServicePlugin: FastifyPluginAsync = async (app) => {
   ): Promise<void> => {
     const authHeader = request.headers.authorization;
     const expectedToken = process.env.APPLE_AUTH_TOKEN;
+    const [scheme, token] = authHeader?.split(/\s+/, 2) ?? [];
+
     if (
       !expectedToken ||
-      !authHeader ||
-      authHeader !== `ApplePass ${expectedToken}`
+      scheme?.toLowerCase() !== "applepass" ||
+      token !== expectedToken
     ) {
-      reply.status(401).send({ error: "Unauthorized" });
+      app.log.warn(
+        {
+          hasExpectedToken: Boolean(expectedToken),
+          hasAuthHeader: Boolean(authHeader),
+          authScheme: scheme || null,
+          tokenLength: token?.length ?? 0,
+        },
+        "Apple Wallet web service unauthorized"
+      );
+      return reply.status(401).send({ error: "Unauthorized" });
     }
   };
 
@@ -69,7 +98,6 @@ const appleWebServicePlugin: FastifyPluginAsync = async (app) => {
     Querystring: { passesUpdatedSince?: string };
   }>(
     "/devices/:deviceId/registrations/:passTypeId",
-    { preHandler: [appleAuth] },
     async (request, reply) => {
       const { deviceId, passTypeId } = request.params;
       const { passesUpdatedSince } = request.query;
@@ -88,21 +116,26 @@ const appleWebServicePlugin: FastifyPluginAsync = async (app) => {
       let updatedSerials: string[] = serials;
 
       if (passesUpdatedSince) {
-        // Apple sends a Unix timestamp (seconds since epoch)
-        const sinceMs = Number(passesUpdatedSince) * 1000;
-        const since = new Date(sinceMs - 2000); // subtract 2s for race conditions
+        const since = parseAppleUpdateTag(passesUpdatedSince);
 
-        const updates = await app.prisma.appleUpdate.findMany({
-          where: {
-            serialNumber: { in: serials },
-            updatedAt: { gt: since },
-          },
-        });
+        if (since) {
+          const updates = await app.prisma.appleUpdate.findMany({
+            where: {
+              serialNumber: { in: serials },
+              updatedAt: { gt: since },
+            },
+          });
 
-        const updatedSet = new Set(
-          updates.map((u: { serialNumber: string }) => u.serialNumber)
-        );
-        updatedSerials = serials.filter((s: string) => updatedSet.has(s));
+          const updatedSet = new Set(
+            updates.map((u: { serialNumber: string }) => u.serialNumber)
+          );
+          updatedSerials = serials.filter((s: string) => updatedSet.has(s));
+        } else {
+          app.log.warn(
+            { passesUpdatedSince },
+            "Apple Wallet sent an invalid update tag; returning all passes"
+          );
+        }
       }
 
       if (updatedSerials.length === 0) {
@@ -111,7 +144,7 @@ const appleWebServicePlugin: FastifyPluginAsync = async (app) => {
 
       return reply.send({
         serialNumbers: updatedSerials,
-        lastUpdated: new Date().toISOString(),
+        lastUpdated: appleUpdateTag(),
       });
     }
   );
@@ -127,6 +160,8 @@ const appleWebServicePlugin: FastifyPluginAsync = async (app) => {
       try {
         const buffer = await walletService.generatePassBuffer(serial);
         reply.header("Content-Type", "application/vnd.apple.pkpass");
+        reply.header("Last-Modified", new Date().toUTCString());
+        reply.header("Cache-Control", "no-cache");
         reply.header(
           "Content-Disposition",
           `attachment; filename="pollon.pkpass"`
@@ -243,6 +278,8 @@ export async function loyaltyRoutes(app: FastifyInstance) {
       try {
         const buffer = await walletService.generatePassBuffer(customerId);
         reply.header("Content-Type", "application/vnd.apple.pkpass");
+        reply.header("Last-Modified", new Date().toUTCString());
+        reply.header("Cache-Control", "no-cache");
         reply.header(
           "Content-Disposition",
           `attachment; filename="pollon.pkpass"`

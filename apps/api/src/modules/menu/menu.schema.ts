@@ -15,9 +15,11 @@ export const createProductSchema = z.object({
   description: z.string().max(500).optional(),
   category: categoryEnum,
   price: z.number().int().positive(),
-  imageUrl: z.string().url().optional(),
+  emoji: z.string().max(8).optional(),
+  imageUrl: z.string().url().nullable().optional().or(z.literal("").transform(() => null)),
   variants: z
-    .array(z.object({ label: z.string(), price: z.number().int().positive() }))
+    .array(z.object({ label: z.string().min(1).max(50), price: z.number().int().min(0) }))
+    .nullable()
     .optional(),
   sortOrder: z.number().int().default(0),
 });
@@ -25,4 +27,18 @@ export const createProductSchema = z.object({
 export const updateProductSchema = createProductSchema.partial().extend({
   active: z.boolean().optional(),
   soldOut: z.boolean().optional(),
+});
+
+export const modifierSchema = z.object({
+  name: z.string().min(1).max(80),
+  required: z.boolean().default(false),
+  minSelect: z.number().int().min(0).default(0),
+  maxSelect: z.number().int().min(1).default(1),
+  options: z.array(
+    z.object({
+      label: z.string().min(1).max(60),
+      price: z.number().int().min(0).default(0),
+    })
+  ).min(1),
+  sortOrder: z.number().int().default(0),
 });

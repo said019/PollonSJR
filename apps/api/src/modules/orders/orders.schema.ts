@@ -5,6 +5,8 @@ export const createOrderSchema = z.object({
   paymentMethod: z.enum(["CARD", "CASH", "TRANSFER"]).default("CARD"),
   cashAmount: z.number().int().positive().optional(),
   couponCode: z.string().max(50).optional(),
+  promotionId: z.string().max(50).optional(),
+  tipAmount: z.number().int().min(0).max(500000).optional(),
   // Scheduled orders (day ahead)
   isScheduled: z.boolean().optional(),
   scheduledFor: z.string().datetime().optional(),

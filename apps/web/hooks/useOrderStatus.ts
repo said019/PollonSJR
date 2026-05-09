@@ -6,6 +6,7 @@ import type { OrderStatusType } from "@pollon/types";
 
 const STATUS_MESSAGES: Record<OrderStatusType, string> = {
   PENDING_PAYMENT: "Esperando confirmación de pago...",
+  SCHEDULED: "Pedido programado para más tarde.",
   RECEIVED: "¡Pedido recibido! Lo están revisando.",
   PREPARING: "Tu pollo está en la freidora",
   READY: "¡Listo para recoger!",

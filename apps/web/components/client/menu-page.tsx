@@ -12,6 +12,7 @@ import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star } from "lucid
 import { StoreStatusBanner } from "./store-status-banner";
 import { ActiveOrderBanner } from "./active-order-banner";
 import { InstallAppBanner } from "./install-app-banner";
+import { ReorderSection } from "./reorder-section";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -609,6 +610,11 @@ export function MenuPage() {
 
               {/* Featured hero — shown when not searching */}
               {!searchQuery && featured && <FeaturedHero product={featured} />}
+
+              {/* Reorder section — shown when authed and has past orders */}
+              {!searchQuery && authed && (
+                <ReorderSection token={authToken} />
+              )}
 
               {/* Search empty state */}
               {searchQuery && filteredMenu.length === 0 && (

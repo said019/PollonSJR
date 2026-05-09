@@ -17,6 +17,8 @@ model Customer {
   name           String?
   address        String?
   internalNote   String?
+  blocked        Boolean        @default(false)
+  blockedReason  String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @default(now()) @updatedAt
   orders         Order[]
@@ -80,6 +82,11 @@ model Promotion {
   name        String
   description String?
   dayOfWeek   Int?
+  startTime   String?
+  endTime     String?
+  code        String?         @unique
+  maxUses     Int?
+  usedCount   Int             @default(0)
   price       Int
   active      Boolean         @default(true)
   items       PromotionItem[]
@@ -125,6 +132,7 @@ model Order {
   subtotal         Int
   deliveryFee      Int              @default(0)
   discountAmount   Int              @default(0)
+  tipAmount        Int              @default(0)
   total            Int
   notes            String?
   estimatedMinutes Int?
@@ -351,6 +359,8 @@ model DeliveryZone {
   color     String  @default("#F07820")
   active    Boolean @default(true)
   sortOrder Int     @default(0)
+  startTime String?
+  endTime   String?
 }
 
 model StoreLocation {

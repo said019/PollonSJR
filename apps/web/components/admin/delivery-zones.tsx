@@ -31,6 +31,8 @@ interface ZoneForm {
   color: string;
   active: boolean;
   sortOrder: number;
+  startTime?: string | null;
+  endTime?: string | null;
 }
 
 function AdminDeliveryPageInner() {
@@ -115,6 +117,8 @@ function AdminDeliveryPageInner() {
         color: "#F07820",
         active: true,
         sortOrder: newIdx,
+        startTime: null,
+        endTime: null,
       },
     ]);
     setExpandedZone(newIdx);
@@ -317,6 +321,43 @@ function AdminDeliveryPageInner() {
                           </span>
                         </div>
                       </div>
+
+                      {/* Time window per zone */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-on-surface-variant">
+                            Hora inicio (opcional)
+                          </label>
+                          <input
+                            type="time"
+                            value={zone.startTime ?? ""}
+                            onChange={(e) =>
+                              updateZone(idx, "startTime", e.target.value || null)
+                            }
+                            className="w-full border rounded-lg p-2 text-sm [color-scheme:dark]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-on-surface-variant">
+                            Hora fin (opcional)
+                          </label>
+                          <input
+                            type="time"
+                            value={zone.endTime ?? ""}
+                            onChange={(e) =>
+                              updateZone(idx, "endTime", e.target.value || null)
+                            }
+                            className="w-full border rounded-lg p-2 text-sm [color-scheme:dark]"
+                          />
+                        </div>
+                      </div>
+                      {(zone.startTime || zone.endTime) && (
+                        <p className="text-[11px] text-on-surface-variant">
+                          La zona solo aceptará pedidos entre {zone.startTime ?? "—"} y{" "}
+                          {zone.endTime ?? "—"}.
+                        </p>
+                      )}
+
                       <div className="flex justify-end">
                         <button
                           onClick={() => removeZone(idx)}

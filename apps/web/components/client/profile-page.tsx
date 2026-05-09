@@ -74,6 +74,7 @@ const STATUS_META: Record<
   { label: string; icon: React.ReactNode; className: string }
 > = {
   PENDING_PAYMENT: { label: "Pago pendiente", icon: <Clock size={12} />, className: "bg-amber-500/15 text-amber-400" },
+  SCHEDULED: { label: "Programado", icon: <Clock size={12} />, className: "bg-sky-500/15 text-sky-400" },
   RECEIVED: { label: "Recibido", icon: <CheckCircle size={12} />, className: "bg-blue-500/15 text-blue-400" },
   PREPARING: { label: "Preparando", icon: <ChefHat size={12} />, className: "bg-orange-500/15 text-orange-400" },
   READY: { label: "Listo", icon: <Package size={12} />, className: "bg-green-500/15 text-green-400" },

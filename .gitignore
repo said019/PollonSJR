@@ -12,4 +12,6 @@ coverage/
 dump.rdb
 *.rdb
 .vercel
+.claude/
+*.tsbuildinfo
 

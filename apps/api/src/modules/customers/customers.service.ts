@@ -6,7 +6,15 @@ export class CustomersService {
   async getProfile(customerId: string) {
     return this.app.prisma.customer.findUnique({
       where: { id: customerId },
-      select: { id: true, phone: true, name: true, address: true, createdAt: true },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        address: true,
+        createdAt: true,
+        blocked: true,
+        blockedReason: true,
+      },
     });
   }
 
@@ -23,7 +31,14 @@ export class CustomersService {
     const [orders, total] = await this.app.prisma.$transaction([
       this.app.prisma.order.findMany({
         where: { customerId },
-        include: { _count: { select: { items: true } } },
+        include: {
+          _count: { select: { items: true } },
+          items: {
+            include: {
+              product: { select: { id: true, name: true, emoji: true, imageUrl: true } },
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
@@ -40,6 +55,13 @@ export class CustomersService {
         total: o.total,
         itemCount: o._count.items,
         createdAt: o.createdAt.toISOString(),
+        items: o.items.map((it) => ({
+          productId: it.productId,
+          productName: it.product.name,
+          qty: it.qty,
+          variant: it.variant,
+          unitPrice: it.unitPrice,
+        })),
       })),
       total,
       page,
