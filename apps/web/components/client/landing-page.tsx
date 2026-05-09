@@ -374,14 +374,17 @@ function HeroSection() {
               className="group relative bg-primary text-on-primary px-8 py-4 rounded-2xl font-headline font-bold text-lg shadow-2xl hover:scale-105 transition-all active:scale-95 animate-pulse-glow"
             >
               Prueba el Sabor
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full animate-ping" />
+              <span
+                aria-hidden
+                className="absolute -top-1 -right-1 w-3 h-3 bg-secondary rounded-full animate-ping"
+              />
             </Link>
-            <Link
-              href="/menu"
+            <a
+              href="#como-pedir"
               className="bg-surface-container-high/80 backdrop-blur text-tertiary px-8 py-4 rounded-2xl font-headline font-bold text-lg border border-outline-variant/30 hover:border-primary/40 hover:bg-surface-variant transition-all"
             >
-              Ver Menú
-            </Link>
+              Cómo funciona
+            </a>
           </div>
         </div>
       </div>
@@ -848,7 +851,7 @@ function LoyaltySection() {
   return (
     <section id="rewards" className="py-28 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
-        <div className="bg-gradient-to-br from-[#1C1917] to-[#0C0A09] rounded-[2rem] overflow-hidden border border-outline-variant/10 shadow-2xl">
+        <div className="bg-gradient-to-br from-surface-container-high to-surface rounded-[2rem] overflow-hidden border border-outline-variant/10 shadow-2xl">
           <div className="grid grid-cols-1 lg:grid-cols-2">
             {/* Left — text */}
             <div className="p-10 lg:p-16 flex flex-col justify-center">
@@ -895,7 +898,7 @@ function LoyaltySection() {
               <div className="absolute inset-0 grain" />
 
               {/* Card */}
-              <div className="relative z-10 w-full max-w-xs aspect-[3/4.5] bg-gradient-to-br from-[#292524] via-[#1C1917] to-[#0C0A09] rounded-[1.75rem] p-7 shadow-2xl border border-outline-variant/20">
+              <div className="relative z-10 w-full max-w-xs aspect-[3/4.5] bg-gradient-to-br from-surface-container-highest via-surface-container-high to-surface rounded-[1.75rem] p-7 shadow-2xl border border-outline-variant/20">
                 {/* Card header */}
                 <div className="flex justify-between items-start mb-10">
                   <span className="text-primary font-headline font-extrabold text-lg tracking-tight">
@@ -1182,6 +1185,19 @@ function LocationSection() {
 /*  Footer — minimal + large watermark typography                 */
 /* ────────────────────────────────────────────────────────────── */
 function Footer() {
+  // Social links — only render the ones with a URL configured.
+  const socials = [
+    { label: "Instagram", url: process.env.NEXT_PUBLIC_INSTAGRAM_URL },
+    { label: "TikTok", url: process.env.NEXT_PUBLIC_TIKTOK_URL },
+    {
+      label: "WhatsApp",
+      url: process.env.NEXT_PUBLIC_WHATSAPP_URL ||
+        (process.env.NEXT_PUBLIC_STORE_PHONE
+          ? `https://wa.me/${process.env.NEXT_PUBLIC_STORE_PHONE.replace(/\D/g, "")}`
+          : undefined),
+    },
+  ].filter((s): s is { label: string; url: string } => !!s.url);
+
   return (
     <footer className="relative overflow-hidden border-t border-outline-variant/10 bg-surface">
       {/* Large watermark */}
@@ -1203,7 +1219,7 @@ function Footer() {
                 POLLÓN<span className="text-primary">.</span>
               </span>
             </div>
-            <p className="text-on-surface-variant/60 font-body text-sm leading-relaxed max-w-xs">
+            <p className="text-on-surface-variant font-body text-sm leading-relaxed max-w-xs">
               Nacidos en San Juan del Río. Criados para el crunch. Herencia de
               alto voltaje servida fresca a diario.
             </p>
@@ -1216,17 +1232,17 @@ function Footer() {
             </h5>
             <ul className="space-y-3">
               <li>
-                <Link href="/menu" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                <Link href="/menu" className="text-on-surface-variant hover:text-primary text-sm transition-colors">
                   Menú
                 </Link>
               </li>
               <li>
-                <a href="#rewards" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                <a href="#rewards" className="text-on-surface-variant hover:text-primary text-sm transition-colors">
                   Rewards
                 </a>
               </li>
               <li>
-                <a href="#location" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                <a href="#location" className="text-on-surface-variant hover:text-primary text-sm transition-colors">
                   Ubicación
                 </a>
               </li>
@@ -1239,45 +1255,53 @@ function Footer() {
             </h5>
             <ul className="space-y-3">
               <li>
-                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                <Link
+                  href="/legal/privacidad"
+                  className="text-on-surface-variant hover:text-primary text-sm transition-colors"
+                >
                   Privacidad
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                <Link
+                  href="/legal/terminos"
+                  className="text-on-surface-variant hover:text-primary text-sm transition-colors"
+                >
                   Términos
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
+                <Link
+                  href="/legal/alergenos"
+                  className="text-on-surface-variant hover:text-primary text-sm transition-colors"
+                >
                   Alérgenos
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
 
-          <div className="md:col-span-2">
-            <h5 className="text-xs font-headline font-bold text-tertiary uppercase tracking-[0.2em] mb-5">
-              Contacto
-            </h5>
-            <ul className="space-y-3">
-              <li>
-                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
-                  Instagram
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
-                  TikTok
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-on-surface-variant/50 hover:text-primary text-sm transition-colors">
-                  WhatsApp
-                </a>
-              </li>
-            </ul>
-          </div>
+          {socials.length > 0 && (
+            <div className="md:col-span-2">
+              <h5 className="text-xs font-headline font-bold text-tertiary uppercase tracking-[0.2em] mb-5">
+                Contacto
+              </h5>
+              <ul className="space-y-3">
+                {socials.map((s) => (
+                  <li key={s.label}>
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-on-surface-variant hover:text-primary text-sm transition-colors"
+                    >
+                      {s.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* SJR badge */}
           <div className="md:col-span-2 flex md:justify-end items-start">
@@ -1285,8 +1309,8 @@ function Footer() {
               <div className="text-outline-variant/30 font-headline font-extrabold text-5xl uppercase leading-none mb-2">
                 SJR
               </div>
-              <p className="text-on-surface-variant/30 text-[10px] font-bold uppercase tracking-wider">
-                &copy;2025 POLLÓN SJR
+              <p className="text-on-surface-variant/60 text-[10px] font-bold uppercase tracking-wider">
+                &copy;{new Date().getFullYear()} POLLÓN SJR
               </p>
             </div>
           </div>
@@ -1356,12 +1380,18 @@ export function LandingPage() {
 
   return (
     <>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-on-primary focus:font-bold focus:outline-none"
+      >
+        Saltar al contenido
+      </a>
       <NavBar
         authed={authed}
         onLogin={() => setAuthOpen(true)}
         onLogout={handleLogout}
       />
-      <main>
+      <main id="main">
         <HeroSection />
         <MarqueeStrip />
         <MenuHighlights

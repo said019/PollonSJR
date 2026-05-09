@@ -134,6 +134,25 @@ body {
 .delay-400 { animation-delay: 400ms; }
 .delay-500 { animation-delay: 500ms; }
 
+/* ─── Reduced motion ────────────────────────────────────────── */
+/* Respect users with vestibular disorders / motion sensitivity. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-float,
+  .animate-pulse-glow,
+  .animate-marquee,
+  .animate-spin-slow {
+    animation: none !important;
+  }
+}
+
 /* ─── Selection ─────────────────────────────────────────────── */
 
 ::selection {
