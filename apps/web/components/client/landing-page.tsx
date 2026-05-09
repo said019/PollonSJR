@@ -2,10 +2,41 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { getToken, clearTokens } from "@/lib/auth";
+import { formatCents } from "@pollon/utils";
+import type { MenuByCategory, ProductPublic } from "@pollon/types";
 import { AuthModal } from "./auth-modal";
-import { User, LogOut, Star } from "lucide-react";
+import {
+  User,
+  LogOut,
+  Star,
+  Menu as MenuIcon,
+  X,
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  MapPin,
+} from "lucide-react";
+
+interface PublicPromotion {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  items: Array<{
+    productId: string;
+    productName: string;
+    emoji: string | null;
+    qty: number;
+    variant: string | null;
+  }>;
+}
+
+const STORE_LAT = parseFloat(process.env.NEXT_PUBLIC_STORE_LAT || "20.5881");
+const STORE_LNG = parseFloat(process.env.NEXT_PUBLIC_STORE_LNG || "-99.9953");
 
 /* ────────────────────────────────────────────────────────────── */
 /*  NavBar — frosted glass with warm char tones                   */
@@ -19,96 +50,246 @@ function NavBar({
   onLogin: () => void;
   onLogout: () => void;
 }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close drawer on resize to desktop
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 768) setMobileOpen(false);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Lock scroll when drawer is open
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileOpen]);
+
   return (
-    <nav className="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/10">
-      <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-primary/20">
-            <Image
-              src="/pollon-logo.jpg"
-              alt="Pollón SJR"
-              width={40}
-              height={40}
-              className="w-full h-full object-cover"
-            />
-          </div>
-          <span className="text-xl font-headline font-extrabold text-tertiary tracking-tight">
-            POLLÓN<span className="text-primary">.</span>
-          </span>
-        </Link>
-
-        {/* Nav links — desktop */}
-        <div className="hidden md:flex items-center gap-8 font-headline font-semibold text-sm tracking-tight">
-          <Link href="/menu" className="text-primary hover:text-primary-fixed transition-colors">
-            Menú
+    <>
+      <nav className="fixed top-0 w-full z-50 bg-surface/70 backdrop-blur-xl border-b border-outline-variant/10">
+        <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg border border-primary/20">
+              <Image
+                src="/pollon-logo.jpg"
+                alt="Pollón SJR"
+                width={40}
+                height={40}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <span className="text-xl font-headline font-extrabold text-tertiary tracking-tight">
+              POLLÓN<span className="text-primary">.</span>
+            </span>
           </Link>
-          <a href="#como-pedir" className="text-on-surface-variant hover:text-tertiary transition-colors">
-            Cómo Pedir
-          </a>
-          <a href="#proceso" className="text-on-surface-variant hover:text-tertiary transition-colors">
-            El Proceso
-          </a>
-          {authed ? (
-            <Link href="/loyalty" className="text-secondary hover:text-secondary-fixed transition-colors flex items-center gap-1.5">
-              <Star size={14} />
-              Mi Lealtad
+
+          {/* Nav links — desktop */}
+          <div className="hidden md:flex items-center gap-8 font-headline font-semibold text-sm tracking-tight">
+            <Link href="/menu" className="text-primary hover:text-primary-fixed transition-colors">
+              Menú
             </Link>
-          ) : (
-            <a href="#rewards" className="text-on-surface-variant hover:text-tertiary transition-colors">
-              Rewards
+            <a href="#como-pedir" className="text-on-surface-variant hover:text-tertiary transition-colors">
+              Cómo Pedir
             </a>
-          )}
-          <a href="#location" className="text-on-surface-variant hover:text-tertiary transition-colors">
-            Ubicación
-          </a>
-        </div>
-
-        {/* Auth + CTA */}
-        <div className="flex items-center gap-3">
-          {authed ? (
-            <>
-              <Link
-                href="/loyalty"
-                className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl border border-secondary/30 text-xs font-headline font-bold text-secondary hover:bg-secondary/10 transition-colors"
-              >
+            <a href="#proceso" className="text-on-surface-variant hover:text-tertiary transition-colors">
+              El Proceso
+            </a>
+            {authed ? (
+              <Link href="/loyalty" className="text-secondary hover:text-secondary-fixed transition-colors flex items-center gap-1.5">
                 <Star size={14} />
-                Mi Tarjeta
+                Mi Lealtad
               </Link>
-              <Link
-                href="/profile"
-                title="Mi perfil"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-outline-variant/30 text-xs font-headline font-bold text-on-surface hover:border-primary hover:text-primary transition-colors"
-              >
-                <User size={14} />
-                <span className="hidden sm:inline">Mi perfil</span>
-              </Link>
-              <button
-                onClick={onLogout}
-                title="Cerrar sesión"
-                className="p-2 rounded-xl text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
-              >
-                <LogOut size={18} />
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={onLogin}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-headline font-bold text-on-surface hover:border-primary hover:text-primary transition-colors"
+            ) : (
+              <a href="#rewards" className="text-on-surface-variant hover:text-tertiary transition-colors">
+                Rewards
+              </a>
+            )}
+            <a href="#location" className="text-on-surface-variant hover:text-tertiary transition-colors">
+              Ubicación
+            </a>
+          </div>
+
+          {/* Right side — auth + CTA + mobile hamburger */}
+          <div className="flex items-center gap-3">
+            {/* Desktop auth + CTA */}
+            <div className="hidden md:flex items-center gap-3">
+              {authed ? (
+                <>
+                  <Link
+                    href="/loyalty"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-secondary/30 text-xs font-headline font-bold text-secondary hover:bg-secondary/10 transition-colors"
+                  >
+                    <Star size={14} />
+                    Mi Tarjeta
+                  </Link>
+                  <Link
+                    href="/profile"
+                    title="Mi perfil"
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-outline-variant/30 text-xs font-headline font-bold text-on-surface hover:border-primary hover:text-primary transition-colors"
+                  >
+                    <User size={14} />
+                    <span className="hidden sm:inline">Mi perfil</span>
+                  </Link>
+                  <button
+                    onClick={onLogout}
+                    aria-label="Cerrar sesión"
+                    title="Cerrar sesión"
+                    className="p-2 rounded-xl text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+                  >
+                    <LogOut size={18} />
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={onLogin}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-headline font-bold text-on-surface hover:border-primary hover:text-primary transition-colors"
+                >
+                  <User size={15} />
+                  Entrar
+                </button>
+              )}
+            </div>
+
+            {/* Always visible: Ordenar Ya */}
+            <Link
+              href="/menu"
+              className="bg-primary text-on-primary px-4 sm:px-5 py-2.5 rounded-xl font-headline font-bold text-xs sm:text-sm tracking-tight hover:brightness-110 transition-all active:scale-95 glow-primary"
             >
-              <User size={15} />
-              Entrar
+              Ordenar Ya
+            </Link>
+
+            {/* Mobile hamburger */}
+            <button
+              onClick={() => setMobileOpen(true)}
+              aria-label="Abrir menú"
+              aria-expanded={mobileOpen}
+              className="md:hidden p-2 rounded-xl border border-outline-variant/30 text-on-surface hover:border-primary/40 hover:text-primary transition-colors"
+            >
+              <MenuIcon size={20} />
             </button>
-          )}
-          <Link
-            href="/menu"
-            className="bg-primary text-on-primary px-5 py-2.5 rounded-xl font-headline font-bold text-sm tracking-tight hover:brightness-110 transition-all active:scale-95 glow-primary"
-          >
-            Ordenar Ya
-          </Link>
+          </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+
+      {/* Mobile drawer */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside
+            role="dialog"
+            aria-label="Menú de navegación"
+            className="absolute right-0 top-0 h-full w-72 max-w-[85vw] bg-surface-container-high border-l border-outline-variant/15 shadow-2xl flex flex-col"
+          >
+            <div className="flex items-center justify-between border-b border-outline-variant/15 px-5 py-4">
+              <span className="text-lg font-headline font-extrabold text-tertiary tracking-tight">
+                POLLÓN<span className="text-primary">.</span>
+              </span>
+              <button
+                onClick={() => setMobileOpen(false)}
+                aria-label="Cerrar menú"
+                className="rounded-lg p-2 text-on-surface-variant hover:bg-surface-variant"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+              <Link
+                href="/menu"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-3 py-3 rounded-xl bg-primary/10 font-headline font-bold text-sm text-primary"
+              >
+                Menú completo
+              </Link>
+              <a
+                href="#como-pedir"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center px-3 py-3 rounded-xl font-headline font-semibold text-sm text-on-surface hover:bg-surface-variant"
+              >
+                Cómo pedir
+              </a>
+              <a
+                href="#proceso"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center px-3 py-3 rounded-xl font-headline font-semibold text-sm text-on-surface hover:bg-surface-variant"
+              >
+                El proceso
+              </a>
+              {authed ? (
+                <Link
+                  href="/loyalty"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-3 px-3 py-3 rounded-xl font-headline font-semibold text-sm text-secondary hover:bg-surface-variant"
+                >
+                  <Star size={14} />
+                  Mi tarjeta de lealtad
+                </Link>
+              ) : (
+                <a
+                  href="#rewards"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center px-3 py-3 rounded-xl font-headline font-semibold text-sm text-on-surface hover:bg-surface-variant"
+                >
+                  Rewards
+                </a>
+              )}
+              <a
+                href="#location"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center px-3 py-3 rounded-xl font-headline font-semibold text-sm text-on-surface hover:bg-surface-variant"
+              >
+                Ubicación
+              </a>
+            </nav>
+
+            <div className="border-t border-outline-variant/15 p-4 space-y-2">
+              {authed ? (
+                <>
+                  <Link
+                    href="/profile"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-2 w-full justify-center px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-headline font-bold text-on-surface"
+                  >
+                    <User size={15} />
+                    Mi perfil
+                  </Link>
+                  <button
+                    onClick={() => {
+                      onLogout();
+                      setMobileOpen(false);
+                    }}
+                    className="flex items-center gap-2 w-full justify-center px-4 py-2.5 rounded-xl text-sm font-headline font-bold text-error hover:bg-error/10"
+                  >
+                    <LogOut size={15} />
+                    Cerrar sesión
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    onLogin();
+                    setMobileOpen(false);
+                  }}
+                  className="flex items-center gap-2 w-full justify-center px-4 py-2.5 rounded-xl border border-outline-variant/30 text-sm font-headline font-bold text-on-surface"
+                >
+                  <User size={15} />
+                  Iniciar sesión
+                </button>
+              )}
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -227,7 +408,13 @@ function MarqueeStrip() {
 /* ────────────────────────────────────────────────────────────── */
 /*  Menu Highlights — bento grid with overlapping cards           */
 /* ────────────────────────────────────────────────────────────── */
-function MenuHighlights() {
+function MenuHighlights({
+  comboFamiliar,
+  todaysPromo,
+}: {
+  comboFamiliar: ProductPublic | null;
+  todaysPromo: PublicPromotion | null;
+}) {
   return (
     <section className="py-24 px-6 lg:px-12 max-w-7xl mx-auto relative">
       {/* Section header */}
@@ -253,31 +440,40 @@ function MenuHighlights() {
 
       {/* Bento Grid */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-5">
-        {/* Large Card */}
-        <div className="md:col-span-7 group relative rounded-3xl overflow-hidden min-h-[420px] cursor-pointer">
+        {/* Large Card — Combo Familiar (real data) */}
+        <Link
+          href="/menu"
+          className="md:col-span-7 group relative rounded-3xl overflow-hidden min-h-[420px] block"
+        >
           <Image
-            src="/menu/combo-familiar.jpeg"
-            alt="Combo Familiar: pollo frito con bisquets, ensalada, puré de papa y pasta"
+            src={comboFamiliar?.imageUrl || "/menu/combo-familiar.jpeg"}
+            alt={
+              comboFamiliar?.description ??
+              "Combo Familiar: pollo frito con bisquets y complementos"
+            }
             fill
             className="object-cover transition-transform duration-700 group-hover:scale-105"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-          {/* Price sticker */}
-          <div className="absolute top-5 right-5 bg-secondary text-on-secondary px-3 py-1.5 rounded-full font-headline font-extrabold text-lg shadow-lg rotate-3">
-            $549
-          </div>
+          {/* Price sticker — real price */}
+          {comboFamiliar && (
+            <div className="absolute top-5 right-5 bg-secondary text-on-secondary px-3 py-1.5 rounded-full font-headline font-extrabold text-lg shadow-lg rotate-3">
+              {formatCents(comboFamiliar.price)}
+            </div>
+          )}
           <div className="absolute bottom-0 left-0 p-7 md:p-9">
             <span className="bg-primary/20 text-primary border border-primary/30 backdrop-blur-sm px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full mb-3 inline-block">
               Mejor Precio
             </span>
             <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-white uppercase tracking-tighter leading-none mb-2">
-              El Combo Familiar
+              {comboFamiliar?.name ?? "El Combo Familiar"}
             </h3>
-            <p className="text-white/70 font-body text-sm max-w-sm">
-              12 piezas, 3 guarniciones y 4 salsas de alto voltaje.
+            <p className="text-white/70 font-body text-sm max-w-sm line-clamp-3">
+              {comboFamiliar?.description ??
+                "Pollo frito con bisquets y complementos para toda la familia."}
             </p>
           </div>
-        </div>
+        </Link>
 
         {/* Tall Vertical Card */}
         <div className="md:col-span-5 group relative rounded-3xl overflow-hidden min-h-[420px] cursor-pointer">
@@ -324,28 +520,48 @@ function MenuHighlights() {
           </div>
         </div>
 
-        {/* Promo Card (no image) */}
-        <div className="md:col-span-7 relative rounded-3xl overflow-hidden bg-gradient-to-br from-primary via-primary-dim to-primary-container p-8 md:p-10 flex flex-col justify-between min-h-[320px] group grain">
+        {/* Promo Card — real promotion of the day or generic fallback */}
+        <Link
+          href="/menu"
+          className="md:col-span-7 relative rounded-3xl overflow-hidden bg-gradient-to-br from-primary via-primary-dim to-primary-container p-8 md:p-10 flex flex-col justify-between min-h-[320px] group grain"
+        >
           <div className="relative z-10">
             <span className="text-on-primary/60 text-xs font-headline font-bold uppercase tracking-[0.3em] block mb-2">
-              Próxima Semana
+              {todaysPromo ? "Promo de hoy" : "Promociones"}
             </span>
             <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-on-primary uppercase tracking-tighter mb-4 leading-tight">
-              Ghost Pepper<br />Glaze Series
+              {todaysPromo
+                ? todaysPromo.name
+                : (
+                  <>
+                    Combos<br />Para Compartir
+                  </>
+                )}
             </h3>
-            <p className="text-on-primary/80 font-body max-w-sm">
-              Edición limitada solo en SJR Centro. Prepárate para el fuego.
+            <p className="text-on-primary/80 font-body max-w-sm line-clamp-3">
+              {todaysPromo?.description ??
+                "Pareja, Familiar, Extra o Jumbo. Todos con bisquets y complementos."}
             </p>
           </div>
           <div className="relative z-10 flex items-end justify-between mt-6">
-            <span className="text-7xl md:text-8xl font-headline font-extrabold text-on-primary/10 uppercase leading-none">
-              LTD
-            </span>
-            <span className="material-symbols-outlined text-on-primary/30 text-5xl group-hover:rotate-12 transition-transform duration-500" style={{ fontVariationSettings: "'FILL' 1" }}>
+            {todaysPromo ? (
+              <span className="text-5xl md:text-6xl font-headline font-extrabold text-on-primary leading-none">
+                {formatCents(todaysPromo.price)}
+              </span>
+            ) : (
+              <span className="text-7xl md:text-8xl font-headline font-extrabold text-on-primary/10 uppercase leading-none">
+                COMBO
+              </span>
+            )}
+            <span
+              className="material-symbols-outlined text-on-primary/30 text-5xl group-hover:rotate-12 transition-transform duration-500"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+              aria-hidden
+            >
               whatshot
             </span>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Mobile link */}
@@ -736,6 +952,172 @@ function LoyaltySection() {
 /* ────────────────────────────────────────────────────────────── */
 /*  Location Section — map + delivery estimator                   */
 /* ────────────────────────────────────────────────────────────── */
+function DeliveryEstimator() {
+  const [address, setAddress] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<
+    | null
+    | {
+        ok: true;
+        zoneName: string;
+        feeMXN: string;
+        distanceKm: number;
+        estimatedMinutes?: number;
+      }
+    | { ok: false; reason: string }
+  >(null);
+
+  const handleEstimate = async () => {
+    const q = address.trim();
+    if (!q) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      // 1. Geocode via Nominatim (free, public, no API key)
+      const params = new URLSearchParams({
+        q: `${q}, San Juan del Río, Querétaro, México`,
+        format: "json",
+        limit: "1",
+        countrycodes: "mx",
+      });
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+        { headers: { Accept: "application/json" } }
+      );
+      const geo = (await geoRes.json()) as Array<{ lat: string; lon: string }>;
+      if (!geo[0]) {
+        setResult({
+          ok: false,
+          reason: "No encontramos esa dirección. Sé más específico.",
+        });
+        return;
+      }
+      const lat = parseFloat(geo[0].lat);
+      const lng = parseFloat(geo[0].lon);
+
+      // 2. Hit our delivery/calculate endpoint
+      const fee = await api.post<{
+        available: boolean;
+        zoneName?: string;
+        feeMXN?: string;
+        distanceKm: number;
+        estimatedMinutes?: number;
+        reason?: string;
+      }>("/api/delivery/calculate", { lat, lng });
+
+      if (!fee.available) {
+        setResult({
+          ok: false,
+          reason: fee.reason || "Tu dirección está fuera de cobertura.",
+        });
+        return;
+      }
+      setResult({
+        ok: true,
+        zoneName: fee.zoneName ?? "Zona disponible",
+        feeMXN: fee.feeMXN ?? "—",
+        distanceKm: fee.distanceKm,
+        estimatedMinutes: fee.estimatedMinutes,
+      });
+    } catch {
+      setResult({
+        ok: false,
+        reason: "No pudimos calcular ahora. Intenta de nuevo.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-surface-container rounded-2xl p-6 border border-outline-variant/15">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+          <MapPin size={16} className="text-primary" />
+        </div>
+        <h4 className="font-headline font-bold text-sm uppercase tracking-tight">
+          ¿Llegamos a tu casa?
+        </h4>
+      </div>
+      <div className="space-y-3">
+        <label htmlFor="estimator-address" className="sr-only">
+          Tu dirección en San Juan del Río
+        </label>
+        <input
+          id="estimator-address"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void handleEstimate();
+          }}
+          className="w-full bg-surface-container-highest rounded-xl p-3.5 text-sm text-on-surface border border-outline-variant/15 focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-all placeholder:text-on-surface-variant/40"
+          placeholder="Ej: Av. Juárez Norte 123, Centro"
+          type="text"
+          autoComplete="street-address"
+          disabled={loading}
+        />
+        <button
+          onClick={() => void handleEstimate()}
+          disabled={loading || !address.trim()}
+          className="w-full bg-primary text-on-primary py-3 rounded-xl font-headline font-bold text-sm uppercase tracking-wider hover:brightness-110 transition-all active:scale-[0.98] disabled:opacity-50 inline-flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Calculando…
+            </>
+          ) : (
+            "Verificar dirección"
+          )}
+        </button>
+      </div>
+
+      {/* Result */}
+      {result && result.ok && (
+        <div
+          role="status"
+          className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-500"
+        >
+          <div className="flex items-start gap-2">
+            <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-bold">¡Sí entregamos!</p>
+              <p className="text-xs mt-0.5">
+                {result.zoneName} · {result.distanceKm} km · envío {result.feeMXN}
+                {result.estimatedMinutes
+                  ? ` · ~${result.estimatedMinutes} min`
+                  : ""}
+              </p>
+              <Link
+                href="/menu"
+                className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:underline"
+              >
+                Hacer mi pedido →
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+      {result && !result.ok && (
+        <div
+          role="status"
+          className="mt-4 rounded-xl border border-error/30 bg-error/10 p-3 text-error"
+        >
+          <div className="flex items-start gap-2">
+            <XCircle size={16} className="mt-0.5 flex-shrink-0" />
+            <p className="text-sm">{result.reason}</p>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-4 text-[10px] text-on-surface-variant/60 leading-relaxed">
+        El costo y tiempo se confirman al hacer el pedido. Cobertura en San Juan
+        del Río y zonas aledañas.
+      </p>
+    </div>
+  );
+}
+
 function LocationSection() {
   return (
     <section
@@ -757,31 +1139,7 @@ function LocationSection() {
             en tu puerta en tiempo récord.
           </p>
 
-          {/* Delivery Estimator */}
-          <div className="bg-surface-container rounded-2xl p-6 border border-outline-variant/15">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
-                <span className="material-symbols-outlined text-primary text-lg">speed</span>
-              </div>
-              <h4 className="font-headline font-bold text-sm uppercase tracking-tight">
-                Estimador de Entrega
-              </h4>
-            </div>
-            <div className="space-y-3">
-              <input
-                className="w-full bg-surface-container-highest rounded-xl p-3.5 text-sm text-on-surface border border-outline-variant/15 focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-all placeholder:text-on-surface-variant/40"
-                placeholder="Ingresa tu calle..."
-                type="text"
-              />
-              <button className="w-full bg-primary text-on-primary py-3 rounded-xl font-headline font-bold text-sm uppercase tracking-wider hover:brightness-110 transition-all active:scale-[0.98]">
-                Calcular Tiempo
-              </button>
-            </div>
-            <div className="mt-4 flex justify-between text-[10px] font-bold text-on-surface-variant/60 uppercase tracking-wider">
-              <span>Carga actual: ALTA</span>
-              <span>Promedio: 22 MIN</span>
-            </div>
-          </div>
+          <DeliveryEstimator />
         </div>
 
         {/* Map */}
@@ -945,9 +1303,10 @@ function FloatingCartButton() {
   return (
     <Link
       href="/menu"
+      aria-label="Ir al menú"
       className="fixed bottom-6 right-6 z-50 bg-primary w-14 h-14 rounded-2xl flex items-center justify-center text-on-primary shadow-2xl hover:scale-110 active:scale-90 transition-transform lg:hidden animate-pulse-glow"
     >
-      <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+      <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }} aria-hidden>
         shopping_basket
       </span>
     </Link>
@@ -970,6 +1329,31 @@ export function LandingPage() {
     setAuthed(false);
   };
 
+  const { data: menu } = useQuery({
+    queryKey: ["menu-landing"],
+    queryFn: () => api.get<MenuByCategory[]>("/api/menu"),
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: promosToday = [] } = useQuery({
+    queryKey: ["promos-today-landing"],
+    queryFn: () =>
+      api.get<PublicPromotion[]>("/api/menu/promotions/today"),
+    staleTime: 5 * 60_000,
+  });
+
+  const comboFamiliar = useMemo<ProductPublic | null>(() => {
+    if (!menu) return null;
+    const all = menu.flatMap((c) => c.products);
+    return (
+      all.find((p) => /familiar/i.test(p.name)) ??
+      all.find((p) => /combo/i.test(p.name)) ??
+      null
+    );
+  }, [menu]);
+
+  const todaysPromo = promosToday[0] ?? null;
+
   return (
     <>
       <NavBar
@@ -980,7 +1364,10 @@ export function LandingPage() {
       <main>
         <HeroSection />
         <MarqueeStrip />
-        <MenuHighlights />
+        <MenuHighlights
+          comboFamiliar={comboFamiliar}
+          todaysPromo={todaysPromo}
+        />
         <HowToOrder />
         <SecretProcess />
         <LoyaltySection />
