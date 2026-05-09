@@ -626,81 +626,111 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
       {error && <p className="text-error text-sm mb-3">{error}</p>}
 
-      {/* ── CARD: Checkout Pro redirect button ── */}
-      {paymentMethod === "CARD" && (
-        <div className="mt-auto space-y-3">
-          {/* Amount preview */}
-          <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-on-surface-variant">Total a pagar</span>
-              <span className="font-headline text-lg font-extrabold text-primary">
-                {formatCents(totalCents)}
-              </span>
+      {/* ── Total a pagar — SIEMPRE visible (CARD/CASH/TRANSFER) ── */}
+      <div className="mt-auto">
+        <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high px-4 py-3 mb-3">
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between text-on-surface-variant">
+              <span>Subtotal</span>
+              <span>{formatCents(total)}</span>
             </div>
-            <p className="mt-1 text-[11px] text-on-surface-variant/60">
-              Incluye {orderType === "DELIVERY" && delivery.fee ? `envío (${formatCents(delivery.fee)}) + ` : ""}todos los productos
-            </p>
+            {orderType === "DELIVERY" && delivery.fee ? (
+              <div className="flex justify-between text-on-surface-variant">
+                <span>Envío ({delivery.zoneName || "—"})</span>
+                <span>{formatCents(delivery.fee)}</span>
+              </div>
+            ) : null}
+            {couponDiscount > 0 && (
+              <div className="flex justify-between text-emerald-500">
+                <span>Cupón {appliedCoupon?.code}</span>
+                <span>− {formatCents(couponDiscount)}</span>
+              </div>
+            )}
+            {tipCents > 0 && (
+              <div className="flex justify-between text-on-surface-variant">
+                <span>Propina</span>
+                <span>{formatCents(tipCents)}</span>
+              </div>
+            )}
           </div>
-
-          {cardBlocked ? (
-            <p className="rounded-xl bg-surface-container-high p-3 text-sm text-on-surface-variant text-center">
-              Selecciona una dirección de entrega válida para continuar.
+          <div className="mt-2 flex items-center justify-between border-t border-outline-variant/20 pt-2">
+            <span className="font-headline text-sm font-bold text-on-surface">
+              Total a pagar
+            </span>
+            <span className="font-headline text-xl font-extrabold text-primary">
+              {formatCents(totalCents)}
+            </span>
+          </div>
+          {paymentMethod === "TRANSFER" && (
+            <p className="mt-1 text-[11px] text-on-surface-variant/70">
+              Transfiere exactamente este monto. Te mostramos los datos al confirmar.
             </p>
-          ) : (
+          )}
+        </div>
+
+        {/* CARD button (Mercado Pago) */}
+        {paymentMethod === "CARD" && (
+          <div className="space-y-3">
+            {cardBlocked ? (
+              <p className="rounded-xl bg-surface-container-high p-3 text-sm text-on-surface-variant text-center">
+                Selecciona una dirección de entrega válida para continuar.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCardRedirect}
+                disabled={loading || totalCents <= 0}
+                className="group w-full overflow-hidden rounded-2xl bg-[#009EE3] py-4 font-headline font-bold text-white shadow-lg shadow-[#009EE3]/30 transition-all hover:brightness-105 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Redirigiendo a Mercado Pago...
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink size={16} />
+                    Pagar con Mercado Pago
+                  </>
+                )}
+              </button>
+            )}
+
+            <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant/60">
+              <span className="flex items-center gap-1"><Lock size={9} /> Cifrado 256-bit</span>
+              <span>·</span>
+              <span className="flex items-center gap-1"><ShieldCheck size={9} /> Pago seguro</span>
+              <span>·</span>
+              <span>Acepta tarjetas y saldo MP</span>
+            </div>
+          </div>
+        )}
+
+        {/* CASH / TRANSFER button */}
+        {paymentMethod !== "CARD" && (
+          <div>
             <button
               type="button"
-              onClick={handleCardRedirect}
-              disabled={loading || totalCents <= 0}
-              className="group w-full overflow-hidden rounded-2xl bg-[#009EE3] py-4 font-headline font-bold text-white shadow-lg shadow-[#009EE3]/30 transition-all hover:brightness-105 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+              onClick={() => void handleSubmit(onSubmit)()}
+              disabled={loading || totalCents <= 0 || (orderType === "DELIVERY" && !delivery.available)}
+              className="w-full bg-primary text-on-primary py-3 rounded-xl font-headline font-bold flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {loading ? (
                 <>
-                  <Loader2 size={18} className="animate-spin" />
-                  Redirigiendo a Mercado Pago...
+                  <Loader2 size={18} className="animate-spin" /> Procesando...
                 </>
               ) : (
-                <>
-                  <ExternalLink size={16} />
-                  Pagar con Mercado Pago
-                </>
+                submitLabel
               )}
             </button>
-          )}
-
-          <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant/50">
-            <span className="flex items-center gap-1"><Lock size={9} /> Cifrado 256-bit</span>
-            <span>·</span>
-            <span className="flex items-center gap-1"><ShieldCheck size={9} /> Pago seguro</span>
-            <span>·</span>
-            <span>Acepta tarjetas y saldo MP</span>
+            <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-on-surface-variant/60">
+              <span className="flex items-center gap-1"><Lock size={9} /> Conexión segura</span>
+              <span>·</span>
+              <span className="flex items-center gap-1"><ShieldCheck size={9} /> Datos protegidos</span>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* ── CASH / TRANSFER ── */}
-      {paymentMethod !== "CARD" && (
-        <div className="mt-auto pt-2">
-          <button
-            type="button"
-            onClick={() => void handleSubmit(onSubmit)()}
-            disabled={loading || (orderType === "DELIVERY" && !delivery.available)}
-            className="w-full bg-primary text-on-primary py-3 rounded-xl font-headline font-bold flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {loading ? (
-              <>
-                <Loader2 size={18} className="animate-spin" /> Procesando...
-              </>
-            ) : (
-              submitLabel
-            )}
-          </button>
-          <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-on-surface-variant/50">
-            <span className="flex items-center gap-1"><Lock size={9} /> Conexión segura</span>
-            <span>·</span>
-            <span className="flex items-center gap-1"><ShieldCheck size={9} /> Datos protegidos</span>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

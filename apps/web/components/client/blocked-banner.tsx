@@ -14,7 +14,7 @@ interface CustomerProfile {
   blockedReason?: string | null;
 }
 
-const SUPPORT_PHONE = "525555555555"; // TODO: leer de config
+const SUPPORT_PHONE = (process.env.NEXT_PUBLIC_STORE_PHONE || "").replace(/\D/g, "");
 
 export function BlockedBanner() {
   const [token, setToken] = useState<string | null>(null);
@@ -50,15 +50,17 @@ export function BlockedBanner() {
             <p className="text-xs opacity-90">{message}</p>
           </div>
         </div>
-        <a
-          href={`https://wa.me/${SUPPORT_PHONE}?text=${waText}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-on-error px-3 py-1.5 font-headline text-[11px] font-bold uppercase tracking-wider text-error transition-colors hover:bg-on-error/90"
-        >
-          <MessageCircle size={11} />
-          Contactar soporte
-        </a>
+        {SUPPORT_PHONE && (
+          <a
+            href={`https://wa.me/${SUPPORT_PHONE}?text=${waText}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-on-error px-3 py-1.5 font-headline text-[11px] font-bold uppercase tracking-wider text-error transition-colors hover:bg-on-error/90"
+          >
+            <MessageCircle size={11} />
+            Contactar soporte
+          </a>
+        )}
       </div>
     </div>
   );

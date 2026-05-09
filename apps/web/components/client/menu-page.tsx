@@ -441,9 +441,12 @@ export function MenuPage() {
             p.name.toLowerCase().includes(q) ||
             (p.description ?? "").toLowerCase().includes(q);
           const tags = (p as any).tags as string[] | undefined;
+          // Inclusive OR: product matches if it has ANY of the active tags.
+          // Allows users to combine "Vegetariano + Sin gluten" to see all
+          // products that satisfy at least one of those preferences.
           const matchesTags =
             !hasFilters ||
-            (tags && activeFilters.every((f) => tags.includes(f)));
+            (tags && activeFilters.some((f) => tags.includes(f)));
           return matchesSearch && matchesTags;
         }),
       }))
