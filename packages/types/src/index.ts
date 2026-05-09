@@ -277,6 +277,19 @@ export interface ProductModifierPublic {
   options: { label: string; price: number }[];
 }
 
+export type ProductTag =
+  | "vegetariano"
+  | "vegano"
+  | "picante"
+  | "muy_picante"
+  | "sin_gluten"
+  | "sin_lactosa"
+  | "favorito"
+  | "nuevo"
+  | "saludable"
+  | "kids"
+  | "para_compartir";
+
 export interface ProductPublic {
   id: string;
   name: string;
@@ -286,6 +299,7 @@ export interface ProductPublic {
   imageUrl: string | null;
   soldOut: boolean;
   variants: ProductVariant[] | null;
+  tags?: ProductTag[];
   emoji?: string | null;
   modifiers?: ProductModifierPublic[];
 }

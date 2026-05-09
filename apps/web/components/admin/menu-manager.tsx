@@ -44,8 +44,22 @@ interface Product {
   soldOut: boolean;
   sortOrder: number;
   variants: Variant[] | null;
+  tags?: string[];
   modifiers?: Modifier[];
 }
+
+const TAG_OPTIONS: { value: string; label: string; emoji: string }[] = [
+  { value: "vegetariano", label: "Vegetariano", emoji: "🥬" },
+  { value: "vegano", label: "Vegano", emoji: "🌱" },
+  { value: "picante", label: "Picante", emoji: "🌶️" },
+  { value: "muy_picante", label: "Muy picante", emoji: "🔥" },
+  { value: "sin_gluten", label: "Sin gluten", emoji: "🌾" },
+  { value: "sin_lactosa", label: "Sin lactosa", emoji: "🥛" },
+  { value: "saludable", label: "Saludable", emoji: "💪" },
+  { value: "kids", label: "Niños", emoji: "🧒" },
+  { value: "para_compartir", label: "Compartir", emoji: "👥" },
+  { value: "nuevo", label: "Nuevo", emoji: "✨" },
+];
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS);
 
@@ -265,6 +279,7 @@ function ProductFormModal({
   const [variants, setVariants] = useState<Variant[]>(
     product?.variants ?? []
   );
+  const [tags, setTags] = useState<string[]>(product?.tags ?? []);
   const [modifiers, setModifiers] = useState<Modifier[]>(
     product?.modifiers ?? []
   );
@@ -327,6 +342,7 @@ function ProductFormModal({
         emoji: emoji || undefined,
         imageUrl: imageUrl.trim() || null,
         variants: cleanVariants.length > 0 ? cleanVariants : null,
+        tags,
       };
 
       let savedProductId = product?.id;
@@ -483,6 +499,39 @@ function ProductFormModal({
                 placeholder="https://..."
                 className="w-full rounded-xl border border-outline-variant/30 bg-surface-container p-3 pl-9 text-sm"
               />
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant">
+              Etiquetas (filtros del cliente)
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {TAG_OPTIONS.map((opt) => {
+                const isActive = tags.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() =>
+                      setTags((prev) =>
+                        isActive
+                          ? prev.filter((t) => t !== opt.value)
+                          : [...prev, opt.value]
+                      )
+                    }
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                      isActive
+                        ? "border-primary bg-primary text-on-primary"
+                        : "border-outline-variant/30 bg-surface-container text-on-surface-variant hover:border-primary/40"
+                    }`}
+                  >
+                    <span>{opt.emoji}</span>
+                    {opt.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

@@ -36,6 +36,8 @@ import {
 import {
   notificationPermission,
   requestNotificationPermission,
+  pushSupported,
+  subscribeToPush,
 } from "@/lib/customer-notifications";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
@@ -994,6 +996,12 @@ function NotificationOptInBanner() {
     setRequesting(true);
     const next = await requestNotificationPermission();
     setPerm(next);
+    // If granted, also register the device for background push
+    if (next === "granted" && pushSupported()) {
+      const token = getToken();
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      if (token) void subscribeToPush(token, apiUrl);
+    }
     setRequesting(false);
   };
 

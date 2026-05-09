@@ -10,21 +10,36 @@ datasource db {
 // ─── Customers ──────────────────────────────────────────────
 
 model Customer {
-  id             String         @id @default(cuid())
-  phone          String         @unique
-  email          String?        @unique
-  password       String?
-  name           String?
-  address        String?
-  internalNote   String?
-  blocked        Boolean        @default(false)
-  blockedReason  String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @default(now()) @updatedAt
-  orders         Order[]
-  loyalty        LoyaltyCard?
-  otps           OTP[]
-  savedAddresses SavedAddress[]
+  id                 String              @id @default(cuid())
+  phone              String              @unique
+  email              String?             @unique
+  password           String?
+  name               String?
+  address            String?
+  internalNote       String?
+  blocked            Boolean             @default(false)
+  blockedReason      String?
+  favoriteProductIds String[]            @default([])
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @default(now()) @updatedAt
+  orders             Order[]
+  loyalty            LoyaltyCard?
+  otps               OTP[]
+  savedAddresses     SavedAddress[]
+  pushSubscriptions  PushSubscription[]
+}
+
+model PushSubscription {
+  id          String   @id @default(cuid())
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customerId  String
+  endpoint    String   @unique
+  p256dh      String
+  auth        String
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([customerId])
 }
 
 model SavedAddress {
@@ -54,6 +69,7 @@ model Product {
   active         Boolean           @default(true)
   soldOut        Boolean           @default(false)
   variants       Json?
+  tags           String[]          @default([])
   sortOrder      Int               @default(0)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @default(now()) @updatedAt

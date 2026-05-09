@@ -13,6 +13,9 @@ import { StoreStatusBanner } from "./store-status-banner";
 import { ActiveOrderBanner } from "./active-order-banner";
 import { InstallAppBanner } from "./install-app-banner";
 import { ReorderSection } from "./reorder-section";
+import { FavoritesSection } from "./favorites-section";
+import { MenuFilters, type MenuFilterTag } from "./menu-filters";
+import { useFavorites } from "@/hooks/useFavorites";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -407,7 +410,9 @@ export function MenuPage() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<MenuFilterTag[]>([]);
   const { itemCount, total } = useCart();
+  const { favoriteIds } = useFavorites();
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useEffect(() => {
@@ -421,22 +426,51 @@ export function MenuPage() {
     queryFn: () => api.get<MenuByCategory[]>("/api/menu"),
   });
 
-  // Filtered menu based on search query
+  // Filtered menu based on search query and tag filters
   const filteredMenu = useMemo(() => {
     if (!menu) return [];
-    if (!searchQuery.trim()) return menu;
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
+    const hasFilters = activeFilters.length > 0;
+    if (!q && !hasFilters) return menu;
     return menu
       .map((cat) => ({
         ...cat,
-        products: cat.products.filter(
-          (p) =>
+        products: cat.products.filter((p) => {
+          const matchesSearch =
+            !q ||
             p.name.toLowerCase().includes(q) ||
-            (p.description ?? "").toLowerCase().includes(q),
-        ),
+            (p.description ?? "").toLowerCase().includes(q);
+          const tags = (p as any).tags as string[] | undefined;
+          const matchesTags =
+            !hasFilters ||
+            (tags && activeFilters.every((f) => tags.includes(f)));
+          return matchesSearch && matchesTags;
+        }),
       }))
       .filter((cat) => cat.products.length > 0);
-  }, [menu, searchQuery]);
+  }, [menu, searchQuery, activeFilters]);
+
+  // Available tags across the entire menu — for filter chips
+  const availableTags = useMemo(() => {
+    if (!menu) return [] as MenuFilterTag[];
+    const set = new Set<string>();
+    for (const cat of menu) {
+      for (const p of cat.products) {
+        const tags = (p as any).tags as string[] | undefined;
+        tags?.forEach((t) => set.add(t));
+      }
+    }
+    return Array.from(set) as MenuFilterTag[];
+  }, [menu]);
+
+  // Favorite products — flat list for the section
+  const favoriteProducts = useMemo(() => {
+    if (!menu || favoriteIds.length === 0) return [];
+    const all = menu.flatMap((c) => c.products);
+    return favoriteIds
+      .map((id) => all.find((p) => p.id === id))
+      .filter((p): p is NonNullable<typeof p> => !!p && !p.soldOut);
+  }, [menu, favoriteIds]);
 
   // Pick a featured product — first combo, fallback first product
   const featured = useMemo(() => {
@@ -611,9 +645,23 @@ export function MenuPage() {
               {/* Featured hero — shown when not searching */}
               {!searchQuery && featured && <FeaturedHero product={featured} />}
 
+              {/* Favorites section — shown when authed and has favorited products */}
+              {!searchQuery && authed && favoriteProducts.length > 0 && (
+                <FavoritesSection products={favoriteProducts} />
+              )}
+
               {/* Reorder section — shown when authed and has past orders */}
               {!searchQuery && authed && (
                 <ReorderSection token={authToken} />
+              )}
+
+              {/* Filter chips */}
+              {availableTags.length > 0 && (
+                <MenuFilters
+                  available={availableTags}
+                  active={activeFilters}
+                  onChange={setActiveFilters}
+                />
               )}
 
               {/* Search empty state */}

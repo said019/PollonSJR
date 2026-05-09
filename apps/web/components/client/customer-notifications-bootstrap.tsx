@@ -8,7 +8,11 @@ import { api } from "@/lib/api";
 import {
   isNotifiableStatus,
   showOrderStatusNotification,
+  pushSupported,
+  subscribeToPush,
 } from "@/lib/customer-notifications";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 interface ActiveOrder {
   id: string;
@@ -31,11 +35,19 @@ export function CustomerNotificationsBootstrap() {
 
   useEffect(() => {
     setToken(getToken());
-    // Re-check on storage events (login/logout in another tab)
     const onStorage = () => setToken(getToken());
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+
+  // When the customer is logged in AND has granted notification permission,
+  // register the device for web push so they receive updates with the tab closed.
+  useEffect(() => {
+    if (!token || !pushSupported()) return;
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission !== "granted") return;
+    void subscribeToPush(token, API_URL);
+  }, [token]);
 
   useSocket(
     "order:status",

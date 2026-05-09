@@ -3,7 +3,8 @@
 import type { ProductPublic } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useCart } from "@/hooks/useCart";
-import { Plus, Flame, TrendingUp } from "lucide-react";
+import { useFavorites } from "@/hooks/useFavorites";
+import { Plus, Flame, TrendingUp, Heart } from "lucide-react";
 import { useState } from "react";
 import Image from "next/image";
 import { resolveProductImage } from "@/lib/product-images";
@@ -60,10 +61,29 @@ interface ProductCardProps {
 
 export function ProductCard({ product, variant = "row", featured = false }: ProductCardProps) {
   const { addItem } = useCart();
+  const { isAuthenticated, isFavorite, toggle } = useFavorites();
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const imageUrl = resolveProductImage(product.name, product.imageUrl);
   const hasModifiers = !!(product.modifiers && product.modifiers.length > 0);
+  const fav = isFavorite(product.id);
+
+  const FavoriteButton = isAuthenticated ? (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle(product.id);
+      }}
+      aria-label={fav ? "Quitar de favoritos" : "Agregar a favoritos"}
+      className={`absolute bottom-2.5 right-2.5 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full backdrop-blur-md transition-all active:scale-90 ${
+        fav
+          ? "bg-error/90 text-white shadow-lg shadow-error/40"
+          : "bg-black/40 text-white/90 hover:bg-black/60"
+      }`}
+    >
+      <Heart size={14} className={fav ? "fill-current" : ""} />
+    </button>
+  ) : null;
 
   const handleAdd = () => {
     if (hasModifiers) {
@@ -157,6 +177,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
               Agotado
             </span>
           )}
+          {FavoriteButton}
         </div>
 
         <div className="relative -mt-10 px-5 pb-5 md:px-7 md:pb-7">
@@ -248,6 +269,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
               Opciones
             </span>
           )}
+          {FavoriteButton}
         </div>
 
         <div className="flex flex-1 flex-col p-3.5">
@@ -311,6 +333,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
             </span>
           </div>
         )}
+        {FavoriteButton}
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">

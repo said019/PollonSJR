@@ -34,6 +34,7 @@ export class MenuService {
         imageUrl: p.imageUrl,
         soldOut: p.soldOut,
         variants: p.variants as any,
+        tags: (p as any).tags ?? [],
         ...((p as any).emoji ? { emoji: (p as any).emoji } : {}),
         ...((p as any).modifiers ? { modifiers: (p as any).modifiers } : {}),
       } as any);

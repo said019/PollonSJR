@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import type { OrderStatusType } from "@pollon/types";
+import { pushToCustomer } from "../notifications/web-push.service";
 
 const STATUS_MESSAGES: Record<string, string> = {
   RECEIVED: "¡Pedido recibido! El negocio lo está revisando.",
@@ -8,6 +9,15 @@ const STATUS_MESSAGES: Record<string, string> = {
   ON_THE_WAY: "Tu repartidor ya va en camino",
   DELIVERED: "¡Buen provecho! Esperamos verte pronto",
   CANCELLED: "Tu pedido fue cancelado.",
+};
+
+const PUSH_TITLES: Record<string, string> = {
+  RECEIVED: "Pedido recibido 🍗",
+  PREPARING: "Cocinando tu pedido 🔥",
+  READY: "¡Listo! 🎉",
+  ON_THE_WAY: "Tu pedido va en camino 🛵",
+  DELIVERED: "Pedido entregado ✓",
+  CANCELLED: "Pedido cancelado",
 };
 
 // ── Nuevo pedido llega al kanban del admin
@@ -42,6 +52,18 @@ export function emitOrderStatus(
 
   // Emitir al admin
   app.io.to("admin:pollon-sjr").emit("order:status", payload);
+
+  // Push notification — fire-and-forget, doesn't block status update
+  const pushTitle = PUSH_TITLES[status as string];
+  if (pushTitle) {
+    void pushToCustomer(app, customerId, {
+      title: pushTitle,
+      body: message,
+      url: `/order/${orderId}`,
+      tag: `order-${orderId}`,
+      data: { orderId, status, orderNumber: extra?.orderNumber },
+    }).catch((err) => app.log.warn({ err }, "Push send failed"));
+  }
 }
 
 // ── Pago confirmado — notifica al admin

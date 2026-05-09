@@ -163,4 +163,66 @@ export async function customersRoutes(app: FastifyInstance) {
 
     return { ok: true };
   });
+
+  // ─── Favorites ─────────────────────────────────────────────
+
+  app.get("/me/favorites", { preHandler: [authenticate] }, async (request) => {
+    const user = request.user as { id: string };
+    const customer = await app.prisma.customer.findUnique({
+      where: { id: user.id },
+      select: { favoriteProductIds: true },
+    });
+    return { productIds: customer?.favoriteProductIds ?? [] };
+  });
+
+  app.post<{ Params: { productId: string } }>(
+    "/me/favorites/:productId",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const user = request.user as { id: string };
+      const { productId } = request.params;
+      const product = await app.prisma.product.findUnique({
+        where: { id: productId },
+        select: { id: true },
+      });
+      if (!product) return reply.status(404).send({ error: "Producto no encontrado" });
+
+      const customer = await app.prisma.customer.findUnique({
+        where: { id: user.id },
+        select: { favoriteProductIds: true },
+      });
+      const current = customer?.favoriteProductIds ?? [];
+      if (current.includes(productId)) return { ok: true };
+
+      const updated = await app.prisma.customer.update({
+        where: { id: user.id },
+        data: { favoriteProductIds: [...current, productId] },
+        select: { favoriteProductIds: true },
+      });
+      return { productIds: updated.favoriteProductIds };
+    }
+  );
+
+  app.delete<{ Params: { productId: string } }>(
+    "/me/favorites/:productId",
+    { preHandler: [authenticate] },
+    async (request) => {
+      const user = request.user as { id: string };
+      const { productId } = request.params;
+
+      const customer = await app.prisma.customer.findUnique({
+        where: { id: user.id },
+        select: { favoriteProductIds: true },
+      });
+      const current = customer?.favoriteProductIds ?? [];
+      const next = current.filter((id) => id !== productId);
+
+      const updated = await app.prisma.customer.update({
+        where: { id: user.id },
+        data: { favoriteProductIds: next },
+        select: { favoriteProductIds: true },
+      });
+      return { productIds: updated.favoriteProductIds };
+    }
+  );
 }

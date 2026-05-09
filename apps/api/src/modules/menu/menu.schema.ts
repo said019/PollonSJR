@@ -10,6 +10,20 @@ export const categoryEnum = z.enum([
   "BEBIDAS",
 ]);
 
+export const productTagEnum = z.enum([
+  "vegetariano",
+  "vegano",
+  "picante",
+  "muy_picante",
+  "sin_gluten",
+  "sin_lactosa",
+  "favorito",
+  "nuevo",
+  "saludable",
+  "kids",
+  "para_compartir",
+]);
+
 export const createProductSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(500).optional(),
@@ -21,6 +35,7 @@ export const createProductSchema = z.object({
     .array(z.object({ label: z.string().min(1).max(50), price: z.number().int().min(0) }))
     .nullable()
     .optional(),
+  tags: z.array(productTagEnum).optional(),
   sortOrder: z.number().int().default(0),
 });
 

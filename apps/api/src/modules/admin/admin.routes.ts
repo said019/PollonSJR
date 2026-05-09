@@ -102,20 +102,6 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
-  // Update ETA (estimated minutes) inline from kanban
-  const updateEtaSchema = z.object({
-    estimatedMinutes: z.number().int().min(1).max(240).nullable(),
-  });
-  app.patch<{ Params: { id: string } }>("/orders/:id/eta", async (request, reply) => {
-    const parsed = updateEtaSchema.safeParse(request.body);
-    if (!parsed.success) return reply.status(400).send({ error: "ETA inválido" });
-    return app.prisma.order.update({
-      where: { id: request.params.id },
-      data: { estimatedMinutes: parsed.data.estimatedMinutes },
-      select: { id: true, estimatedMinutes: true },
-    });
-  });
-
   // Products
   app.get("/products", async () => {
     return app.prisma.product.findMany({
