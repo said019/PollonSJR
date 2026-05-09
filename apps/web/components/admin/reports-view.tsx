@@ -47,7 +47,7 @@ interface DashboardStats {
 
 export function ReportsView() {
   const token = getAdminToken();
-  const [period, setPeriod] = useState<"7" | "14" | "30">("7");
+  const [period, setPeriod] = useState<"0" | "7" | "14" | "30">("7");
   const [typeFilter, setTypeFilter] = useState<"" | "DELIVERY" | "PICKUP">("");
 
   const { data, isLoading } = useQuery({
@@ -123,7 +123,7 @@ export function ReportsView() {
             Exportar CSV
           </button>
           <div className="flex gap-1 rounded-lg bg-surface-container p-0.5">
-            {(["7", "14", "30"] as const).map((p) => (
+            {(["0", "7", "14", "30"] as const).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
@@ -133,7 +133,7 @@ export function ReportsView() {
                     : "text-on-surface-variant hover:text-on-surface"
                 }`}
               >
-                {p}d
+                {p === "0" ? "Hoy" : `${p}d`}
               </button>
             ))}
           </div>

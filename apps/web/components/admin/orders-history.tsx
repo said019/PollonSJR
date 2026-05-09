@@ -6,6 +6,7 @@ import { getAdminToken } from "@/lib/auth";
 import type { OrderSummary } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Calendar, ChevronLeft, ChevronRight, X, Search } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -50,12 +51,20 @@ type TypeFilter = "" | "DELIVERY" | "PICKUP";
 
 export function OrdersHistory() {
   const token = getAdminToken();
+  const params = useSearchParams();
+  const initialStatus = params.get("status");
+  const initialType = params.get("type");
+
   const [page, setPage]         = useState(1);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo]     = useState("");
-  const [search, setSearch]     = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
-  const [typeFilter, setTypeFilter]     = useState<TypeFilter>("");
+  const [dateFrom, setDateFrom] = useState(params.get("dateFrom") || "");
+  const [dateTo, setDateTo]     = useState(params.get("dateTo") || "");
+  const [search, setSearch]     = useState(params.get("search") || "");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    initialStatus === "DELIVERED" || initialStatus === "CANCELLED" ? initialStatus : ""
+  );
+  const [typeFilter, setTypeFilter]     = useState<TypeFilter>(
+    initialType === "DELIVERY" || initialType === "PICKUP" ? initialType : ""
+  );
   const [activePreset, setActivePreset] = useState<string | null>(null);
 
   function applyPreset(preset: typeof PRESETS[number]) {

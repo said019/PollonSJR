@@ -2,10 +2,23 @@
 
 import { OrdersKanban } from "@/components/admin/orders-kanban";
 import { OrdersHistory } from "@/components/admin/orders-history";
-import { useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useCallback } from "react";
 
 export default function AdminOrdersPage() {
-  const [tab, setTab] = useState<"active" | "history">("active");
+  const router = useRouter();
+  const params = useSearchParams();
+  const tab = params.get("tab") === "history" ? "history" : "active";
+
+  const setTab = useCallback(
+    (next: "active" | "history") => {
+      const newParams = new URLSearchParams(params.toString());
+      if (next === "history") newParams.set("tab", "history");
+      else newParams.delete("tab");
+      router.replace(`/admin/orders${newParams.toString() ? `?${newParams.toString()}` : ""}`);
+    },
+    [params, router]
+  );
 
   return (
     <div>

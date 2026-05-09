@@ -23,7 +23,9 @@ import {
   Check,
   X,
   AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ConnectionStatus } from "./connection-status";
 import { OrderDetailModal } from "./order-detail-modal";
@@ -118,6 +120,18 @@ export function OrdersKanban() {
     queryFn: () => api.get<QuickProduct[]>("/api/admin/products", adminToken || undefined),
   });
 
+  // Today's delivered count — for the visibility chip in the header
+  const todayISO = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local TZ
+  const { data: deliveredToday } = useQuery({
+    queryKey: ["admin-delivered-today", todayISO],
+    queryFn: () =>
+      api.get<{ total: number }>(
+        `/api/admin/orders/history?dateFrom=${todayISO}&dateTo=${todayISO}&status=DELIVERED&page=1`,
+        adminToken || undefined
+      ),
+    refetchInterval: 60_000,
+  });
+
   const { connected } = useSocket("order:new", () => {
     qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
   }, socketAuth);
@@ -184,9 +198,19 @@ export function OrdersKanban() {
   return (
     <div className="p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">Pedidos Activos</h1>
           <ConnectionStatus connected={connected} />
+          {deliveredToday && deliveredToday.total > 0 && (
+            <Link
+              href={`/admin/orders?tab=history&dateFrom=${todayISO}&dateTo=${todayISO}&status=DELIVERED`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-500 transition-colors hover:bg-emerald-500/20"
+            >
+              <CheckCircle2 size={12} />
+              {deliveredToday.total} entregado{deliveredToday.total === 1 ? "" : "s"} hoy
+              <span className="opacity-60">→</span>
+            </Link>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input

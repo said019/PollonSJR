@@ -186,8 +186,10 @@ export class ReportsService {
     from.setDate(from.getDate() - days);
     from.setHours(0, 0, 0, 0);
 
+    // Comparison window: same length as current period, immediately preceding it.
+    // Special case: when days=0 ("Hoy") compare against yesterday (1 full day).
     const prevFrom = new Date(from);
-    prevFrom.setDate(prevFrom.getDate() - days);
+    prevFrom.setDate(prevFrom.getDate() - Math.max(days, 1));
 
     const typeWhere = type ? { type } : {};
 
