@@ -527,13 +527,20 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               key={item.id}
               className="flex justify-between border-b border-outline-variant/10 py-2 last:border-0"
             >
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-on-surface">
                   {item.qty}x {item.productName}
                   {item.variant && (
                     <span className="ml-1 text-on-surface-variant">({item.variant})</span>
                   )}
                 </p>
+                {item.modifiers && item.modifiers.length > 0 && (
+                  <p className="mt-0.5 text-[11px] text-on-surface-variant/70">
+                    {item.modifiers
+                      .map((m) => (m.qty > 1 ? `${m.qty}× ${m.option}` : m.option))
+                      .join(" · ")}
+                  </p>
+                )}
               </div>
               <p className="text-sm font-bold text-on-surface">
                 {formatCents(item.unitPrice * item.qty)}

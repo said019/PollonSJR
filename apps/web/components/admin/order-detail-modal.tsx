@@ -542,6 +542,38 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                                   </span>
                                 )}
                               </p>
+                              {item.modifiers && item.modifiers.length > 0 && (
+                                <ul className="mt-1 space-y-0.5">
+                                  {(() => {
+                                    // Group by modifier name (e.g. "Complementos")
+                                    const grouped = item.modifiers.reduce<
+                                      Record<string, typeof item.modifiers>
+                                    >((acc, m) => {
+                                      (acc[m.name] = acc[m.name] || []).push(m);
+                                      return acc;
+                                    }, {});
+                                    return Object.entries(grouped).map(([groupName, mods]) => (
+                                      <li
+                                        key={groupName}
+                                        className="rounded-md bg-surface px-2 py-1 text-[11px]"
+                                      >
+                                        <span className="font-bold uppercase tracking-wider text-tertiary">
+                                          {groupName}:
+                                        </span>{" "}
+                                        <span className="text-on-surface">
+                                          {mods
+                                            .map((m) =>
+                                              m.qty > 1
+                                                ? `${m.qty}× ${m.option}`
+                                                : m.option
+                                            )
+                                            .join(" · ")}
+                                        </span>
+                                      </li>
+                                    ));
+                                  })()}
+                                </ul>
+                              )}
                               {item.notes && (
                                 <p className="mt-0.5 text-[11px] italic text-on-surface-variant/70">
                                   “{item.notes}”

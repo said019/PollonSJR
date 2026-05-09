@@ -37,22 +37,44 @@ const COLUMNS: { status: OrderStatusType; label: string; icon: React.ReactNode; 
   { status: "ON_THE_WAY", label: "En camino", icon: <Truck size={18} />, color: "border-purple-400" },
 ];
 
-const NEXT_STATUS: Record<string, OrderStatusType | null> = {
-  SCHEDULED: "RECEIVED",
-  RECEIVED: "PREPARING",
-  PREPARING: "READY",
-  READY: "ON_THE_WAY",
-  ON_THE_WAY: "DELIVERED",
-  DELIVERED: null,
-};
+type OrderType = "DELIVERY" | "PICKUP";
 
-const ADVANCE_LABEL: Record<string, string> = {
-  SCHEDULED: "Activar 🟢",
-  RECEIVED: "Preparar 🔥",
-  PREPARING: "Marcar Listo ✓",
-  READY: "Despachar 🛵",
-  ON_THE_WAY: "Finalizar ✓",
-};
+function nextStatusFor(
+  current: OrderStatusType,
+  type: OrderType
+): OrderStatusType | null {
+  switch (current) {
+    case "SCHEDULED":
+      return "RECEIVED";
+    case "RECEIVED":
+      return "PREPARING";
+    case "PREPARING":
+      return "READY";
+    case "READY":
+      return type === "DELIVERY" ? "ON_THE_WAY" : "DELIVERED";
+    case "ON_THE_WAY":
+      return "DELIVERED";
+    default:
+      return null;
+  }
+}
+
+function advanceLabelFor(current: OrderStatusType, type: OrderType): string {
+  switch (current) {
+    case "SCHEDULED":
+      return "Activar 🟢";
+    case "RECEIVED":
+      return "Preparar 🔥";
+    case "PREPARING":
+      return "Marcar Listo ✓";
+    case "READY":
+      return type === "DELIVERY" ? "Despachar 🛵" : "Entregado ✓";
+    case "ON_THE_WAY":
+      return "Finalizar ✓";
+    default:
+      return "";
+  }
+}
 
 type TypeFilter = "ALL" | "DELIVERY" | "PICKUP";
 
@@ -132,8 +154,8 @@ export function OrdersKanban() {
   });
 
   const advance = useCallback(
-    (orderId: string, currentStatus: string) => {
-      const next = NEXT_STATUS[currentStatus];
+    (orderId: string, currentStatus: OrderStatusType, type: OrderType) => {
+      const next = nextStatusFor(currentStatus, type);
       if (next) advanceMut.mutate({ orderId, status: next });
     },
     [advanceMut]
@@ -277,7 +299,7 @@ export function OrdersKanban() {
                     order={order}
                     colStatus={col.status}
                     onDetail={() => setDetailOrderId(order.id)}
-                    onAdvance={() => advance(order.id, col.status)}
+                    onAdvance={() => advance(order.id, col.status, order.type as OrderType)}
                     onSetEta={(eta) =>
                       etaMut.mutate({ orderId: order.id, eta })
                     }
@@ -353,7 +375,9 @@ function OrderCard({
   advancePending: boolean;
 }) {
   const isDelivery = order.type === "DELIVERY";
-  const nextStatus = NEXT_STATUS[colStatus];
+  const orderType = (order.type as OrderType) ?? "PICKUP";
+  const nextStatus = nextStatusFor(colStatus, orderType);
+  const advanceLabel = advanceLabelFor(colStatus, orderType);
   const isPendingTransfer =
     colStatus === "PENDING_PAYMENT" && order.paymentMethod === "TRANSFER";
   const hasProof = !!order.transferProofUrl;
@@ -469,7 +493,7 @@ function OrderCard({
               disabled={advancePending}
               className="flex-[1.6] bg-primary text-on-primary text-[10px] py-1.5 rounded-lg font-semibold uppercase tracking-wider disabled:opacity-50 transition-all hover:brightness-110"
             >
-              {ADVANCE_LABEL[colStatus] ?? `→ ${nextStatus}`}
+              {advanceLabel || `→ ${nextStatus}`}
             </button>
           )}
           {isPendingTransfer && (

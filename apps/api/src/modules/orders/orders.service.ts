@@ -338,7 +338,7 @@ export class OrdersService {
     const order = await this.app.prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        items: { include: { product: true } },
+        items: { include: { product: true, modifiers: true } },
         payment: true,
         customer: true,
       },
@@ -380,6 +380,12 @@ export class OrdersService {
         unitPrice: item.unitPrice,
         variant: item.variant,
         notes: item.notes,
+        modifiers: ((item as any).modifiers ?? []).map((m: any) => ({
+          name: m.name,
+          option: m.option,
+          price: m.price,
+          qty: m.qty ?? 1,
+        })),
       })),
       payment: order.payment
         ? {

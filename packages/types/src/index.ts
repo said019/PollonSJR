@@ -101,6 +101,12 @@ export interface OrderItemDetail {
   unitPrice: number;
   variant: string | null;
   notes: string | null;
+  modifiers?: Array<{
+    name: string;
+    option: string;
+    price: number;
+    qty: number;
+  }>;
 }
 
 // ─── Cart Types ─────────────────────────────────────────────
