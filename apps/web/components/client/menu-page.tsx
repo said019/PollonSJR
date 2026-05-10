@@ -655,7 +655,10 @@ export function MenuPage() {
 
               {/* Reorder section — shown when authed and has past orders */}
               {!searchQuery && authed && (
-                <ReorderSection token={authToken} />
+                <ReorderSection
+                  token={authToken}
+                  onItemsAdded={() => setCartOpen(true)}
+                />
               )}
 
               {/* Filter chips */}

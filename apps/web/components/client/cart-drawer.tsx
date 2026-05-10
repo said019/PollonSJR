@@ -14,6 +14,8 @@ import { ProductOptionsModal } from "./product-options-modal";
 import { useState, useEffect, useMemo } from "react";
 import { getToken } from "@/lib/auth";
 import { resolveProductImage } from "@/lib/product-images";
+import { validateCartItem } from "@/lib/cart-validation";
+import { AlertTriangle } from "lucide-react";
 
 interface CartDrawerProps {
   open: boolean;
@@ -26,19 +28,38 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
   const [showCheckout, setShowCheckout] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
-  // Pull menu so we can re-open the options modal with the original product.
+  // Pull menu so we can re-open the options modal AND validate items.
+  // Fetched whenever the cart is open and there's at least one item.
   const { data: menu } = useQuery({
     queryKey: ["menu-cart"],
     queryFn: () => api.get<MenuByCategory[]>("/api/menu"),
-    enabled: open && editingIdx !== null,
+    enabled: open && items.length > 0,
     staleTime: 5 * 60_000,
   });
+  const productById = useMemo(() => {
+    const m = new Map<string, ProductPublic>();
+    if (menu) {
+      for (const cat of menu) {
+        for (const p of cat.products) m.set(p.id, p);
+      }
+    }
+    return m;
+  }, [menu]);
   const editingItem = editingIdx != null ? items[editingIdx] : null;
-  const editingProduct = useMemo<ProductPublic | null>(() => {
-    if (!editingItem || !menu) return null;
-    const all = menu.flatMap((c) => c.products);
-    return all.find((p) => p.id === editingItem.productId) ?? null;
-  }, [editingItem, menu]);
+  const editingProduct = editingItem
+    ? productById.get(editingItem.productId) ?? null
+    : null;
+
+  // Per-item validation: flag missing required modifiers / quota / variant
+  const itemIssues = useMemo(
+    () =>
+      items.map((item) =>
+        validateCartItem(item, productById.get(item.productId))
+      ),
+    [items, productById]
+  );
+  const hasIssues = itemIssues.some((arr) => arr.length > 0);
+  const firstInvalidIdx = itemIssues.findIndex((arr) => arr.length > 0);
 
   // Hydration-safe token for loyalty query
   const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
@@ -112,13 +133,25 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
               <>
                 <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
                   {items.map((item, idx) => {
+                    const issues = itemIssues[idx] ?? [];
+                    const itemProduct = productById.get(item.productId);
+                    const productHasOptions = !!(
+                      itemProduct &&
+                      ((itemProduct.modifiers && itemProduct.modifiers.length > 0) ||
+                        (itemProduct.variants && itemProduct.variants.length > 0))
+                    );
                     const editable =
                       !!(item.variant) ||
-                      !!(item.modifiers && item.modifiers.length > 0);
+                      !!(item.modifiers && item.modifiers.length > 0) ||
+                      productHasOptions; // allow editing if product has options
                     return (
                       <div
                         key={`${item.productId}-${item.variant}-${idx}`}
-                        className="flex items-start gap-3 bg-surface-container-high rounded-xl p-3.5 border border-outline-variant/10"
+                        className={`flex items-start gap-3 rounded-xl p-3.5 border ${
+                          issues.length > 0
+                            ? "bg-error/5 border-error/40"
+                            : "bg-surface-container-high border-outline-variant/10"
+                        }`}
                       >
                         <button
                           type="button"
@@ -148,6 +181,12 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                                     : m.option
                                 )
                                 .join(" · ")}
+                            </p>
+                          )}
+                          {issues.length > 0 && (
+                            <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-error/15 px-2 py-0.5 text-[10px] font-bold text-error">
+                              <AlertTriangle size={10} />
+                              {issues[0].message}
                             </p>
                           )}
                           <p className="text-sm text-primary font-headline font-bold mt-0.5">
@@ -202,11 +241,37 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                       <span>Envío a domicilio desde <strong className="text-primary">$25</strong> · Gratis en combos grandes</span>
                     </div>
 
+                    {hasIssues && (
+                      <div className="rounded-xl border border-error/40 bg-error/10 p-3 text-error">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-sm font-bold">
+                              Faltan opciones por elegir
+                            </p>
+                            <p className="mt-0.5 text-xs opacity-90">
+                              Algunos productos requieren que escojas
+                              complementos, sabor o tamaño antes de pagar.
+                            </p>
+                            {firstInvalidIdx >= 0 && (
+                              <button
+                                onClick={() => setEditingIdx(firstInvalidIdx)}
+                                className="mt-2 inline-flex items-center gap-1 rounded-lg bg-error px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-on-error"
+                              >
+                                Completar opciones
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <button
                       onClick={handleCheckout}
-                      className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary"
+                      disabled={hasIssues}
+                      className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100"
                     >
-                      Proceder al pago
+                      {hasIssues ? "Completa las opciones" : "Proceder al pago"}
                     </button>
                     <button
                       onClick={clearCart}

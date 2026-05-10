@@ -10,7 +10,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import { Plus, Flame } from "lucide-react";
 import { motion } from "framer-motion";
@@ -20,6 +20,8 @@ import { formatCents } from "@pollon/utils";
 import type { MenuByCategory, ProductPublic } from "@pollon/types";
 import { useCart } from "@/hooks/useCart";
 import { resolveProductImage } from "@/lib/product-images";
+import { productNeedsOptions } from "@/lib/cart-validation";
+import { ProductOptionsModal } from "./product-options-modal";
 
 const STARTER_CATEGORIES = ["COMBOS", "POLLO_FRITO", "BEBIDAS", "HAMBURGUESAS"];
 const STARTER_PICKS = new Set([
@@ -69,6 +71,7 @@ function pickStarters(menu: MenuByCategory[]): ProductPublic[] {
 
 export function EmptyCartSuggestions({ onClose }: { onClose: () => void }) {
   const { addItem } = useCart();
+  const [pendingProduct, setPendingProduct] = useState<ProductPublic | null>(null);
 
   const { data: menu } = useQuery({
     queryKey: ["menu"],
@@ -84,6 +87,12 @@ export function EmptyCartSuggestions({ onClose }: { onClose: () => void }) {
   if (starters.length === 0) return null;
 
   const handleAdd = (product: ProductPublic) => {
+    // If the product has required options (modifiers, quota, variants),
+    // open the options modal first instead of adding straight to the cart.
+    if (productNeedsOptions(product)) {
+      setPendingProduct(product);
+      return;
+    }
     const imageUrl = resolveProductImage(product.name, product.imageUrl);
     addItem({
       productId: product.id,
@@ -162,6 +171,34 @@ export function EmptyCartSuggestions({ onClose }: { onClose: () => void }) {
           );
         })}
       </div>
+
+      {pendingProduct && (
+        <ProductOptionsModal
+          open={true}
+          product={pendingProduct}
+          imageUrl={resolveProductImage(
+            pendingProduct.name,
+            pendingProduct.imageUrl
+          )}
+          onClose={() => setPendingProduct(null)}
+          onConfirm={({ variant, modifiers, qty, notes, finalUnitPrice }) => {
+            addItem({
+              productId: pendingProduct.id,
+              name: pendingProduct.name,
+              price: finalUnitPrice,
+              qty,
+              variant,
+              notes,
+              imageUrl: resolveProductImage(
+                pendingProduct.name,
+                pendingProduct.imageUrl
+              ),
+              modifiers,
+            });
+            setPendingProduct(null);
+          }}
+        />
+      )}
     </div>
   );
 }

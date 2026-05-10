@@ -24,7 +24,13 @@ interface PastOrder {
   items: OrderItem[];
 }
 
-export function ReorderSection({ token }: { token: string | null }) {
+export function ReorderSection({
+  token,
+  onItemsAdded,
+}: {
+  token: string | null;
+  onItemsAdded?: () => void;
+}) {
   const { addItem } = useCart();
   const [adding, setAdding] = useState<string | null>(null);
 
@@ -57,7 +63,12 @@ export function ReorderSection({ token }: { token: string | null }) {
         imageUrl: null,
       });
     }
-    setTimeout(() => setAdding(null), 600);
+    setTimeout(() => {
+      setAdding(null);
+      // Open the cart so the user can review and complete any missing
+      // modifiers (the cart now validates each line).
+      onItemsAdded?.();
+    }, 400);
   };
 
   return (
