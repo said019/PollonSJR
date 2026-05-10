@@ -15,6 +15,11 @@ interface Props {
   open: boolean;
   product: ProductPublic | null;
   defaultVariant?: string | null;
+  defaultModifiers?: CartItemModifier[];
+  defaultQty?: number;
+  defaultNotes?: string;
+  /** When editing an existing cart line, change the primary button copy. */
+  editing?: boolean;
   imageUrl?: string | null;
   onClose: () => void;
   onConfirm: (data: {
@@ -42,6 +47,10 @@ export function ProductOptionsModal({
   open,
   product,
   defaultVariant = null,
+  defaultModifiers,
+  defaultQty,
+  defaultNotes,
+  editing,
   imageUrl,
   onClose,
   onConfirm,
@@ -55,15 +64,31 @@ export function ProductOptionsModal({
   useEffect(() => {
     if (!open || !product) return;
     setVariant(defaultVariant ?? null);
-    setQty(1);
-    setNotes("");
+    setQty(defaultQty && defaultQty > 0 ? defaultQty : 1);
+    setNotes(defaultNotes ?? "");
     setError(null);
+
     const initial: Selection = {};
     (product.modifiers ?? []).forEach((m) => {
       initial[m.id] = {};
     });
+
+    // Pre-fill selections from defaultModifiers (when editing a cart item).
+    // Match modifiers by name (CartItemModifier doesn't carry modifier id).
+    if (defaultModifiers && defaultModifiers.length > 0 && product.modifiers) {
+      for (const dm of defaultModifiers) {
+        const mod = product.modifiers.find((m) => m.name === dm.name);
+        if (!mod) continue;
+        const optExists = mod.options.some((o) => o.label === dm.option);
+        if (!optExists) continue;
+        initial[mod.id] = {
+          ...initial[mod.id],
+          [dm.option]: (initial[mod.id]?.[dm.option] ?? 0) + (dm.qty ?? 1),
+        };
+      }
+    }
     setSelections(initial);
-  }, [open, product, defaultVariant]);
+  }, [open, product, defaultVariant, defaultModifiers, defaultQty, defaultNotes]);
 
   const basePrice = useMemo(() => {
     if (!product) return 0;
@@ -188,7 +213,7 @@ export function ProductOptionsModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.6 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black"
+            className="fixed inset-0 z-[70] bg-black"
             onClick={onClose}
           />
           <motion.div
@@ -196,7 +221,7 @@ export function ProductOptionsModal({
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
-            className="fixed inset-x-0 bottom-0 z-50 flex max-h-[92vh] flex-col rounded-t-3xl border-t border-outline-variant/15 bg-surface-container shadow-2xl sm:inset-x-auto sm:left-1/2 sm:top-[6vh] sm:max-h-[88vh] sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:rounded-3xl"
+            className="fixed inset-x-0 bottom-0 z-[80] flex max-h-[92vh] flex-col rounded-t-3xl border-t border-outline-variant/15 bg-surface-container shadow-2xl sm:inset-x-auto sm:left-1/2 sm:top-[6vh] sm:max-h-[88vh] sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:rounded-3xl"
           >
             <div className="relative overflow-hidden rounded-t-3xl">
               <button
@@ -440,7 +465,7 @@ export function ProductOptionsModal({
                 onClick={handleConfirm}
                 className="flex flex-1 items-center justify-between rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-on-primary"
               >
-                <span>Agregar al carrito</span>
+                <span>{editing ? "Guardar cambios" : "Agregar al carrito"}</span>
                 <span>{formatCents(finalUnitPrice * qty)}</span>
               </button>
             </div>

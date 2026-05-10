@@ -4,14 +4,16 @@ import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { LoyaltyInfo } from "@pollon/types";
-import { X, Minus, Plus, Trash2, ShoppingBag, Bike, Gift } from "lucide-react";
+import type { LoyaltyInfo, MenuByCategory, ProductPublic } from "@pollon/types";
+import { X, Minus, Plus, Trash2, ShoppingBag, Bike, Gift, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
 import { UpsellRecommendations } from "./upsell-recommendations";
 import { EmptyCartSuggestions } from "./empty-cart-suggestions";
-import { useState, useEffect } from "react";
+import { ProductOptionsModal } from "./product-options-modal";
+import { useState, useEffect, useMemo } from "react";
 import { getToken } from "@/lib/auth";
+import { resolveProductImage } from "@/lib/product-images";
 
 interface CartDrawerProps {
   open: boolean;
@@ -20,8 +22,23 @@ interface CartDrawerProps {
 }
 
 export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
-  const { items, updateQty, removeItem, total, clearCart } = useCart();
+  const { items, updateQty, removeItem, addItem, total, clearCart } = useCart();
   const [showCheckout, setShowCheckout] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+
+  // Pull menu so we can re-open the options modal with the original product.
+  const { data: menu } = useQuery({
+    queryKey: ["menu-cart"],
+    queryFn: () => api.get<MenuByCategory[]>("/api/menu"),
+    enabled: open && editingIdx !== null,
+    staleTime: 5 * 60_000,
+  });
+  const editingItem = editingIdx != null ? items[editingIdx] : null;
+  const editingProduct = useMemo<ProductPublic | null>(() => {
+    if (!editingItem || !menu) return null;
+    const all = menu.flatMap((c) => c.products);
+    return all.find((p) => p.id === editingItem.productId) ?? null;
+  }, [editingItem, menu]);
 
   // Hydration-safe token for loyalty query
   const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
@@ -94,56 +111,73 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
             ) : (
               <>
                 <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
-                  {items.map((item, idx) => (
-                    <div
-                      key={`${item.productId}-${item.variant}-${idx}`}
-                      className="flex items-start gap-3 bg-surface-container-high rounded-xl p-3.5 border border-outline-variant/10"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-headline font-semibold text-sm text-tertiary">
-                          {item.name}
-                          {item.variant && (
-                            <span className="text-xs text-on-surface-variant/60 ml-1 font-body">({item.variant})</span>
-                          )}
-                        </p>
-                        {item.modifiers && item.modifiers.length > 0 && (
-                          <p className="text-[11px] text-on-surface-variant/70 mt-0.5">
-                            {item.modifiers
-                              .map((m) =>
-                                (m.qty ?? 1) > 1
-                                  ? `${m.qty}× ${m.option}`
-                                  : m.option
-                              )
-                              .join(" · ")}
+                  {items.map((item, idx) => {
+                    const editable =
+                      !!(item.variant) ||
+                      !!(item.modifiers && item.modifiers.length > 0);
+                    return (
+                      <div
+                        key={`${item.productId}-${item.variant}-${idx}`}
+                        className="flex items-start gap-3 bg-surface-container-high rounded-xl p-3.5 border border-outline-variant/10"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => editable && setEditingIdx(idx)}
+                          disabled={!editable}
+                          className={`flex-1 min-w-0 text-left ${
+                            editable
+                              ? "cursor-pointer hover:opacity-90"
+                              : "cursor-default"
+                          }`}
+                        >
+                          <p className="font-headline font-semibold text-sm text-tertiary flex items-center gap-1.5">
+                            {item.name}
+                            {item.variant && (
+                              <span className="text-xs text-on-surface-variant/60 font-body">({item.variant})</span>
+                            )}
+                            {editable && (
+                              <Pencil size={10} className="opacity-60" />
+                            )}
                           </p>
-                        )}
-                        <p className="text-sm text-primary font-headline font-bold mt-0.5">
-                          {formatCents(item.price * item.qty)}
-                        </p>
+                          {item.modifiers && item.modifiers.length > 0 && (
+                            <p className="text-[11px] text-on-surface-variant/70 mt-0.5">
+                              {item.modifiers
+                                .map((m) =>
+                                  (m.qty ?? 1) > 1
+                                    ? `${m.qty}× ${m.option}`
+                                    : m.option
+                                )
+                                .join(" · ")}
+                            </p>
+                          )}
+                          <p className="text-sm text-primary font-headline font-bold mt-0.5">
+                            {formatCents(item.price * item.qty)}
+                          </p>
+                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => updateQty(item.productId, item.variant, item.qty - 1, item.modifiers)}
+                            className="w-7 h-7 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface-variant hover:bg-outline-variant transition-colors"
+                          >
+                            <Minus size={13} />
+                          </button>
+                          <span className="text-sm font-headline font-bold w-6 text-center text-tertiary">{item.qty}</span>
+                          <button
+                            onClick={() => updateQty(item.productId, item.variant, item.qty + 1, item.modifiers)}
+                            className="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:brightness-110 transition-all"
+                          >
+                            <Plus size={13} />
+                          </button>
+                          <button
+                            onClick={() => removeItem(item.productId, item.variant, item.modifiers)}
+                            className="ml-1 text-on-surface-variant/40 hover:text-error transition-colors"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => updateQty(item.productId, item.variant, item.qty - 1, item.modifiers)}
-                          className="w-7 h-7 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface-variant hover:bg-outline-variant transition-colors"
-                        >
-                          <Minus size={13} />
-                        </button>
-                        <span className="text-sm font-headline font-bold w-6 text-center text-tertiary">{item.qty}</span>
-                        <button
-                          onClick={() => updateQty(item.productId, item.variant, item.qty + 1, item.modifiers)}
-                          className="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:brightness-110 transition-all"
-                        >
-                          <Plus size={13} />
-                        </button>
-                        <button
-                          onClick={() => removeItem(item.productId, item.variant, item.modifiers)}
-                          className="ml-1 text-on-surface-variant/40 hover:text-error transition-colors"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="shrink-0">
@@ -186,6 +220,43 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
             )}
           </motion.div>
         </>
+      )}
+
+      {/* Edit-item modal: re-opens product options for an existing cart line */}
+      {editingIdx !== null && editingItem && editingProduct && (
+        <ProductOptionsModal
+          open={true}
+          editing
+          product={editingProduct}
+          defaultVariant={editingItem.variant ?? null}
+          defaultModifiers={editingItem.modifiers ?? []}
+          defaultQty={editingItem.qty}
+          defaultNotes={editingItem.notes ?? ""}
+          imageUrl={resolveProductImage(
+            editingProduct.name,
+            editingProduct.imageUrl
+          )}
+          onClose={() => setEditingIdx(null)}
+          onConfirm={(data) => {
+            // Replace: remove the original line, then add the edited one.
+            removeItem(
+              editingItem.productId,
+              editingItem.variant,
+              editingItem.modifiers
+            );
+            addItem({
+              productId: editingItem.productId,
+              name: editingItem.name,
+              price: data.finalUnitPrice,
+              qty: data.qty,
+              variant: data.variant,
+              notes: data.notes,
+              imageUrl: editingItem.imageUrl,
+              modifiers: data.modifiers,
+            });
+            setEditingIdx(null);
+          }}
+        />
       )}
     </AnimatePresence>
   );
