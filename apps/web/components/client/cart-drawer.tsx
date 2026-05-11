@@ -220,56 +220,44 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                 </div>
 
                 <div className="shrink-0">
-                  {/* Upsell strip — pre-checkout recommendations */}
-                  <UpsellRecommendations />
+                  {/* Upsell strip — hidden when there are validation issues
+                      so the user can focus on fixing their cart. */}
+                  {!hasIssues && <UpsellRecommendations />}
 
-                  <div className="space-y-3 border-t border-outline-variant/10 p-5">
+                  <div className="space-y-2.5 border-t border-outline-variant/10 p-4">
                     <div className="flex justify-between items-center">
                       <span className="text-on-surface-variant font-headline font-semibold">Subtotal</span>
                       <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
                     </div>
 
                     {hasPendingReward && (
-                      <p className="text-xs text-green-400 flex items-center gap-1 mt-1">
+                      <p className="text-xs text-green-400 flex items-center gap-1">
                         <Gift size={12} /> Tienes un producto gratis — se aplica al pagar
                       </p>
                     )}
 
-                    {/* Delivery fee hint */}
-                    <div className="flex items-center gap-2 rounded-lg bg-surface-container-high px-3 py-2 text-[11px] text-on-surface-variant/70">
-                      <Bike size={13} className="text-primary flex-shrink-0" />
-                      <span>Envío a domicilio desde <strong className="text-primary">$25</strong> · Gratis en combos grandes</span>
-                    </div>
-
-                    {hasIssues && (
-                      <div className="rounded-xl border border-error/40 bg-error/10 p-3 text-error">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <p className="text-sm font-bold">
-                              Faltan opciones por elegir
-                            </p>
-                            <p className="mt-0.5 text-xs opacity-90">
-                              Algunos productos requieren que escojas
-                              complementos, sabor o tamaño antes de pagar.
-                            </p>
-                            {firstInvalidIdx >= 0 && (
-                              <button
-                                onClick={() => setEditingIdx(firstInvalidIdx)}
-                                className="mt-2 inline-flex items-center gap-1 rounded-lg bg-error px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-on-error"
-                              >
-                                Completar opciones
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                    {/* Delivery fee hint — hide when there are issues to save space */}
+                    {!hasIssues && (
+                      <div className="flex items-center gap-2 rounded-lg bg-surface-container-high px-3 py-2 text-[11px] text-on-surface-variant/70">
+                        <Bike size={13} className="text-primary flex-shrink-0" />
+                        <span>Envío a domicilio desde <strong className="text-primary">$25</strong> · Gratis en combos grandes</span>
                       </div>
+                    )}
+
+                    {hasIssues && firstInvalidIdx >= 0 && (
+                      <button
+                        onClick={() => setEditingIdx(firstInvalidIdx)}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-error/50 bg-error/10 px-3 py-2 text-sm font-bold text-error transition-colors hover:bg-error/20"
+                      >
+                        <AlertTriangle size={14} />
+                        Completar opciones del pedido
+                      </button>
                     )}
 
                     <button
                       onClick={handleCheckout}
                       disabled={hasIssues}
-                      className="w-full bg-primary text-on-primary py-3.5 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                      className="w-full bg-primary text-on-primary py-3 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100"
                     >
                       {hasIssues ? "Completa las opciones" : "Proceder al pago"}
                     </button>
