@@ -565,6 +565,18 @@ export function OrderTracker({ orderId }: { orderId: string }) {
                 <span>{formatCents(order.deliveryFee)}</span>
               </div>
             )}
+            {order.tipAmount && order.tipAmount > 0 ? (
+              <div className="flex justify-between text-sm text-on-surface-variant">
+                <span>Propina</span>
+                <span>{formatCents(order.tipAmount)}</span>
+              </div>
+            ) : null}
+            {order.appFeeAmount && order.appFeeAmount > 0 ? (
+              <div className="flex justify-between text-sm text-on-surface-variant">
+                <span>Uso de aplicación</span>
+                <span>{formatCents(order.appFeeAmount)}</span>
+              </div>
+            ) : null}
             <div className="flex justify-between border-t border-outline-variant/20 pt-2 text-lg font-bold">
               <span className="text-on-surface">Total</span>
               <span className="text-primary">{formatCents(order.total)}</span>

@@ -150,6 +150,7 @@ model Order {
   deliveryFee      Int              @default(0)
   discountAmount   Int              @default(0)
   tipAmount        Int              @default(0)
+  appFeeAmount     Int              @default(0)
   total            Int
   notes            String?
   estimatedMinutes Int?

@@ -172,7 +172,16 @@ export class OrdersService {
       : null;
 
     const tipAmount = Math.max(0, (data as any).tipAmount ?? 0);
-    const total = Math.max(0, subtotal - discountAmount + deliveryFee + tipAmount);
+
+    // 4% "Uso de aplicación" surcharge only on CARD payments.
+    // Base = subtotal - discount + delivery + tip (everything customer
+    // actually pays). Rounded to nearest cent.
+    const APP_FEE_RATE = 0.04;
+    const preFeeTotal = Math.max(0, subtotal - discountAmount + deliveryFee + tipAmount);
+    const appFeeAmount =
+      paymentMethod === "CARD" ? Math.round(preFeeTotal * APP_FEE_RATE) : 0;
+
+    const total = Math.max(0, preFeeTotal + appFeeAmount);
 
     // Scheduled orders: 50% deposit, status SCHEDULED
     let initialStatus: "PENDING_PAYMENT" | "RECEIVED" | "SCHEDULED";
@@ -206,6 +215,7 @@ export class OrdersService {
         deliveryFee,
         discountAmount,
         tipAmount,
+        appFeeAmount,
         total,
         notes: data.notes || null,
         couponId,
@@ -364,6 +374,7 @@ export class OrdersService {
       deliveryFee: order.deliveryFee,
       discountAmount: order.discountAmount,
       tipAmount: order.tipAmount,
+      appFeeAmount: order.appFeeAmount,
       estimatedMinutes: order.estimatedMinutes ?? null,
       address: order.address,
       notes: order.notes,

@@ -56,7 +56,7 @@ const PAYMENT_METHODS: Array<{
   {
     value: "CARD",
     title: "Tarjeta de crédito / débito",
-    description: () => "Paga de forma segura con Mercado Pago · Acepta todas las tarjetas",
+    description: () => "Mercado Pago · Acepta todas las tarjetas · +4% uso de aplicación",
     badge: "Recomendado",
     icon: <CreditCard size={17} />,
   },
@@ -160,7 +160,13 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   }, [tipPercent, tipCustom, total]);
 
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
-  const totalCents = Math.max(0, subtotalWithDelivery + tipCents - couponDiscount);
+  // 4% "Uso de aplicación" — only on CARD payments. Base = post-discount,
+  // post-delivery, post-tip total (everything the customer effectively pays).
+  const APP_FEE_RATE = 0.04;
+  const preFeeTotal = Math.max(0, subtotalWithDelivery + tipCents - couponDiscount);
+  const appFeeCents =
+    paymentMethod === "CARD" ? Math.round(preFeeTotal * APP_FEE_RATE) : 0;
+  const totalCents = preFeeTotal + appFeeCents;
   const cardBlocked = orderType === "DELIVERY" && delivery.available !== true;
 
   const validateCoupon = async () => {
@@ -650,6 +656,12 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               <div className="flex justify-between text-on-surface-variant">
                 <span>Propina</span>
                 <span>{formatCents(tipCents)}</span>
+              </div>
+            )}
+            {appFeeCents > 0 && (
+              <div className="flex justify-between text-on-surface-variant">
+                <span>Uso de aplicación (4%)</span>
+                <span>{formatCents(appFeeCents)}</span>
               </div>
             )}
           </div>

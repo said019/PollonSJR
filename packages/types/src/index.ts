@@ -86,6 +86,7 @@ export interface OrderDetail extends OrderSummary {
   deliveryFee: number;
   discountAmount: number;
   tipAmount?: number;
+  appFeeAmount?: number;
   estimatedMinutes?: number | null;
   notes: string | null;
   cancelReason?: string | null;

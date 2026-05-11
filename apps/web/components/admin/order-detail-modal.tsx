@@ -592,12 +592,30 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                           <span>Subtotal</span>
                           <span>{formatCents(order.subtotal)}</span>
                         </div>
+                        {order.discountAmount > 0 && (
+                          <div className="flex justify-between text-sm text-emerald-500">
+                            <span>Descuento</span>
+                            <span>− {formatCents(order.discountAmount)}</span>
+                          </div>
+                        )}
                         {order.deliveryFee > 0 && (
                           <div className="flex justify-between text-sm text-on-surface-variant">
                             <span>Envío</span>
                             <span>{formatCents(order.deliveryFee)}</span>
                           </div>
                         )}
+                        {order.tipAmount && order.tipAmount > 0 ? (
+                          <div className="flex justify-between text-sm text-on-surface-variant">
+                            <span>Propina</span>
+                            <span>{formatCents(order.tipAmount)}</span>
+                          </div>
+                        ) : null}
+                        {order.appFeeAmount && order.appFeeAmount > 0 ? (
+                          <div className="flex justify-between text-sm text-on-surface-variant">
+                            <span>Uso de aplicación</span>
+                            <span>{formatCents(order.appFeeAmount)}</span>
+                          </div>
+                        ) : null}
                         <div className="flex justify-between border-t border-outline-variant/20 pt-2 text-base font-bold">
                           <span className="text-on-surface">Total</span>
                           <span className="font-headline text-primary">
