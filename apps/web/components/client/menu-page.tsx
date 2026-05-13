@@ -77,72 +77,97 @@ function LoyaltyMiniBar({ token }: { token: string }) {
 }
 
 /* ────────────────────────────────────────────────────────────── */
-/*  Promo countdown — Wed/Thu/Fri weekly promotions               */
+/*  Promo banner — only shows when the backend reports active     */
+/*  promotions for today (admin can toggle them off live).         */
 /* ────────────────────────────────────────────────────────────── */
+
+interface TodayPromotion {
+  id: string;
+  name: string;
+  description: string | null;
+  dayOfWeek: number | null;
+  price: number;
+}
+
+const PROMO_DAY_BADGE: Record<number, string> = {
+  0: "DOM",
+  1: "LUN",
+  2: "MAR",
+  3: "MIÉ",
+  4: "JUE",
+  5: "VIE",
+  6: "SÁB",
+};
+
 function PromoCountdown() {
+  const { data: promos } = useQuery({
+    queryKey: ["promotions-today"],
+    queryFn: () =>
+      api.get<TodayPromotion[]>("/api/promotions/today").catch(() => []),
+    // Refresh every couple of minutes so admin toggles propagate
+    refetchInterval: 2 * 60 * 1000,
+    staleTime: 60 * 1000,
+  });
+
   const [timeStr, setTimeStr] = useState<string | null>(null);
-  const [isPromoDay, setIsPromoDay] = useState(false);
 
   useEffect(() => {
+    if (!promos || promos.length === 0) {
+      setTimeStr(null);
+      return;
+    }
     function update() {
       const now = new Date();
-      const day = now.getDay(); // 0=Sun, 1=Mon ... 3=Wed, 4=Thu, 5=Fri
-      const isPromo = day === 3 || day === 4 || day === 5;
-      setIsPromoDay(isPromo);
-
-      if (isPromo) {
-        // Count down to midnight (end of promo day)
-        const midnight = new Date(now);
-        midnight.setHours(24, 0, 0, 0);
-        const diff = midnight.getTime() - now.getTime();
-        const h = Math.floor(diff / 3_600_000);
-        const m = Math.floor((diff % 3_600_000) / 60_000);
-        const s = Math.floor((diff % 60_000) / 1_000);
-        setTimeStr(`${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`);
-      } else {
-        // Count down to next Wednesday
-        const daysUntilWed = ((3 - day + 7) % 7) || 7;
-        const nextWed = new Date(now);
-        nextWed.setDate(now.getDate() + daysUntilWed);
-        nextWed.setHours(0, 0, 0, 0);
-        const diff = nextWed.getTime() - now.getTime();
-        const d = Math.floor(diff / 86_400_000);
-        const h = Math.floor((diff % 86_400_000) / 3_600_000);
-        const m = Math.floor((diff % 3_600_000) / 60_000);
-        setTimeStr(`${d}d ${h}h ${String(m).padStart(2, "0")}m`);
-      }
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0);
+      const diff = midnight.getTime() - now.getTime();
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      const s = Math.floor((diff % 60_000) / 1_000);
+      setTimeStr(
+        `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`
+      );
     }
-
     update();
     const id = setInterval(update, 1_000);
     return () => clearInterval(id);
-  }, []);
+  }, [promos]);
 
-  if (!timeStr) return null;
+  if (!promos || promos.length === 0 || !timeStr) return null;
+
+  // If every active promo is "todos los días", skip the day badge
+  const dayBadges = Array.from(
+    new Set(
+      promos
+        .map((p) => p.dayOfWeek)
+        .filter((d): d is number => d !== null)
+        .map((d) => PROMO_DAY_BADGE[d])
+    )
+  );
+  const headline =
+    promos.length === 1
+      ? promos[0].name.toUpperCase()
+      : `${promos.length} promos activas`;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 ${
-        isPromoDay
-          ? "border-error/30 bg-error/10"
-          : "border-outline-variant/15 bg-surface-container"
-      }`}
+      className="flex items-center gap-2 rounded-2xl border border-error/30 bg-error/10 px-4 py-2.5"
     >
-      <Flame size={15} className={isPromoDay ? "text-error" : "text-on-surface-variant/60"} />
-      <div>
-        <p className={`font-headline text-[10px] font-extrabold uppercase tracking-widest ${isPromoDay ? "text-error" : "text-on-surface-variant/60"}`}>
-          {isPromoDay ? "¡Promos activas hoy!" : "Próximas promos"}
+      <Flame size={15} className="text-error" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-headline text-[10px] font-extrabold uppercase tracking-widest text-error">
+          ¡Promos activas hoy!
         </p>
-        <p className={`font-mono text-sm font-bold ${isPromoDay ? "text-error" : "text-on-surface-variant"}`}>
-          {isPromoDay ? `Termina en ${timeStr}` : `Empiezan en ${timeStr}`}
+        <p className="truncate font-mono text-sm font-bold text-error">
+          Termina en {timeStr}
         </p>
       </div>
-      {isPromoDay && (
-        <span className="ml-1 inline-flex items-center rounded-full bg-error/20 px-2 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-error">
-          Miér–Vie
+      {dayBadges.length > 0 && (
+        <span className="ml-1 inline-flex flex-shrink-0 items-center rounded-full bg-error/20 px-2 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-error">
+          {dayBadges.join("·")}
         </span>
       )}
     </motion.div>
