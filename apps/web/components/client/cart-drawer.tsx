@@ -135,15 +135,87 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                   {items.map((item, idx) => {
                     const issues = itemIssues[idx] ?? [];
                     const itemProduct = productById.get(item.productId);
+                    const isPromo = !!item.promotion;
                     const productHasOptions = !!(
                       itemProduct &&
                       ((itemProduct.modifiers && itemProduct.modifiers.length > 0) ||
                         (itemProduct.variants && itemProduct.variants.length > 0))
                     );
                     const editable =
-                      !!(item.variant) ||
-                      !!(item.modifiers && item.modifiers.length > 0) ||
-                      productHasOptions; // allow editing if product has options
+                      !isPromo &&
+                      (!!item.variant ||
+                        !!(item.modifiers && item.modifiers.length > 0) ||
+                        productHasOptions);
+
+                    if (isPromo && item.promotion) {
+                      return (
+                        <div
+                          key={`${item.productId}-${idx}`}
+                          className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3.5"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-headline text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                              Combo promocional
+                            </p>
+                            <p className="mt-0.5 font-headline text-sm font-semibold text-tertiary">
+                              {item.name}
+                            </p>
+                            <ul className="mt-2 space-y-0.5 rounded-lg bg-surface/60 p-2 text-[11px]">
+                              {item.promotion.items.map((it, i) => (
+                                <li
+                                  key={`${it.productId}-${i}`}
+                                  className="flex items-center gap-1 text-on-surface-variant"
+                                >
+                                  <span className="font-bold text-primary">
+                                    {it.qty * item.qty}×
+                                  </span>
+                                  <span className="truncate">
+                                    {it.emoji ?? "🍗"} {it.productName}
+                                    {it.variant && (
+                                      <span className="ml-1 opacity-60">
+                                        ({it.variant})
+                                      </span>
+                                    )}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-1.5 text-sm font-headline font-bold text-primary">
+                              {formatCents(item.price * item.qty)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() =>
+                                updateQty(item.productId, item.variant, item.qty - 1, item.modifiers)
+                              }
+                              className="w-7 h-7 rounded-lg bg-surface-variant flex items-center justify-center text-on-surface-variant hover:bg-outline-variant transition-colors"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <span className="text-sm font-headline font-bold w-6 text-center text-tertiary">
+                              {item.qty}
+                            </span>
+                            <button
+                              onClick={() =>
+                                updateQty(item.productId, item.variant, item.qty + 1, item.modifiers)
+                              }
+                              className="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center hover:brightness-110 transition-all"
+                            >
+                              <Plus size={13} />
+                            </button>
+                            <button
+                              onClick={() =>
+                                removeItem(item.productId, item.variant, item.modifiers)
+                              }
+                              className="ml-1 text-on-surface-variant/40 hover:text-error transition-colors"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <div
                         key={`${item.productId}-${item.variant}-${idx}`}

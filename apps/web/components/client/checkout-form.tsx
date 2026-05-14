@@ -223,6 +223,9 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const createOrder = useCallback(
     async (data: CheckoutData, token: string) => {
       const scheduledFor = buildScheduledISO();
+      // Split cart entries: regular products vs promotional bundles.
+      const promoEntries = items.filter((i) => !!i.promotion);
+      const regularEntries = items.filter((i) => !i.promotion);
       return api.post<CreateOrderResponse>(
         "/api/orders",
         {
@@ -239,7 +242,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
           tipAmount: tipCents > 0 ? tipCents : undefined,
           isScheduled: scheduleMode === "LATER",
           scheduledFor,
-          items: items.map((i) => ({
+          items: regularEntries.map((i) => ({
             productId: i.productId,
             qty: i.qty,
             variant: i.variant || undefined,
@@ -253,6 +256,13 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
                   }))
                 : undefined,
           })),
+          promotions:
+            promoEntries.length > 0
+              ? promoEntries.map((i) => ({
+                  promotionId: i.promotion!.id,
+                  qty: i.qty,
+                }))
+              : undefined,
         },
         token
       );

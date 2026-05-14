@@ -8,7 +8,9 @@ import { CartDrawer } from "./cart-drawer";
 import { AuthModal } from "./auth-modal";
 import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
-import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star } from "lucide-react";
+import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star, Plus, Sparkles } from "lucide-react";
+import { useCartStore } from "@/store/cart";
+import type { CartPromotionMeta } from "@pollon/types";
 import { StoreStatusBanner } from "./store-status-banner";
 import { ActiveOrderBanner } from "./active-order-banner";
 import { InstallAppBanner } from "./install-app-banner";
@@ -171,6 +173,122 @@ function PromoCountdown() {
         </span>
       )}
     </motion.div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── */
+/*  PromotionsSection — clickable promo bundle cards for customers */
+/* ────────────────────────────────────────────────────────────── */
+
+interface PromoBundle {
+  id: string;
+  name: string;
+  description: string | null;
+  dayOfWeek: number | null;
+  price: number;
+  items: Array<{
+    productId: string;
+    productName: string;
+    qty: number;
+    variant: string | null;
+    emoji: string | null;
+  }>;
+}
+
+function PromotionsSection({ onAdded }: { onAdded: () => void }) {
+  const { data: promos } = useQuery({
+    queryKey: ["promotions-today"],
+    queryFn: () =>
+      api.get<PromoBundle[]>("/api/promotions/today").catch(() => []),
+    refetchInterval: 2 * 60 * 1000,
+    staleTime: 60 * 1000,
+  });
+
+  const addPromotion = useCartStore((s) => s.addPromotion);
+
+  if (!promos || promos.length === 0) return null;
+
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-center gap-2">
+        <Sparkles size={16} className="text-primary" />
+        <h2 className="font-headline text-sm font-extrabold uppercase tracking-[0.18em] text-tertiary">
+          Promociones de hoy
+        </h2>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {promos.map((p) => {
+          const meta: CartPromotionMeta = {
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            items: p.items.map((it) => ({
+              productId: it.productId,
+              productName: it.productName,
+              qty: it.qty,
+              variant: it.variant,
+              emoji: it.emoji,
+            })),
+          };
+          return (
+            <article
+              key={p.id}
+              className="flex flex-col gap-3 rounded-2xl border border-primary/25 bg-gradient-to-br from-primary/10 to-surface-container-high p-4"
+            >
+              <header className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="font-headline text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                    Combo · Hoy
+                  </span>
+                  <h3 className="mt-0.5 font-headline text-base font-extrabold leading-tight text-tertiary">
+                    {p.name}
+                  </h3>
+                  {p.description && (
+                    <p className="mt-1 line-clamp-2 text-xs text-on-surface-variant/80">
+                      {p.description}
+                    </p>
+                  )}
+                </div>
+                <span className="flex-shrink-0 font-headline text-xl font-extrabold text-primary">
+                  {formatCents(p.price)}
+                </span>
+              </header>
+
+              <ul className="space-y-1 rounded-xl bg-surface/60 p-3 text-[12px]">
+                {p.items.map((it, i) => (
+                  <li
+                    key={`${it.productId}-${i}`}
+                    className="flex items-center gap-1 text-on-surface"
+                  >
+                    <span className="font-bold text-primary">{it.qty}×</span>
+                    <span className="truncate">
+                      {it.emoji ?? "🍗"} {it.productName}
+                      {it.variant && (
+                        <span className="ml-1 text-on-surface-variant">
+                          ({it.variant})
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <button
+                type="button"
+                onClick={() => {
+                  addPromotion(meta);
+                  onAdded();
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 active:scale-[0.98]"
+              >
+                <Plus size={14} />
+                Agregar al carrito
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -668,6 +786,13 @@ export function MenuPage() {
                 <div className="mb-6">
                   <PromoCountdown />
                 </div>
+              )}
+
+              {/* Promociones cards — shown when not searching and admin has actives today */}
+              {!searchQuery && (
+                <PromotionsSection
+                  onAdded={() => setCartOpen(true)}
+                />
               )}
 
               {/* Featured hero — shown when not searching */}

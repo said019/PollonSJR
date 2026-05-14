@@ -36,9 +36,22 @@ export const createOrderSchema = z.object({
           .optional(),
       })
     )
-    .min(1)
     .max(30),
-});
+  promotions: z
+    .array(
+      z.object({
+        promotionId: z.string(),
+        qty: z.number().int().positive().max(10),
+      })
+    )
+    .max(10)
+    .optional(),
+}).refine(
+  (data) =>
+    (data.items && data.items.length > 0) ||
+    (data.promotions && data.promotions.length > 0),
+  { message: "El pedido debe tener al menos un producto o promoción", path: ["items"] }
+);
 
 export const updateStatusSchema = z.object({
   status: z.enum([

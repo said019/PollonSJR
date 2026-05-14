@@ -128,6 +128,26 @@ export interface CartItem {
   notes: string;
   imageUrl: string | null;
   modifiers?: CartItemModifier[];
+  /**
+   * If present, this cart entry represents a promotional bundle.
+   * `productId` is a synthetic key ("promo:<id>") and `price` is the
+   * bundle price; the breakdown is in `promotion.items`.
+   */
+  promotion?: CartPromotionMeta;
+}
+
+export interface CartPromotionMeta {
+  id: string;
+  name: string;
+  /** Bundle price in cents — already reflected in CartItem.price */
+  price: number;
+  items: Array<{
+    productId: string;
+    productName: string;
+    qty: number;
+    variant: string | null;
+    emoji?: string | null;
+  }>;
 }
 
 export interface CreateOrderPayload {
@@ -146,6 +166,10 @@ export interface CreateOrderPayload {
     qty: number;
     variant?: string;
     notes?: string;
+  }>;
+  promotions?: Array<{
+    promotionId: string;
+    qty: number;
   }>;
 }
 

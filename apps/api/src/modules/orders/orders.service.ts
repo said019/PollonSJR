@@ -84,13 +84,64 @@ export class OrdersService {
       }
     }
 
-    // 2. Fetch and validate products
-    const productIds = data.items.map((i) => i.productId);
+    // 2. Fetch and validate products (regular + those inside selected promos)
+    const regularProductIds = data.items.map((i) => i.productId);
+    const promoEntries = data.promotions;
+
+    // 2a. Validate promotions
+    type LoadedPromo = {
+      id: string;
+      name: string;
+      price: number;
+      dayOfWeek: number | null;
+      items: Array<{ productId: string; qty: number; variant: string | null }>;
+    };
+    let loadedPromos: Array<{ promo: LoadedPromo; qty: number }> = [];
+    if (promoEntries && promoEntries.length > 0) {
+      const promoIds = promoEntries.map((p) => p.promotionId);
+      const dbPromos = await this.app.prisma.promotion.findMany({
+        where: { id: { in: promoIds }, active: true },
+        include: { items: true },
+      });
+      const todayDow = new Date().getDay();
+      for (const entry of promoEntries) {
+        const dbPromo = dbPromos.find((p) => p.id === entry.promotionId);
+        if (!dbPromo) {
+          throw new Error("Una de las promociones ya no está disponible");
+        }
+        if (dbPromo.dayOfWeek !== null && dbPromo.dayOfWeek !== todayDow) {
+          throw new Error(`La promoción "${dbPromo.name}" no aplica hoy.`);
+        }
+        loadedPromos.push({
+          promo: {
+            id: dbPromo.id,
+            name: dbPromo.name,
+            price: dbPromo.price,
+            dayOfWeek: dbPromo.dayOfWeek,
+            items: dbPromo.items.map((it) => ({
+              productId: it.productId,
+              qty: it.qty,
+              variant: it.variant,
+            })),
+          },
+          qty: entry.qty,
+        });
+      }
+    }
+
+    const promoProductIds = loadedPromos.flatMap((p) =>
+      p.promo.items.map((i) => i.productId)
+    );
+
+    const allProductIds = Array.from(
+      new Set([...regularProductIds, ...promoProductIds])
+    );
+
     const products = await this.app.prisma.product.findMany({
-      where: { id: { in: productIds }, active: true },
+      where: { id: { in: allProductIds }, active: true },
     });
 
-    if (products.length !== productIds.length) {
+    if (products.length !== allProductIds.length) {
       throw new Error("Uno o más productos no están disponibles");
     }
 
@@ -99,7 +150,7 @@ export class OrdersService {
       throw new Error(`Productos agotados: ${soldOut.map((p) => p.name).join(", ")}`);
     }
 
-    // 3. Calculate items + subtotal (including modifiers)
+    // 3. Calculate regular items + subtotal (including modifiers)
     let subtotal = 0;
     const orderItems = data.items.map((item: any) => {
       const product = products.find((p) => p.id === item.productId)!;
@@ -129,6 +180,37 @@ export class OrdersService {
       };
     });
 
+    // 3b. Expand promo bundles into real OrderItems at the product's REAL price.
+    //     The bundle price is honored via a discount applied to discountAmount.
+    let promoDiscount = 0;
+    for (const { promo, qty: promoQty } of loadedPromos) {
+      let promoItemsRealSum = 0;
+      for (const promoItem of promo.items) {
+        const product = products.find((p) => p.id === promoItem.productId)!;
+        let price = product.price;
+        if (promoItem.variant && product.variants) {
+          const variants = product.variants as Array<{ label: string; price: number }>;
+          const v = variants.find((v) => v.label === promoItem.variant);
+          if (v) price = v.price;
+        }
+        const totalQty = promoItem.qty * promoQty;
+        promoItemsRealSum += price * totalQty;
+        subtotal += price * totalQty;
+        orderItems.push({
+          productId: promoItem.productId,
+          qty: totalQty,
+          unitPrice: price,
+          variant: promoItem.variant,
+          notes: `Promo: ${promo.name}`,
+          modifiers: [],
+        });
+      }
+      // Bundle discount so the customer pays exactly promo.price per bundle
+      const bundleTotal = promo.price * promoQty;
+      const diff = Math.max(0, promoItemsRealSum - bundleTotal);
+      promoDiscount += diff;
+    }
+
     // 4. Delivery fee + zone time-window validation
     let deliveryFee = 0;
     if (data.type === "DELIVERY") {
@@ -146,7 +228,7 @@ export class OrdersService {
     }
 
     // 5. Apply coupon if provided
-    let discountAmount = 0;
+    let discountAmount = promoDiscount; // start with promo bundle discounts
     let couponId: string | null = null;
     if (data.couponCode) {
       const coupon = await validateCoupon(
