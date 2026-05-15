@@ -465,10 +465,13 @@ export function ProductOptionsModal({
                   {error}
                 </div>
               )}
-            </div>
 
-            {/* "Va bien con esto" — collaborative filtering. */}
-            {product && <RelatedProductsRail productId={product.id} />}
+              {/* "Va bien con esto" — DENTRO del scroll. Antes estaba fuera,
+                  fijo entre el scroll y el footer: se comía el espacio del
+                  área scrolleable y dejaba a "Complementos" atrapado en una
+                  ventana diminuta imposible de alcanzar en móvil. */}
+              {product && <RelatedProductsRail productId={product.id} />}
+            </div>
 
             {/* Footer — safe-area-inset-bottom + hit target ≥48px.
                 Cuando falta algo obligatorio (ej. Complementos de un combo)
