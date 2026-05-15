@@ -23,11 +23,29 @@ import {
   FileText,
 } from "lucide-react";
 
-const NEXT_STATUS_LABEL: Record<string, { next: "ON_THE_WAY" | "DELIVERED"; label: string }> = {
-  RECEIVED: { next: "ON_THE_WAY", label: "Salí con el pedido" },
-  PREPARING: { next: "ON_THE_WAY", label: "Salí con el pedido" },
-  READY: { next: "ON_THE_WAY", label: "Salí con el pedido" },
-  ON_THE_WAY: { next: "DELIVERED", label: "Marcar como entregado" },
+// La cocina avanza RECEIVED → PREPARING → READY. El driver toma cuando READY.
+// Si el driver intenta avanzar antes (RECEIVED/PREPARING), el backend lo
+// rechaza (drivers.service.ts.updateMyOrderStatus). Mostrar UI honesta del
+// estado de espera en lugar de un botón que va a fallar.
+type StatusAction =
+  | { kind: "advance"; next: "ON_THE_WAY" | "DELIVERED"; label: string }
+  | { kind: "waiting"; label: string; hint: string }
+  | { kind: "done" };
+
+const STATUS_ACTION: Record<string, StatusAction> = {
+  RECEIVED: {
+    kind: "waiting",
+    label: "Esperando cocina",
+    hint: "El restaurante apenas confirmó el pedido. Te avisamos cuando esté listo.",
+  },
+  PREPARING: {
+    kind: "waiting",
+    label: "Cocinando",
+    hint: "El pedido está en la freidora. Te avisamos cuando esté listo para recoger.",
+  },
+  READY: { kind: "advance", next: "ON_THE_WAY", label: "Salí con el pedido" },
+  ON_THE_WAY: { kind: "advance", next: "DELIVERED", label: "Marcar como entregado" },
+  DELIVERED: { kind: "done" },
 };
 
 export default function DriverOrderDetailPage({
@@ -87,7 +105,7 @@ export default function DriverOrderDetailPage({
     );
   }
 
-  const action = NEXT_STATUS_LABEL[order.status];
+  const action: StatusAction = STATUS_ACTION[order.status] ?? { kind: "done" };
   const mapsUrl =
     order.deliveryLat && order.deliveryLng
       ? `https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLat},${order.deliveryLng}&travelmode=driving`
@@ -286,10 +304,17 @@ export default function DriverOrderDetailPage({
         )}
       </main>
 
-      {/* Sticky action bar */}
-      <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-10">
+      {/* Sticky action bar — adaptado a los 3 estados: esperando, avanzar, hecho.
+          Respeta safe-area-inset-bottom para que el botón no quede tapado por el
+          home indicator en iPhones modernos. */}
+      <div
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent px-4 pt-10"
+        style={{
+          paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+        }}
+      >
         <div className="pointer-events-auto mx-auto max-w-2xl">
-          {action ? (
+          {action.kind === "advance" && (
             <button
               onClick={() => advance.mutate(action.next)}
               disabled={advance.isPending}
@@ -308,7 +333,27 @@ export default function DriverOrderDetailPage({
               )}
               {action.label}
             </button>
-          ) : (
+          )}
+
+          {action.kind === "waiting" && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-400">
+                  <Loader2 size={16} className="animate-spin" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-headline text-sm font-extrabold uppercase tracking-wider text-amber-400">
+                    {action.label}
+                  </p>
+                  <p className="text-[11px] leading-tight text-on-surface-variant">
+                    {action.hint}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {action.kind === "done" && (
             <div className="rounded-2xl bg-emerald-500/15 px-4 py-3 text-center text-sm font-bold text-emerald-400">
               <CheckCircle2 size={14} className="mr-1 inline" /> Pedido entregado
             </div>

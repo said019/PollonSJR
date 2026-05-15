@@ -10,6 +10,7 @@ import { formatCents } from "@pollon/utils";
 import type { DriverOrderSummary, DriverPublic } from "@pollon/types";
 import { useDriverGeolocation } from "@/hooks/useDriverGeolocation";
 import { DriverAlerts } from "@/components/client/driver-alerts";
+import { unlockAudio } from "@/lib/notification-sound";
 import {
   Bike,
   Loader2,
@@ -82,6 +83,11 @@ export default function DriverDashboardPage() {
 
   const logout = () => {
     if (onShift) shiftMut.mutate(false);
+    // Cancelar queries activas ANTES de borrar el token para evitar que
+    // refetchs en cola disparen requests con Authorization: Bearer null,
+    // que generan 401 noise y race conditions con la pantalla de login.
+    queryClient.cancelQueries();
+    queryClient.removeQueries();
     removeDriverToken();
     router.replace("/driver/login");
   };
@@ -152,10 +158,34 @@ export default function DriverDashboardPage() {
               </p>
             </div>
             <button
-              onClick={() => shiftMut.mutate(!onShift)}
+              onClick={() => {
+                // No permitir iniciar turno sin GPS. Si no, el admin lo vería
+                // "en turno" sin poder localizarlo y los clientes verían
+                // tracking sin pin moviéndose — engañoso.
+                if (!onShift && geo.perm === "denied") {
+                  alert(
+                    "Activa el permiso de ubicación del navegador antes de iniciar turno. Lo necesitamos para que el admin y los clientes puedan ver dónde estás."
+                  );
+                  return;
+                }
+                if (!onShift && geo.perm === "prompt") {
+                  // Disparar el prompt de geolocalización; el siguiente tap
+                  // (después de aceptar) inicia el turno.
+                  geo.requestPermission();
+                  return;
+                }
+                // El primer tap del usuario desbloquea el audio del browser.
+                // Sin esto, cuando le caiga un pedido y el socket dispare
+                // playNewOrderSound(), el sound() falla silenciosamente
+                // porque el navegador requiere user gesture previo.
+                if (!onShift) unlockAudio();
+                shiftMut.mutate(!onShift);
+              }}
               disabled={shiftMut.isPending}
               className={`flex-shrink-0 rounded-xl px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider transition-all active:scale-95 disabled:opacity-50 ${
-                onShift
+                !onShift && geo.perm === "denied"
+                  ? "border border-error/40 bg-error/10 text-error"
+                  : onShift
                   ? "border border-error/40 bg-error/10 text-error"
                   : "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30"
               }`}
@@ -164,6 +194,8 @@ export default function DriverDashboardPage() {
                 <Loader2 size={13} className="animate-spin" />
               ) : onShift ? (
                 "Cerrar"
+              ) : !onShift && geo.perm === "denied" ? (
+                "GPS off"
               ) : (
                 "Iniciar"
               )}

@@ -780,8 +780,17 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
       {error && <p className="text-error text-sm mb-3">{error}</p>}
 
-      {/* ── Total a pagar — SIEMPRE visible (CARD/CASH/TRANSFER) ── */}
-      <div className="mt-auto">
+      {/* ── Total a pagar + CTAs — SIEMPRE visible.
+          sticky bottom-0 lo mantiene a la vista aunque el teclado iOS empuje
+          el viewport o el usuario haya hecho scroll. -mx-4 + px-4 extienden a
+          los bordes para tapar contenido detrás. safe-area-inset-bottom evita
+          que el home indicator de iPhones modernos tape el botón. */}
+      <div
+        className="sticky bottom-0 -mx-4 -mb-6 mt-3 border-t border-outline-variant/15 bg-surface px-4 pt-3"
+        style={{
+          paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+        }}
+      >
         <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high px-4 py-3 mb-3">
           <div className="space-y-1 text-sm">
             <div className="flex justify-between text-on-surface-variant">

@@ -50,6 +50,47 @@ export function preloadNewOrderSound() {
   preloaded = true;
 }
 
+/**
+ * Desbloquea el audio del browser. Tiene que llamarse DENTRO de un user gesture
+ * (click/tap), si no Chrome/Safari rechazan el play() silenciosamente.
+ *
+ * Reproduce el archivo a volumen 0 por una fracción de segundo. Eso es
+ * suficiente para que el browser considere que el sitio "tiene permiso" para
+ * reproducir audio en este origen. Después, los playNewOrderSound() siguientes
+ * funcionan aunque se disparen desde eventos no-gesture (sockets, timers, etc).
+ *
+ * En la app del repartidor llamamos esto en el tap de "Iniciar turno".
+ */
+export function unlockAudio(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (!audio) {
+      audio = new Audio("/new-order.mp3");
+      audio.preload = "auto";
+    }
+    const restoreVolume = audio.volume;
+    audio.volume = 0;
+    audio.currentTime = 0;
+    const p = audio.play();
+    if (p && typeof p.then === "function") {
+      void p
+        .then(() => {
+          audio?.pause();
+          if (audio) {
+            audio.currentTime = 0;
+            audio.volume = restoreVolume;
+          }
+        })
+        .catch(() => {
+          if (audio) audio.volume = restoreVolume;
+        });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function playNewOrderSound() {
   if (typeof window === "undefined") return;
   const sound = getCurrentSound();

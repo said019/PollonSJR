@@ -524,6 +524,19 @@ export class OrdersService {
 
     if (!order) throw new Error("Pedido no encontrado");
 
+    // Validación: no se puede mandar un pedido a domicilio "en camino" sin
+    // un repartidor asignado. Antes esto pasaba silenciosamente y el cliente
+    // veía el mapa de tracking pero sin nadie viniendo en realidad.
+    if (
+      newStatus === "ON_THE_WAY" &&
+      order.type === "DELIVERY" &&
+      !order.driverId
+    ) {
+      throw new Error(
+        "Asigna un repartidor antes de marcar el pedido 'en camino'."
+      );
+    }
+
     // Optimistic locking: only update if status hasn't changed since we read it
     const updated = await this.app.prisma.order.updateMany({
       where: { id: orderId, status: order.status },

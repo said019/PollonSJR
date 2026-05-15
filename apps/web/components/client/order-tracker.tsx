@@ -78,6 +78,20 @@ export function OrderTracker({ orderId }: { orderId: string }) {
 
   const isPendingPayment = currentStatus === "PENDING_PAYMENT";
 
+  // Si el pedido sigue en PENDING_PAYMENT después de 30s, asumimos que algo
+  // se atascó (webhook MP retrasado / red / ngrok caído en staging) y mostramos
+  // el botón "Reintentar pago" aunque pagoParam no diga "error". Sin esto el
+  // cliente se queda viendo el spinner indefinidamente.
+  const [pendingPaymentStuck, setPendingPaymentStuck] = useState(false);
+  useEffect(() => {
+    if (!isPendingPayment) {
+      setPendingPaymentStuck(false);
+      return;
+    }
+    const t = setTimeout(() => setPendingPaymentStuck(true), 30_000);
+    return () => clearTimeout(t);
+  }, [isPendingPayment]);
+
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ["order", orderId],
     queryFn: () => api.get<OrderDetail>(`/api/orders/${orderId}`, token || undefined),
@@ -229,9 +243,17 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               />
             </div>
 
-            {/* Retry payment button — shown only if pago=error or after 30s */}
-            {(pagoParam === "error" || pagoParam === "fallido") && (
-              <RetryPaymentButton orderId={order.id} />
+            {/* Retry payment button — visible si MP devolvió error explícito
+                O si llevamos 30s+ atascados en "Procesando" (webhook que nunca
+                llegó). Antes solo aparecía con pago=error, dejando al cliente
+                colgado en pagos lentos. */}
+            {(pagoParam === "error" ||
+              pagoParam === "fallido" ||
+              pendingPaymentStuck) && (
+              <RetryPaymentButton
+                orderId={order.id}
+                stuck={pendingPaymentStuck && pagoParam !== "error" && pagoParam !== "fallido"}
+              />
             )}
           </motion.div>
         )}
@@ -1411,7 +1433,7 @@ function CancelOrderButton({
 
 /* ─── Retry payment (CARD) ────────────────────────────────── */
 
-function RetryPaymentButton({ orderId }: { orderId: string }) {
+function RetryPaymentButton({ orderId, stuck = false }: { orderId: string; stuck?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1437,6 +1459,12 @@ function RetryPaymentButton({ orderId }: { orderId: string }) {
 
   return (
     <div className="border-t border-outline-variant/15 p-4">
+      {stuck && (
+        <p className="mb-2 text-center text-[11px] leading-tight text-on-surface-variant/80">
+          ¿Está tardando demasiado? Puedes reintentar tu pago — no se va a
+          duplicar el cobro.
+        </p>
+      )}
       <button
         type="button"
         onClick={handleRetry}

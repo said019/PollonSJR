@@ -56,8 +56,14 @@ export function OrdersHistory() {
   const initialType = params.get("type");
 
   const [page, setPage]         = useState(1);
-  const [dateFrom, setDateFrom] = useState(params.get("dateFrom") || "");
-  const [dateTo, setDateTo]     = useState(params.get("dateTo") || "");
+  // Default a "hoy" (TZ México) si la URL no especifica fechas. Antes el
+  // historial abría completamente vacío y el admin tenía que tocar un preset
+  // para ver cualquier cosa.
+  const todayISO = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Mexico_City",
+  });
+  const [dateFrom, setDateFrom] = useState(params.get("dateFrom") || todayISO);
+  const [dateTo, setDateTo]     = useState(params.get("dateTo") || todayISO);
   const [search, setSearch]     = useState(params.get("search") || "");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(
     initialStatus === "DELIVERED" || initialStatus === "CANCELLED" ? initialStatus : ""

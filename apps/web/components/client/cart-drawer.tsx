@@ -296,7 +296,15 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                       so the user can focus on fixing their cart. */}
                   {!hasIssues && <UpsellRecommendations />}
 
-                  <div className="space-y-2.5 border-t border-outline-variant/10 p-4">
+                  <div
+                    className="space-y-2.5 border-t border-outline-variant/10 px-4 pt-4"
+                    style={{
+                      // En iPhones modernos el home indicator tapaba el botón
+                      // "Proceder al pago" cuando estaba al borde. Reservamos al
+                      // menos 1rem y respetamos safe-area-inset-bottom.
+                      paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+                    }}
+                  >
                     <div className="flex justify-between items-center">
                       <span className="text-on-surface-variant font-headline font-semibold">Subtotal</span>
                       <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
