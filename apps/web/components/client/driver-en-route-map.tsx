@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
+import { useEffect, useRef, useState } from "react";
+import { GoogleMap, OverlayView, useJsApiLoader } from "@react-google-maps/api";
 import { useSocket } from "@/hooks/useSocket";
 import { getToken } from "@/lib/auth";
 import { Bike, Loader2, MapPin, Phone, Truck } from "lucide-react";
@@ -50,6 +50,7 @@ export function DriverEnRouteMap({
   const [driverPos, setDriverPos] = useState<{ lat: number; lng: number } | null>(
     driver?.lat && driver?.lng ? { lat: driver.lat, lng: driver.lng } : null
   );
+  const [heading, setHeading] = useState<number | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(
     driver?.locationUpdatedAt || null
   );
@@ -61,6 +62,7 @@ export function DriverEnRouteMap({
     (data) => {
       if (data.orderId !== orderId) return;
       setDriverPos({ lat: data.lat, lng: data.lng });
+      if (typeof data.heading === "number") setHeading(data.heading);
       setUpdatedAt(data.ts);
     },
     { token: customerToken || undefined, role: "customer" }
@@ -157,31 +159,19 @@ export function DriverEnRouteMap({
               ],
             }}
           >
-            <Marker
-              position={driverPos}
-              icon={{
-                path: "M -12,-8 L 12,-8 L 12,8 L -12,8 Z",
-                fillColor: "#F07820",
-                fillOpacity: 1,
-                strokeColor: "#fff",
-                strokeWeight: 2,
-                scale: 1,
-              }}
-              label={{ text: "🛵", fontSize: "16px" }}
-            />
+            <SmoothDriverPin lat={driverPos.lat} lng={driverPos.lng} heading={heading} />
             {destinationLat !== null && destinationLng !== null && (
-              <Marker
+              <OverlayView
                 position={{ lat: destinationLat, lng: destinationLng }}
-                icon={{
-                  path: "M 0 0 m -10 0 a 10 10 0 1 0 20 0 a 10 10 0 1 0 -20 0",
-                  fillColor: "#22c55e",
-                  fillOpacity: 1,
-                  strokeColor: "#fff",
-                  strokeWeight: 2,
-                  scale: 1,
-                }}
-                label={{ text: "🏠", fontSize: "14px" }}
-              />
+                mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-white">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                    <path d="M12 2 3 11h2v9h5v-6h4v6h5v-9h2L12 2z" />
+                  </svg>
+                </div>
+              </OverlayView>
             )}
           </GoogleMap>
         )}
@@ -193,6 +183,103 @@ export function DriverEnRouteMap({
           <span className="text-on-surface-variant">{destinationAddress}</span>
         </div>
       )}
+
+      <style jsx global>{`
+        @keyframes pollon-driver-pulse-client {
+          0% { transform: scale(0.6); opacity: 0.55; }
+          80% { opacity: 0; }
+          100% { transform: scale(2.4); opacity: 0; }
+        }
+        @keyframes pollon-driver-pop-client {
+          from { transform: scale(0.85); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        .pollon-pin-client { animation: pollon-driver-pop-client 320ms cubic-bezier(0.23,1,0.32,1) backwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .pollon-pin-client { animation: none; }
+          .pollon-pulse-client { animation: none !important; display: none; }
+        }
+      `}</style>
     </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────── */
+/*  SmoothDriverPin — pin con interpolación + pulse + heading   */
+/* ──────────────────────────────────────────────────────────── */
+
+function SmoothDriverPin({
+  lat,
+  lng,
+  heading,
+}: {
+  lat: number;
+  lng: number;
+  heading: number | null;
+}) {
+  const [displayed, setDisplayed] = useState({ lat, lng });
+  const startRef = useRef({ lat, lng, t: Date.now() });
+  const targetRef = useRef({ lat, lng });
+
+  useEffect(() => {
+    startRef.current = { ...displayed, t: Date.now() };
+    targetRef.current = { lat, lng };
+    let raf = 0;
+    const tick = () => {
+      const elapsed = Date.now() - startRef.current.t;
+      const p = Math.min(1, elapsed / 9000);
+      const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic
+      setDisplayed({
+        lat:
+          startRef.current.lat +
+          (targetRef.current.lat - startRef.current.lat) * eased,
+        lng:
+          startRef.current.lng +
+          (targetRef.current.lng - startRef.current.lng) * eased,
+      });
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lat, lng]);
+
+  return (
+    <OverlayView
+      position={displayed}
+      mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+      getPixelPositionOffset={(w, h) => ({ x: -(w / 2), y: -(h / 2) })}
+    >
+      <div className="pollon-pin-client">
+        <div
+          className="relative flex h-10 w-10 items-center justify-center"
+          style={{
+            transform: heading !== null ? `rotate(${heading}deg)` : undefined,
+            transition: "transform 800ms cubic-bezier(0.77, 0, 0.175, 1)",
+          }}
+        >
+          <span
+            className="pollon-pulse-client absolute inset-0 rounded-full bg-orange-500"
+            style={{
+              animation:
+                "pollon-driver-pulse-client 2.4s cubic-bezier(0.4,0,0.6,1) infinite",
+            }}
+          />
+          <span
+            className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full text-white"
+            style={{
+              background:
+                "linear-gradient(180deg, #FF8A3D 0%, #F07820 60%, #DC5A0E 100%)",
+              boxShadow:
+                "0 6px 16px rgba(240,120,32,0.55), 0 0 0 2px white, 0 0 0 3px rgba(0,0,0,0.15)",
+              transform:
+                heading !== null ? `rotate(${-heading}deg)` : undefined,
+            }}
+          >
+            <Bike size={16} strokeWidth={2.5} />
+          </span>
+        </div>
+      </div>
+    </OverlayView>
   );
 }
