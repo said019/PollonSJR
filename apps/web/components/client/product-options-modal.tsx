@@ -185,6 +185,12 @@ export function ProductOptionsModal({
     return null;
   };
 
+  // Validación REACTIVA: se recalcula al cambiar selecciones/variante.
+  // Antes solo se evaluaba al tocar "Agregar", el combo fallaba en
+  // silencio y el cliente pensaba que la app estaba rota. Ahora el
+  // footer muestra proactivamente qué falta (patrón Rappi/UberEats).
+  const blocker = useMemo(() => validate(), [product, selections, variant]);
+
   const handleConfirm = () => {
     if (!product) return;
     const err = validate();
@@ -464,43 +470,66 @@ export function ProductOptionsModal({
             {/* "Va bien con esto" — collaborative filtering. */}
             {product && <RelatedProductsRail productId={product.id} />}
 
-            {/* Footer — safe-area-inset-bottom evita que el home indicator
-                de iPhones tape el botón "Agregar". También se le subió la
-                altura del botón a hit target ≥ 48px (Apple HIG recomienda
-                ≥44pt) para que no se pierdan taps. */}
+            {/* Footer — safe-area-inset-bottom + hit target ≥48px.
+                Cuando falta algo obligatorio (ej. Complementos de un combo)
+                el footer LO DICE antes de tocar, en vez de fallar callado. */}
             <div
-              className="flex items-center gap-3 border-t border-outline-variant/15 bg-surface-container-high/40 px-4 pt-4"
+              className="border-t border-outline-variant/15 bg-surface-container-high/40 px-4 pt-3"
               style={{
                 paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
               }}
             >
-              <div className="flex items-center gap-1 rounded-full border border-outline-variant/30 bg-surface-container px-2 py-1.5">
+              {blocker && (
                 <button
-                  onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  className="rounded-full p-1.5 text-on-surface-variant transition-transform active:scale-90 disabled:opacity-30"
-                  disabled={qty <= 1}
-                  aria-label="Menos"
+                  type="button"
+                  onClick={handleConfirm}
+                  className="mb-2 flex w-full items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-[12px] font-semibold text-amber-400 transition-colors active:bg-amber-500/20"
                 >
-                  <Minus size={16} />
+                  <span className="text-base leading-none">⚠️</span>
+                  <span className="flex-1">
+                    {blocker} — toca para ir a la sección
+                  </span>
                 </button>
-                <span className="w-6 text-center font-headline text-sm font-bold">
-                  {qty}
-                </span>
+              )}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1 rounded-full border border-outline-variant/30 bg-surface-container px-2 py-1.5">
+                  <button
+                    onClick={() => setQty((q) => Math.max(1, q - 1))}
+                    className="rounded-full p-1.5 text-on-surface-variant transition-transform active:scale-90 disabled:opacity-30"
+                    disabled={qty <= 1}
+                    aria-label="Menos"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <span className="w-6 text-center font-headline text-sm font-bold">
+                    {qty}
+                  </span>
+                  <button
+                    onClick={() => setQty((q) => Math.min(20, q + 1))}
+                    className="rounded-full p-1.5 text-on-surface-variant transition-transform active:scale-90"
+                    aria-label="Más"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
                 <button
-                  onClick={() => setQty((q) => Math.min(20, q + 1))}
-                  className="rounded-full p-1.5 text-on-surface-variant transition-transform active:scale-90"
-                  aria-label="Más"
+                  onClick={handleConfirm}
+                  className={`flex flex-1 items-center justify-between rounded-xl px-4 py-3.5 text-sm font-bold transition-all active:scale-[0.97] ${
+                    blocker
+                      ? "bg-surface-variant text-on-surface-variant/60"
+                      : "bg-primary text-on-primary shadow-lg shadow-primary/25"
+                  }`}
                 >
-                  <Plus size={16} />
+                  <span>
+                    {editing
+                      ? "Guardar cambios"
+                      : blocker
+                        ? "Completa las opciones"
+                        : "Agregar al carrito"}
+                  </span>
+                  <span>{formatCents(finalUnitPrice * qty)}</span>
                 </button>
               </div>
-              <button
-                onClick={handleConfirm}
-                className="flex flex-1 items-center justify-between rounded-xl bg-primary px-4 py-3.5 text-sm font-bold text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.97]"
-              >
-                <span>{editing ? "Guardar cambios" : "Agregar al carrito"}</span>
-                <span>{formatCents(finalUnitPrice * qty)}</span>
-              </button>
             </div>
           </motion.div>
         </>
