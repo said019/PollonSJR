@@ -140,10 +140,22 @@ export function OrdersKanban() {
     qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
   }, socketAuth);
 
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
   const advanceMut = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: OrderStatusType }) =>
       api.patch(`/api/admin/orders/${orderId}/status`, { status }, adminToken || undefined),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-active-orders"] }),
+    onSuccess: () => {
+      setAdvanceError(null);
+      qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
+    },
+    onError: (err: any) => {
+      // El backend devuelve mensaje útil (ej. "Asigna un repartidor antes
+      // de marcar el pedido 'en camino'"). Antes el botón fallaba en silencio
+      // y el admin pensaba que la app estaba rota. Lo mostramos como banner
+      // arriba del kanban por 6s.
+      setAdvanceError(err?.message || "No se pudo avanzar el pedido. Intenta de nuevo.");
+      setTimeout(() => setAdvanceError(null), 6_000);
+    },
   });
 
   const pauseMut = useMutation({
@@ -197,6 +209,19 @@ export function OrdersKanban() {
 
   return (
     <div className="p-6">
+      {advanceError && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-error/40 bg-error/10 px-4 py-3">
+          <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-error" />
+          <p className="flex-1 text-sm font-semibold text-error">{advanceError}</p>
+          <button
+            onClick={() => setAdvanceError(null)}
+            aria-label="Cerrar"
+            className="rounded p-0.5 text-error/70 hover:text-error"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-bold">Pedidos Activos</h1>

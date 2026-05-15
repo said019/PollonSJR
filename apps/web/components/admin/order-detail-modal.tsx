@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Banknote,
+  Bike,
   CheckCircle,
   ChefHat,
   Clock,
@@ -1019,13 +1020,19 @@ function DriverAssignmentSection({
     enabled: picking || !driver,
   });
 
+  const [assignError, setAssignError] = useState<string | null>(null);
   const assign = useMutation({
     mutationFn: (driverId: string) =>
       api.post(`/api/admin/orders/${orderId}/driver`, { driverId }, adminToken),
     onSuccess: () => {
+      setAssignError(null);
       queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       setPicking(false);
+    },
+    onError: (err: any) => {
+      setAssignError(err?.message || "No se pudo asignar al repartidor");
+      setTimeout(() => setAssignError(null), 5_000);
     },
   });
 
@@ -1091,38 +1098,83 @@ function DriverAssignmentSection({
   }
 
   // No assignment, or picking mode
+  const activeDrivers = drivers.filter((d) => d.active && d.id !== driver?.id);
+  // Priorizamos los que están "en turno" arriba.
+  const sorted = [...activeDrivers].sort(
+    (a, b) => Number(b.onShift) - Number(a.onShift)
+  );
+  const singleDriver = sorted.length === 1 ? sorted[0] : null;
+
   return (
     <section className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
       <h3 className="mb-3 font-headline text-[10px] font-bold uppercase tracking-[0.25em] text-primary">
         {driver ? "Cambiar repartidor" : "Sin repartidor asignado"}
       </h3>
 
-      {drivers.filter((d) => d.active).length === 0 ? (
+      {assignError && (
+        <p className="mb-2 rounded-lg bg-error/15 px-2.5 py-1.5 text-[11px] font-semibold text-error">
+          {assignError}
+        </p>
+      )}
+
+      {activeDrivers.length === 0 ? (
         <p className="text-xs text-on-surface-variant">
           No hay repartidores activos. Crea uno desde Repartidores.
         </p>
+      ) : singleDriver ? (
+        // Caso común: solo hay 1 repartidor activo → CTA gigante y obvio.
+        // Antes era una lista chiquita con un solo item que el admin no
+        // notaba como tappable.
+        <button
+          onClick={() => assign.mutate(singleDriver.id)}
+          disabled={assign.isPending}
+          className="flex w-full items-center justify-between gap-3 rounded-xl bg-primary px-4 py-3.5 text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98] disabled:opacity-60"
+        >
+          <div className="min-w-0 flex-1 text-left">
+            <p className="font-headline text-[10px] font-bold uppercase tracking-wider opacity-80">
+              {assign.isPending ? "Asignando…" : "Asignar a"}
+            </p>
+            <p className="truncate font-headline text-sm font-extrabold">
+              {singleDriver.name}
+            </p>
+            <p className="truncate text-[10px] opacity-80">
+              {singleDriver.vehicle || "Sin vehículo"} ·{" "}
+              {(singleDriver.activeOrderCount ?? 0)} pedidos activos ·{" "}
+              {singleDriver.onShift ? "En turno" : "Offline"}
+            </p>
+          </div>
+          <div className="flex-shrink-0 rounded-full bg-on-primary/20 p-2">
+            {assign.isPending ? (
+              <Clock size={16} className="animate-pulse" />
+            ) : (
+              <Bike size={16} />
+            )}
+          </div>
+        </button>
       ) : (
         <div className="space-y-1.5">
-          {drivers
-            .filter((d) => d.active)
-            .map((d) => (
-              <button
-                key={d.id}
-                onClick={() => assign.mutate(d.id)}
-                disabled={assign.isPending || d.id === driver?.id}
-                className="flex w-full items-center justify-between rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-left transition-all hover:border-primary/40 disabled:opacity-40"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-bold text-on-surface">
-                    {d.name}
-                  </span>
-                  <span className="block truncate text-[10px] text-on-surface-variant">
-                    {d.vehicle || "Sin vehículo"} ·{" "}
-                    {(d.activeOrderCount ?? 0)} pedidos activos
-                  </span>
+          <p className="mb-1 text-[10px] uppercase tracking-wider text-on-surface-variant/70">
+            Toca un repartidor para asignarlo
+          </p>
+          {sorted.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => assign.mutate(d.id)}
+              disabled={assign.isPending}
+              className="flex w-full items-center justify-between rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2.5 text-left transition-all hover:border-primary/60 hover:bg-primary/5 active:scale-[0.99] disabled:opacity-40"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-on-surface">
+                  {d.name}
                 </span>
+                <span className="block truncate text-[10px] text-on-surface-variant">
+                  {d.vehicle || "Sin vehículo"} ·{" "}
+                  {(d.activeOrderCount ?? 0)} pedidos activos
+                </span>
+              </span>
+              <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
                 <span
-                  className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                  className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
                     d.onShift
                       ? "bg-emerald-500/15 text-emerald-400"
                       : "bg-on-surface-variant/15 text-on-surface-variant"
@@ -1130,8 +1182,10 @@ function DriverAssignmentSection({
                 >
                   {d.onShift ? "En turno" : "Offline"}
                 </span>
-              </button>
-            ))}
+                <Bike size={14} className="text-primary" />
+              </div>
+            </button>
+          ))}
         </div>
       )}
 
