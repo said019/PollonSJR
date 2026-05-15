@@ -1,13 +1,15 @@
 import { FastifyInstance } from "fastify";
+import { mexicoTodayISO, mexicoDayRange } from "../utils/timezone";
 
 /**
  * Daily report — runs at 23:30.
  * Generates summary, saves to DailyReport table, logs WA link.
  */
 export async function runDailyReport(app: FastifyInstance) {
-  const today = new Date().toISOString().split("T")[0];
-  const dayStart = new Date(today + "T00:00:00");
-  const dayEnd = new Date(today + "T23:59:59.999");
+  // "Hoy" en México, no en UTC. Si esto corre a las 23:30 UTC (= 17:30 México),
+  // queremos contar pedidos del día Mexicano actual, no del UTC.
+  const today = mexicoTodayISO();
+  const { start: dayStart, end: dayEnd } = mexicoDayRange(today);
 
   const orders = await app.prisma.order.findMany({
     where: {
@@ -62,6 +64,7 @@ export async function runDailyReport(app: FastifyInstance) {
     .join("\n");
 
   const dateStr = new Date().toLocaleDateString("es-MX", {
+    timeZone: "America/Mexico_City",
     weekday: "long",
     day: "numeric",
     month: "long",

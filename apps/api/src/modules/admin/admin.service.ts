@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import type { DashboardStats } from "@pollon/types";
+import { mexicoStartOfToday } from "../../utils/timezone";
 import {
   updateStoreConfig as updateConfig,
   updateStoreHours as updateHrs,
@@ -9,8 +10,8 @@ export class AdminService {
   constructor(private app: FastifyInstance) {}
 
   async getDashboard(): Promise<DashboardStats> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // "Hoy" en TZ de México, no del servidor (Railway = UTC).
+    const today = mexicoStartOfToday();
 
     const [ordersToday, salesToday, activeOrders, customersToday] =
       await this.app.prisma.$transaction([
@@ -174,8 +175,7 @@ export class AdminService {
   }
 
   async getDailyReport() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = mexicoStartOfToday();
 
     const orders = await this.app.prisma.order.findMany({
       where: { createdAt: { gte: today }, status: { not: "CANCELLED" } },

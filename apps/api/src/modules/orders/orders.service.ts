@@ -5,6 +5,7 @@ import { emitOrderStatus, emitOrderNew } from "./orders.events";
 import { isAcceptingOrders, getStoreConfig } from "../admin/store-config.service";
 import { validateCoupon } from "./coupon.service";
 import { enqueueNotification } from "../notifications/queue";
+import { mexicoStartOfTomorrow } from "../../utils/timezone";
 
 export class OrdersService {
   constructor(private app: FastifyInstance) {}
@@ -59,12 +60,9 @@ export class OrdersService {
         throw new Error("Los pedidos programados requieren scheduledFor");
       }
       const scheduled = new Date(data.scheduledFor);
-      const now = new Date();
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-      const dayAfter = new Date(tomorrow);
-      dayAfter.setDate(dayAfter.getDate() + 1);
+      // "Mañana" en TZ de México (el cliente está en SJR, no en UTC).
+      const tomorrow = mexicoStartOfTomorrow();
+      const dayAfter = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000);
 
       if (scheduled < tomorrow || scheduled >= dayAfter) {
         throw new Error("Solo se aceptan pedidos para el día siguiente (mínimo 1 día de anticipación).");

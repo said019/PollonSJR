@@ -8,6 +8,7 @@ import { createProductSchema, updateProductSchema, modifierSchema } from "../men
 import { updateStatusSchema } from "../orders/orders.schema";
 import { emitMenuUpdated, emitOrderStatus } from "../orders/orders.events";
 import { getStoreConfig, updateStoreConfig } from "./store-config.service";
+import { mexicoDayRange } from "../../utils/timezone";
 import { LoyaltyService } from "../loyalty/loyalty.service";
 import { AppleWalletService } from "../loyalty/apple-wallet.service";
 import { GoogleWalletService } from "../loyalty/google-wallet.service";
@@ -81,8 +82,10 @@ export async function adminRoutes(app: FastifyInstance) {
       type?: "DELIVERY" | "PICKUP";
     };
 
-    const from = dateFrom ? new Date(dateFrom + "T00:00:00.000Z") : undefined;
-    const to = dateTo ? new Date(dateTo + "T23:59:59.999Z") : undefined;
+    // Fechas en TZ de México (no UTC). Antes los pedidos creados después de
+    // las 6pm México del día anterior aparecían como "hoy" en el filtro.
+    const from = dateFrom ? mexicoDayRange(dateFrom).start : undefined;
+    const to = dateTo ? mexicoDayRange(dateTo).end : undefined;
 
     return ordersService.getHistory(Number(page) || 1, 20, from, to, {
       search,

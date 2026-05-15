@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
+import { mexicoTodayISO, mexicoDayRange, mexicoStartOfDaysAgo } from "../../utils/timezone";
 
 export class ReportsService {
   constructor(private app: FastifyInstance) {}
@@ -8,8 +9,8 @@ export class ReportsService {
    * Dashboard stats — real-time header for admin kanban.
    */
   async getDashboardStats() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // "Hoy" en México, no en UTC del servidor (Railway corre en UTC).
+    const { start: today } = mexicoDayRange(mexicoTodayISO());
 
     const [orderStats, revenueStats, activeOrders, breakdown, byHour, topProducts, avgTime] =
       await Promise.all([
@@ -88,9 +89,10 @@ export class ReportsService {
    * Daily report for a specific date.
    */
   async getDailyReport(date?: string) {
-    const targetDate = date ?? new Date().toISOString().split("T")[0];
-    const dayStart = new Date(targetDate + "T00:00:00");
-    const dayEnd = new Date(targetDate + "T23:59:59.999");
+    // Fechas en TZ de México (no UTC directo). Antes los pedidos creados después
+    // de las 6pm México del día anterior caían en "hoy" porque parseábamos UTC.
+    const targetDate = date ?? mexicoTodayISO();
+    const { start: dayStart, end: dayEnd } = mexicoDayRange(targetDate);
 
     const [orders, products, customersToday] = await Promise.all([
       this.app.prisma.order.findMany({
@@ -182,9 +184,8 @@ export class ReportsService {
    * Reports for the frontend view (N days with summary + comparison).
    */
   async getReportsView(days: number = 7, type?: "DELIVERY" | "PICKUP") {
-    const from = new Date();
-    from.setDate(from.getDate() - days);
-    from.setHours(0, 0, 0, 0);
+    // N días hacia atrás desde el comienzo de hoy en TZ de México.
+    const from = mexicoStartOfDaysAgo(days);
 
     // Comparison window: same length as current period, immediately preceding it.
     // Special case: when days=0 ("Hoy") compare against yesterday (1 full day).
@@ -280,9 +281,8 @@ export class ReportsService {
    * CSV export for a specific date.
    */
   async getDailyCsv(date?: string): Promise<{ csv: string; filename: string } | null> {
-    const targetDate = date ?? new Date().toISOString().split("T")[0];
-    const dayStart = new Date(targetDate + "T00:00:00");
-    const dayEnd = new Date(targetDate + "T23:59:59.999");
+    const targetDate = date ?? mexicoTodayISO();
+    const { start: dayStart, end: dayEnd } = mexicoDayRange(targetDate);
 
     const orders = await this.app.prisma.order.findMany({
       where: {
