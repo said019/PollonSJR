@@ -856,6 +856,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
     );
   }, [calculate, placeMarker]);
 
+  const [addingNew, setAddingNew] = useState(false);
   const handleStartNewAddress = useCallback(() => {
     setSelectedSavedAddressId(null);
     setSuggestions([]);
@@ -865,11 +866,23 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
     setAddressQuery("");
     setAddress("");
     setSaveAsDefault(savedAddresses.length === 0);
-    // Focus the search input next tick
+    setAddingNew(true);
+    // Scroll + focus el search input. En mobile, focus solo no scrollea
+    // automáticamente; sin scrollIntoView el cliente toca "+ NUEVA" y no
+    // ve cambio en pantalla.
     setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 0);
+      searchInputRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      searchInputRef.current?.focus({ preventScroll: true });
+    }, 50);
   }, [savedAddresses.length]);
+
+  // Cuando el cliente selecciona una saved address, salir del modo "adding"
+  useEffect(() => {
+    if (selectedSavedAddressId) setAddingNew(false);
+  }, [selectedSavedAddressId]);
 
   return (
     <div className="space-y-3">
@@ -971,8 +984,29 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
       )}
 
       <div className="space-y-2">
+        {addingNew && (
+          <div className="flex items-start gap-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2.5">
+            <Plus size={14} className="mt-0.5 flex-shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <p className="font-headline text-xs font-bold text-primary">
+                Nueva dirección
+              </p>
+              <p className="text-[11px] text-on-surface-variant/80">
+                Busca abajo o usa tu ubicación actual, luego dale un alias y guarda.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAddingNew(false)}
+              className="flex-shrink-0 text-[11px] font-bold text-on-surface-variant/70 hover:text-error"
+              aria-label="Cancelar"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <label className="text-sm font-medium text-on-surface">
-          Busca tu dirección
+          {addingNew ? "Busca o pega la nueva dirección" : "Busca tu dirección"}
         </label>
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">
@@ -992,7 +1026,11 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
               }}
               placeholder="Calle, número, colonia"
               autoComplete="street-address"
-              className="w-full rounded-lg border border-outline-variant/40 bg-white py-2.5 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={`w-full rounded-lg border bg-white py-2.5 pl-9 pr-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-primary/20 ${
+                addingNew
+                  ? "border-primary/60 ring-2 ring-primary/20"
+                  : "border-outline-variant/40 focus:border-primary"
+              }`}
             />
           </div>
           <button
