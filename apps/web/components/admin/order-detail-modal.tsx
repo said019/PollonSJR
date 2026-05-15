@@ -21,6 +21,7 @@ import {
   Navigation,
   Package,
   Phone,
+  RefreshCw,
   Share2,
   Truck,
   User,
@@ -444,6 +445,19 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                             )}
                           </div>
                         </div>
+
+                        {/* CARD + PENDING_PAYMENT → botón para reintentar
+                            reconciliación con MP. Útil cuando el webhook MP
+                            no llegó y el pedido se quedó atascado pero el
+                            cliente sí pagó. Consulta MP directamente y
+                            activa si encuentra un pago aprobado. */}
+                        {order.paymentMethod === "CARD" &&
+                          order.status === "PENDING_PAYMENT" && (
+                            <CardReconcileButton
+                              orderId={order.id}
+                              adminToken={adminToken ?? ""}
+                            />
+                          )}
 
                         {/* Transfer proof + confirm payment */}
                         {order.paymentMethod === "TRANSFER" && (
@@ -878,6 +892,91 @@ function TransferProofPreview({
           Abrir
         </a>
       </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────── */
+/*  CardReconcileButton — rescata pedidos CARD atascados         */
+/* ──────────────────────────────────────────────────────────── */
+
+function CardReconcileButton({
+  orderId,
+  adminToken,
+}: {
+  orderId: string;
+  adminToken: string;
+}) {
+  const queryClient = useQueryClient();
+  const [result, setResult] = useState<{
+    ok: boolean;
+    msg: string;
+  } | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      api.post<{
+        orderStatus: string;
+        paymentStatus: string | null;
+        message: string;
+        action: "activated" | "wait" | "none";
+      }>(`/api/payments/admin/orders/${orderId}/reconcile`, {}, adminToken),
+    onSuccess: (data) => {
+      const activated = data.action === "activated" && data.orderStatus !== "PENDING_PAYMENT";
+      setResult({
+        ok: activated,
+        msg: activated
+          ? `Pago confirmado — pedido en estado ${data.orderStatus}`
+          : data.message || "MP no encontró el pago todavía",
+      });
+      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+    },
+    onError: (err: any) => {
+      setResult({ ok: false, msg: err?.message || "Error al consultar MP" });
+    },
+  });
+
+  return (
+    <div className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/5 p-3">
+      <div className="flex items-center gap-2 text-xs font-headline font-bold uppercase tracking-wider text-sky-400">
+        <AlertTriangle size={13} />
+        Pedido atascado en "Procesando"
+      </div>
+      <p className="mt-1 text-[11px] leading-tight text-on-surface-variant">
+        Si el cliente ya pagó pero el webhook de MercadoPago no llegó,
+        usa este botón para consultar MP directamente y activar el pedido.
+      </p>
+
+      {result && (
+        <p
+          className={`mt-2 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ${
+            result.ok
+              ? "bg-emerald-500/15 text-emerald-400"
+              : "bg-amber-500/15 text-amber-400"
+          }`}
+        >
+          {result.msg}
+        </p>
+      )}
+
+      <button
+        onClick={() => mut.mutate()}
+        disabled={mut.isPending}
+        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-sky-500/25 transition-all active:scale-[0.98] disabled:opacity-60"
+      >
+        {mut.isPending ? (
+          <>
+            <Clock size={14} className="animate-pulse" />
+            Consultando Mercado Pago…
+          </>
+        ) : (
+          <>
+            <RefreshCw size={14} />
+            Reintentar reconciliación
+          </>
+        )}
+      </button>
     </div>
   );
 }
