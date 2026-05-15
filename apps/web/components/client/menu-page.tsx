@@ -19,6 +19,7 @@ import { FavoritesSection } from "./favorites-section";
 import { RecommendationsSection } from "./recommendations-section";
 import { MenuFilters, type MenuFilterTag } from "./menu-filters";
 import { useFavorites } from "@/hooks/useFavorites";
+import { useModalState } from "@/store/modal-state";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -557,6 +558,7 @@ export function MenuPage() {
   const [activeFilters, setActiveFilters] = useState<MenuFilterTag[]>([]);
   const { itemCount, total } = useCart();
   const { favoriteIds } = useFavorites();
+  const productModalOpen = useModalState((s) => s.productModalCount > 0);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   useEffect(() => {
@@ -855,8 +857,15 @@ export function MenuPage() {
         )}
       </main>
 
-      {/* Floating bottom area: active-order banner + cart bar */}
-      <div className="pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-8">
+      {/* Floating bottom area: active-order banner + cart bar.
+          Se oculta cuando hay un modal de producto abierto para que su botón
+          "Agregar al carrito" no quede tapado / confundido por este. */}
+      <div
+        className={`pointer-events-none fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-surface via-surface/95 to-transparent p-4 pt-8 transition-opacity duration-150 ${
+          productModalOpen ? "pointer-events-none opacity-0" : ""
+        }`}
+        aria-hidden={productModalOpen}
+      >
         <div className="mx-auto flex w-full max-w-lg flex-col gap-2">
           {/* Install app + active order — shown when cart is empty */}
           {itemCount === 0 && (

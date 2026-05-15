@@ -11,6 +11,7 @@ import { Minus, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { RelatedProductsRail } from "./related-products-rail";
+import { useModalState } from "@/store/modal-state";
 
 interface Props {
   open: boolean;
@@ -61,6 +62,17 @@ export function ProductOptionsModal({
   const [qty, setQty] = useState(1);
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // Mientras el modal está abierto, esconde la barra fija "Ver carrito" del menú.
+  // Un usuario reportó por WhatsApp que confundía esa barra con el botón de
+  // agregar — pensaba que la app no lo dejaba meter su pedido al carrito.
+  const openProductModal = useModalState((s) => s.openProductModal);
+  const closeProductModal = useModalState((s) => s.closeProductModal);
+  useEffect(() => {
+    if (!open) return;
+    openProductModal();
+    return () => closeProductModal();
+  }, [open, openProductModal, closeProductModal]);
 
   useEffect(() => {
     if (!open || !product) return;
