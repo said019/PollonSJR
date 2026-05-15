@@ -125,6 +125,12 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
   const [tipPercent, setTipPercent] = useState<0 | 10 | 15 | 20 | -1>(0); // -1 = custom
   const [tipCustom, setTipCustom] = useState<string>(""); // pesos as string
 
+  // Cash change — "¿con cuánto van a pagar?" (solo DELIVERY + CASH).
+  // "exact" = pago justo, sin cambio. Si trae un valor (pesos como string),
+  // se manda al backend en centavos para que el repartidor lleve cambio.
+  const [cashMode, setCashMode] = useState<"exact" | "preset" | "custom">("exact");
+  const [cashPesos, setCashPesos] = useState<string>("");
+
   // Hydration-safe token for loyalty query
   const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
   useEffect(() => {
@@ -168,6 +174,23 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
     paymentMethod === "CARD" ? Math.round(preFeeTotal * APP_FEE_RATE) : 0;
   const totalCents = preFeeTotal + appFeeCents;
   const cardBlocked = orderType === "DELIVERY" && delivery.available !== true;
+
+  // CASH + DELIVERY → ¿cuánto trae el cliente? Devuelve centavos o null (pago exacto).
+  const showCashChangeBlock =
+    paymentMethod === "CASH" && orderType === "DELIVERY";
+  const cashAmountCents = useMemo<number | null>(() => {
+    if (!showCashChangeBlock) return null;
+    if (cashMode === "exact") return null;
+    const pesos = parseFloat(cashPesos);
+    if (isNaN(pesos) || pesos <= 0) return null;
+    return Math.round(pesos * 100);
+  }, [showCashChangeBlock, cashMode, cashPesos]);
+  const cashChangeCents =
+    cashAmountCents !== null && cashAmountCents >= totalCents
+      ? cashAmountCents - totalCents
+      : null;
+  const cashAmountTooLow =
+    cashAmountCents !== null && cashAmountCents < totalCents;
 
   const validateCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
@@ -226,11 +249,21 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
       // Split cart entries: regular products vs promotional bundles.
       const promoEntries = items.filter((i) => !!i.promotion);
       const regularEntries = items.filter((i) => !i.promotion);
+      // Solo manda cashAmount cuando aplica (CASH + DELIVERY + monto válido)
+      const cashAmountToSend =
+        data.paymentMethod === "CASH" &&
+        data.type === "DELIVERY" &&
+        cashAmountCents !== null &&
+        cashAmountCents >= totalCents
+          ? cashAmountCents
+          : undefined;
+
       return api.post<CreateOrderResponse>(
         "/api/orders",
         {
           type: data.type,
           paymentMethod: data.paymentMethod,
+          cashAmount: cashAmountToSend,
           address: data.address || delivery.zoneName,
           deliveryLat: delivery.lat,
           deliveryLng: delivery.lng,
@@ -278,6 +311,8 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
       tipCents,
       scheduleMode,
       scheduledTime,
+      cashAmountCents,
+      totalCents,
     ]
   );
 
@@ -479,6 +514,109 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               rows={3}
             />
           </div>
+        </div>
+      )}
+
+      {/* CASH + DELIVERY → ¿con cuánto van a pagar? (para que repartidor lleve cambio) */}
+      {showCashChangeBlock && (
+        <div className="mb-4">
+          <label className="text-sm font-medium mb-2 flex items-center gap-1.5 text-on-surface">
+            <Banknote size={13} className="text-primary" />
+            ¿Con cuánto vas a pagar?
+          </label>
+          <p className="mb-2 text-[11px] text-on-surface-variant">
+            Avísanos para que el repartidor lleve tu cambio.
+          </p>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setCashMode("exact");
+                setCashPesos("");
+              }}
+              className={`rounded-lg border py-2 text-xs font-semibold transition-all ${
+                cashMode === "exact"
+                  ? "border-primary bg-primary text-on-primary"
+                  : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40"
+              }`}
+            >
+              Pago exacto
+            </button>
+            {[200, 500, 1000].map((preset) => {
+              const presetCents = preset * 100;
+              const disabled = presetCents < totalCents;
+              const selected =
+                cashMode === "preset" && parseFloat(cashPesos) === preset;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    setCashMode("preset");
+                    setCashPesos(String(preset));
+                  }}
+                  className={`rounded-lg border py-2 text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                    selected
+                      ? "border-primary bg-primary text-on-primary"
+                      : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40"
+                  }`}
+                >
+                  ${preset}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCashMode("custom");
+              setCashPesos("");
+            }}
+            className={`mt-1.5 w-full rounded-lg border py-2 text-xs font-semibold transition-all ${
+              cashMode === "custom"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-outline-variant/30 text-on-surface-variant hover:border-primary/40"
+            }`}
+          >
+            Otro monto
+          </button>
+
+          {cashMode === "custom" && (
+            <div className="relative mt-2">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-on-surface-variant/60">
+                $
+              </span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                value={cashPesos}
+                onChange={(e) => setCashPesos(e.target.value)}
+                placeholder={String(Math.ceil(totalCents / 100))}
+                className="w-full rounded-xl border border-outline-variant/40 bg-white text-neutral-900 py-2.5 pl-7 pr-3 text-sm placeholder:text-neutral-400 focus:border-primary focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          )}
+
+          {cashChangeCents !== null && cashChangeCents > 0 && (
+            <div className="mt-2 flex items-center justify-between rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2">
+              <span className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider">
+                Cambio
+              </span>
+              <span className="text-sm font-headline font-extrabold text-emerald-400">
+                {formatCents(cashChangeCents)}
+              </span>
+            </div>
+          )}
+          {cashAmountTooLow && (
+            <p className="mt-2 text-[11px] font-semibold text-error">
+              El monto debe ser igual o mayor al total ({formatCents(totalCents)}).
+            </p>
+          )}
         </div>
       )}
 
@@ -734,7 +872,13 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
             <button
               type="button"
               onClick={() => void handleSubmit(onSubmit)()}
-              disabled={loading || totalCents <= 0 || (orderType === "DELIVERY" && !delivery.available)}
+              disabled={
+                loading ||
+                totalCents <= 0 ||
+                (orderType === "DELIVERY" && !delivery.available) ||
+                cashAmountTooLow ||
+                (showCashChangeBlock && cashMode === "custom" && !cashPesos)
+              }
               className="w-full bg-primary text-on-primary py-3 rounded-xl font-headline font-bold flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {loading ? (

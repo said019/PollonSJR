@@ -1,6 +1,7 @@
 const TOKEN_KEY = "pollon:token";
 const REFRESH_KEY = "pollon:refresh";
 const ADMIN_TOKEN_KEY = "pollon:admin_token";
+const DRIVER_TOKEN_KEY = "pollon:driver_token";
 
 // ─── Customer tokens ────────────────────────────────────────
 
@@ -64,6 +65,21 @@ export function setAdminToken(token: string) {
 
 export function removeAdminToken() {
   localStorage.removeItem(ADMIN_TOKEN_KEY);
+}
+
+// ─── Driver tokens ──────────────────────────────────────────
+
+export function getDriverToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(DRIVER_TOKEN_KEY);
+}
+
+export function setDriverToken(token: string) {
+  localStorage.setItem(DRIVER_TOKEN_KEY, token);
+}
+
+export function removeDriverToken() {
+  localStorage.removeItem(DRIVER_TOKEN_KEY);
 }
 
 // ─── Aliases for backwards compat ───────────────────────────

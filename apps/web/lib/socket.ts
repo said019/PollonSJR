@@ -8,7 +8,7 @@ let currentAuth: { token?: string; role?: string } = {};
 
 export function getSocket(
   token?: string,
-  role?: "admin" | "customer"
+  role?: "admin" | "customer" | "driver"
 ): Socket<ServerToClientEvents, ClientToServerEvents> {
   // If auth changed, disconnect and recreate
   if (socket && (currentAuth.token !== token || currentAuth.role !== role)) {

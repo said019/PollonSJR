@@ -14,6 +14,7 @@ import {
   LogOut,
   Truck,
   Ticket,
+  Bike,
   Menu as MenuIcon,
   X,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/admin/promotions", label: "Promociones", icon: Sparkles },
   { href: "/admin/coupons", label: "Cupones", icon: Ticket },
   { href: "/admin/delivery", label: "Envíos", icon: Truck },
+  { href: "/admin/drivers", label: "Repartidores", icon: Bike },
   { href: "/admin/customers", label: "Clientes", icon: Users },
   { href: "/admin/reports", label: "Reportes", icon: BarChart3 },
   { href: "/admin/settings", label: "Config", icon: Settings },

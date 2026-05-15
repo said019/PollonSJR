@@ -380,6 +380,18 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                       </div>
                     </section>
 
+                    {/* Driver assignment — for DELIVERY orders only */}
+                    {order.type === "DELIVERY" &&
+                      ["RECEIVED", "PREPARING", "READY", "ON_THE_WAY"].includes(
+                        order.status
+                      ) && (
+                        <DriverAssignmentSection
+                          orderId={order.id}
+                          driver={(order as any).driver ?? null}
+                          adminToken={adminToken ?? ""}
+                        />
+                      )}
+
                     {/* Delivery map — only when ON_THE_WAY and has address */}
                     {order.status === "ON_THE_WAY" &&
                       order.type === "DELIVERY" &&
@@ -417,7 +429,12 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                               order.cashAmount !== undefined &&
                               order.cashAmount !== null && (
                                 <p className="text-xs text-on-surface-variant/70">
-                                  Cliente indicó pagar con: {formatCents(Math.round(order.cashAmount * 100))}
+                                  Cliente indicó pagar con: {formatCents(order.cashAmount)}
+                                  {order.cashAmount > order.total && (
+                                    <span className="ml-1 font-semibold text-emerald-400">
+                                      · Cambio: {formatCents(order.cashAmount - order.total)}
+                                    </span>
+                                  )}
                                 </p>
                               )}
                             {order.payment && (
@@ -480,7 +497,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                                   step="any"
                                   placeholder={
                                     order.cashAmount
-                                      ? String(order.cashAmount)
+                                      ? String(order.cashAmount / 100)
                                       : String(order.total / 100)
                                   }
                                   value={cashReceived}
@@ -493,7 +510,9 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                             {(() => {
                               const received = cashReceived
                                 ? parseFloat(cashReceived)
-                                : order.cashAmount ?? 0;
+                                : order.cashAmount
+                                  ? order.cashAmount / 100
+                                  : 0;
                               const totalPesos = order.total / 100;
                               const change = received - totalPesos;
 
@@ -860,5 +879,171 @@ function TransferProofPreview({
         </a>
       </div>
     </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────── */
+/*  DriverAssignmentSection — admin asigna repartidor a un pedido */
+/* ──────────────────────────────────────────────────────────── */
+
+function DriverAssignmentSection({
+  orderId,
+  driver,
+  adminToken,
+}: {
+  orderId: string;
+  driver: {
+    id: string;
+    name: string;
+    phone: string | null;
+    photoUrl: string | null;
+    vehicle: string | null;
+  } | null;
+  adminToken: string;
+}) {
+  const queryClient = useQueryClient();
+  const [picking, setPicking] = useState(false);
+
+  const { data: drivers = [] } = useQuery({
+    queryKey: ["admin-drivers-active"],
+    queryFn: () =>
+      api.get<
+        Array<{
+          id: string;
+          name: string;
+          vehicle: string | null;
+          active: boolean;
+          onShift: boolean;
+          activeOrderCount?: number;
+        }>
+      >("/api/admin/drivers", adminToken),
+    enabled: picking || !driver,
+  });
+
+  const assign = useMutation({
+    mutationFn: (driverId: string) =>
+      api.post(`/api/admin/orders/${orderId}/driver`, { driverId }, adminToken),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      setPicking(false);
+    },
+  });
+
+  const unassign = useMutation({
+    mutationFn: () =>
+      api.delete(`/api/admin/orders/${orderId}/driver`, adminToken),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+    },
+  });
+
+  if (driver && !picking) {
+    return (
+      <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4">
+        <h3 className="mb-3 font-headline text-[10px] font-bold uppercase tracking-[0.25em] text-on-surface-variant/60">
+          Repartidor asignado
+        </h3>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/15 font-headline text-sm font-bold text-primary">
+            {driver.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={driver.photoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              driver.name.slice(0, 1).toUpperCase()
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-headline text-sm font-bold text-tertiary">
+              {driver.name}
+            </p>
+            <p className="truncate text-[11px] text-on-surface-variant">
+              {driver.vehicle || "Sin vehículo"}
+            </p>
+          </div>
+          {driver.phone && (
+            <a
+              href={`tel:${driver.phone}`}
+              className="rounded-lg border border-outline-variant/20 p-1.5 text-on-surface-variant hover:border-primary/40 hover:text-primary"
+              aria-label="Llamar"
+            >
+              <Phone size={13} />
+            </a>
+          )}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => setPicking(true)}
+            className="flex-1 rounded-xl border border-outline-variant/20 px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant hover:border-primary/40"
+          >
+            Cambiar
+          </button>
+          <button
+            onClick={() => {
+              if (confirm("¿Quitar repartidor del pedido?")) unassign.mutate();
+            }}
+            className="rounded-xl border border-outline-variant/20 px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface-variant hover:border-error/40 hover:text-error"
+          >
+            Quitar
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  // No assignment, or picking mode
+  return (
+    <section className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4">
+      <h3 className="mb-3 font-headline text-[10px] font-bold uppercase tracking-[0.25em] text-primary">
+        {driver ? "Cambiar repartidor" : "Sin repartidor asignado"}
+      </h3>
+
+      {drivers.filter((d) => d.active).length === 0 ? (
+        <p className="text-xs text-on-surface-variant">
+          No hay repartidores activos. Crea uno desde Repartidores.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {drivers
+            .filter((d) => d.active)
+            .map((d) => (
+              <button
+                key={d.id}
+                onClick={() => assign.mutate(d.id)}
+                disabled={assign.isPending || d.id === driver?.id}
+                className="flex w-full items-center justify-between rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-2 text-left transition-all hover:border-primary/40 disabled:opacity-40"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-on-surface">
+                    {d.name}
+                  </span>
+                  <span className="block truncate text-[10px] text-on-surface-variant">
+                    {d.vehicle || "Sin vehículo"} ·{" "}
+                    {(d.activeOrderCount ?? 0)} pedidos activos
+                  </span>
+                </span>
+                <span
+                  className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${
+                    d.onShift
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "bg-on-surface-variant/15 text-on-surface-variant"
+                  }`}
+                >
+                  {d.onShift ? "En turno" : "Offline"}
+                </span>
+              </button>
+            ))}
+        </div>
+      )}
+
+      {picking && driver && (
+        <button
+          onClick={() => setPicking(false)}
+          className="mt-2 w-full rounded-xl border border-outline-variant/20 px-3 py-1.5 text-xs font-bold text-on-surface-variant"
+        >
+          Cancelar
+        </button>
+      )}
+    </section>
   );
 }

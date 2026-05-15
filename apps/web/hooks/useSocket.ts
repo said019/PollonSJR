@@ -9,7 +9,7 @@ type EventName = keyof ServerToClientEvents;
 export function useSocket<E extends EventName>(
   event: E,
   handler: ServerToClientEvents[E],
-  opts?: { token?: string; role?: "admin" | "customer" }
+  opts?: { token?: string; role?: "admin" | "customer" | "driver" }
 ) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;

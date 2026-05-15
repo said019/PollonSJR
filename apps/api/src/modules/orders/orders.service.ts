@@ -433,6 +433,18 @@ export class OrdersService {
         items: { include: { product: true, modifiers: true } },
         payment: true,
         customer: true,
+        driver: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            photoUrl: true,
+            vehicle: true,
+            lat: true,
+            lng: true,
+            locationUpdatedAt: true,
+          },
+        },
       },
     });
 
@@ -459,6 +471,8 @@ export class OrdersService {
       appFeeAmount: order.appFeeAmount,
       estimatedMinutes: order.estimatedMinutes ?? null,
       address: order.address,
+      deliveryLat: order.deliveryLat,
+      deliveryLng: order.deliveryLng,
       notes: order.notes,
       cancelReason: order.cancelReason,
       rating: order.rating,
@@ -466,6 +480,19 @@ export class OrdersService {
       customerPhone: order.customer.phone,
       itemCount: order.items.length,
       createdAt: order.createdAt.toISOString(),
+      driver: order.driver
+        ? {
+            id: order.driver.id,
+            name: order.driver.name,
+            phone: order.driver.phone,
+            photoUrl: order.driver.photoUrl,
+            vehicle: order.driver.vehicle,
+            lat: order.driver.lat,
+            lng: order.driver.lng,
+            locationUpdatedAt:
+              order.driver.locationUpdatedAt?.toISOString() ?? null,
+          }
+        : null,
       items: order.items.map((item) => ({
         id: item.id,
         productName: item.product.name,

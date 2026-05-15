@@ -16,6 +16,24 @@ export interface ServerToClientEvents {
     statusDetail: string;
     message: string;
   }) => void;
+  "order:assigned": (data: {
+    orderId: string;
+    orderNumber: number;
+    driverId: string;
+    driverName: string;
+    driverPhone: string | null;
+  }) => void;
+  "driver:location": (data: {
+    driverId: string;
+    driverName?: string;
+    lat: number;
+    lng: number;
+    heading?: number | null;
+    speed?: number | null;
+    orderId?: string | null;
+    ts: string;
+  }) => void;
+  "driver:offline": (data: { driverId: string }) => void;
   "menu:updated": (data: { productId: string; active: boolean; soldOut: boolean }) => void;
   "store:status": (data: {
     isOpen: boolean;
@@ -31,6 +49,71 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   "admin:join": () => void;
   "customer:join": (data: { customerId: string }) => void;
+  "driver:join": () => void;
+}
+
+// ─── Driver Types ───────────────────────────────────────────
+
+export interface DriverPublic {
+  id: string;
+  email: string;
+  name: string;
+  phone: string | null;
+  photoUrl: string | null;
+  vehicle: string | null;
+  active: boolean;
+  onShift: boolean;
+  lat: number | null;
+  lng: number | null;
+  locationUpdatedAt: string | null;
+  shiftStartedAt: string | null;
+  createdAt: string;
+  activeOrderCount?: number;
+}
+
+export interface DriverAuthResponse {
+  token: string;
+  driver: {
+    id: string;
+    email: string;
+    name: string;
+    phone: string | null;
+    photoUrl: string | null;
+  };
+}
+
+export interface DriverOrderSummary {
+  id: string;
+  orderNumber: number;
+  status: OrderStatusType;
+  total: number;
+  paymentMethod: PaymentMethodType;
+  cashAmount: number | null;
+  deliveryAddress: string | null;
+  deliveryLat: number | null;
+  deliveryLng: number | null;
+  customerName: string | null;
+  customerPhone: string;
+  itemCount: number;
+  notes: string | null;
+  assignedAt: string | null;
+  createdAt: string;
+}
+
+export interface DriverOrderDetail extends DriverOrderSummary {
+  subtotal: number;
+  deliveryFee: number;
+  tipAmount: number;
+  items: OrderItemDetail[];
+}
+
+export interface LocationPingPayload {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  orderId?: string;
 }
 
 // ─── Order Types ────────────────────────────────────────────
@@ -77,6 +160,8 @@ export interface OrderSummary {
 
 export interface OrderDetail extends OrderSummary {
   address: string | null;
+  deliveryLat?: number | null;
+  deliveryLng?: number | null;
   paymentMethod?: PaymentMethodType;
   cashAmount?: number | null;
   transferInfo?: TransferInfo | null;
@@ -93,6 +178,16 @@ export interface OrderDetail extends OrderSummary {
   rating?: number | null;
   items: OrderItemDetail[];
   payment: PaymentInfo | null;
+  driver?: {
+    id: string;
+    name: string;
+    phone: string | null;
+    photoUrl: string | null;
+    vehicle: string | null;
+    lat: number | null;
+    lng: number | null;
+    locationUpdatedAt: string | null;
+  } | null;
 }
 
 export interface OrderItemDetail {

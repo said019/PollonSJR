@@ -17,6 +17,11 @@ import { notificationsRoutes } from "./modules/notifications/notifications.route
 import { adminRoutes } from "./modules/admin/admin.routes";
 import { reportsRoutes } from "./modules/admin/reports.routes";
 import { deliveryRoutes, adminDeliveryRoutes } from "./modules/delivery/delivery.routes";
+import {
+  adminDriversRoutes,
+  adminOrderDriverRoutes,
+  driversRoutes,
+} from "./modules/drivers/drivers.routes";
 import { registerOrderSockets } from "./sockets/orders.socket";
 import { registerLoyaltySockets } from "./sockets/loyalty.socket";
 import { startScheduler } from "./jobs/scheduler";
@@ -72,6 +77,9 @@ async function bootstrap() {
   app.register(evolutionWebhookRoutes, { prefix: "/api/webhook/evolution" });
   app.register(deliveryRoutes, { prefix: "/api/delivery" });
   app.register(adminDeliveryRoutes, { prefix: "/api/admin/delivery" });
+  app.register(driversRoutes, { prefix: "/api/drivers" });
+  app.register(adminDriversRoutes, { prefix: "/api/admin/drivers" });
+  app.register(adminOrderDriverRoutes, { prefix: "/api/admin/orders" });
 
   // Store status (public) — with schedule validation
   app.get("/api/store/status", async () => {

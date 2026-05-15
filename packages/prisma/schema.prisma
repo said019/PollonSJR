@@ -169,11 +169,18 @@ model Order {
   transferProofUploadedAt DateTime?
   coupon           Coupon?          @relation(fields: [couponId], references: [id])
   couponId         String?
+  // Repartidor asignado
+  driver           Driver?          @relation(fields: [driverId], references: [id])
+  driverId         String?
+  assignedAt       DateTime?
   items            OrderItem[]
   payment          Payment?
   statusLog        OrderStatusLog[]
+  locationPings    DriverLocationPing[]
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
+
+  @@index([driverId, status])
 }
 
 enum PayMethod {
@@ -365,6 +372,51 @@ model AdminUser {
   password  String
   name      String?
   createdAt DateTime @default(now())
+}
+
+// ─── Drivers (repartidores) ─────────────────────────────────
+
+model Driver {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  photoUrl  String?
+  vehicle   String?  // e.g. "Moto Italika - placa XYZ123"
+  active    Boolean  @default(true)
+  // Última ubicación GPS conocida (se actualiza vía /api/drivers/location)
+  lat       Float?
+  lng       Float?
+  locationUpdatedAt DateTime?
+  // Sesión: cuando el repartidor está conectado/turnado
+  onShift   Boolean  @default(false)
+  shiftStartedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+  locationPings DriverLocationPing[]
+
+  @@index([active, onShift])
+}
+
+// Historial de pings GPS (opcional, útil para replay/auditoría).
+// Se borra agresivamente por TTL desde un cron; no es source of truth para "última ubicación".
+model DriverLocationPing {
+  id        String   @id @default(cuid())
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  driverId  String
+  order     Order?   @relation(fields: [orderId], references: [id])
+  orderId   String?
+  lat       Float
+  lng       Float
+  accuracy  Float?
+  speed     Float?
+  heading   Float?
+  createdAt DateTime @default(now())
+
+  @@index([driverId, createdAt])
+  @@index([orderId, createdAt])
 }
 
 // ─── Store Config ───────────────────────────────────────────

@@ -222,6 +222,20 @@ export class PaymentsService {
       },
     });
 
+    // Si MP aprobó en la misma respuesta, activar el pedido aquí y ahora.
+    // El webhook sigue siendo idempotente (onPaymentApproved sale si ya no está PENDING_PAYMENT),
+    // pero no podemos depender de él: en local/staging puede no estar accesible,
+    // y en prod a veces tarda. Sin esto el cliente se queda viendo "Procesando" para siempre.
+    if (mpStatus === "approved") {
+      await this.onPaymentApproved(order, result).catch((err) =>
+        this.app.log.error("Error activando pedido tras pago aprobado:", err)
+      );
+    } else if (mpStatus === "rejected") {
+      await this.onPaymentRejected(order, result).catch((err) =>
+        this.app.log.error("Error procesando rechazo de pago:", err)
+      );
+    }
+
     if (mpStatus === "rejected") {
       const { message, action } = getRejectMessage(statusDetail || "");
       return {

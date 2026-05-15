@@ -41,6 +41,7 @@ import {
 } from "@/lib/customer-notifications";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { DriverEnRouteMap } from "./driver-en-route-map";
 
 type Step = {
   status: OrderStatusType;
@@ -401,6 +402,19 @@ export function OrderTracker({ orderId }: { orderId: string }) {
               })}
             </div>
           </motion.button>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════ */}
+        {/*  Driver live map — shown when ON_THE_WAY + DELIVERY     */}
+        {/* ═══════════════════════════════════════════════════════ */}
+        {currentStatus === "ON_THE_WAY" && order.type === "DELIVERY" && (
+          <DriverEnRouteMap
+            orderId={order.id}
+            driver={(order as any).driver ?? null}
+            destinationLat={(order as any).deliveryLat ?? null}
+            destinationLng={(order as any).deliveryLng ?? null}
+            destinationAddress={order.address}
+          />
         )}
 
         {/* ═══════════════════════════════════════════════════════ */}

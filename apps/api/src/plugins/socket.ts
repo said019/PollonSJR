@@ -12,9 +12,10 @@ declare module "fastify" {
 }
 
 interface SocketData {
-  role: "admin" | "customer" | "anonymous";
+  role: "admin" | "customer" | "driver" | "anonymous";
   adminId?: string;
   customerId?: string;
+  driverId?: string;
 }
 
 export async function registerSocket(
@@ -69,6 +70,17 @@ export async function registerSocket(
         return next();
       }
 
+      if (role === "driver") {
+        const secret = process.env.JWT_DRIVER_SECRET || "driver-dev-secret";
+        const payload = jwt.verify(token, secret) as { sub?: string; role?: string };
+        if (payload.role !== "driver" || !payload.sub) {
+          return next(new Error("Token de repartidor inválido"));
+        }
+        (socket.data as SocketData).role = "driver";
+        (socket.data as SocketData).driverId = payload.sub;
+        return next();
+      }
+
       // Unknown role — allow as anonymous
       (socket.data as SocketData).role = "anonymous";
       next();
@@ -95,6 +107,11 @@ export async function registerSocket(
       app.log.info(`Customer ${data.customerId} joined their room`);
     }
 
+    if (data.role === "driver" && data.driverId) {
+      socket.join(`driver:${data.driverId}`);
+      app.log.info(`Driver ${data.driverId} joined their room`);
+    }
+
     // Legacy join handlers (for backwards compatibility during migration)
     socket.on("admin:join", () => {
       if (data.role === "admin") {
@@ -105,6 +122,12 @@ export async function registerSocket(
     socket.on("customer:join", ({ customerId }) => {
       if (data.role === "customer" && customerId === data.customerId) {
         socket.join(`customer:${customerId}`);
+      }
+    });
+
+    socket.on("driver:join", () => {
+      if (data.role === "driver" && data.driverId) {
+        socket.join(`driver:${data.driverId}`);
       }
     });
 
