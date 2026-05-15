@@ -22,12 +22,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { Flame, Plus, Sparkles, Star, Zap } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { formatCents } from "@pollon/utils";
 import type { MenuByCategory, ProductPublic } from "@pollon/types";
 import { useCart } from "@/hooks/useCart";
+import { useCartFeedback } from "@/store/cart-feedback";
 import { resolveProductImage } from "@/lib/product-images";
 
 interface CartLike {
@@ -38,12 +39,6 @@ interface CartLike {
 interface Recommendation {
   product: ProductPublic;
   score: number;
-  /** Psychology hook shown as a micro-badge on the card. */
-  hook: {
-    label: string;
-    icon: React.ReactNode;
-    className: string;
-  };
 }
 
 /* ════════════════════════════════════════════════════════════════ */
@@ -130,41 +125,32 @@ function pickRecommendations(
     return true;
   });
 
-  // Cap at 3 to respect choice architecture.
-  const top = diverse.slice(0, 3);
-
-  // Attach rotating psychology hooks — vary by position to avoid repetition.
-  return top.map((r, i) => ({
+  // Cap at 4 to respect choice architecture pero sin abrumar.
+  return diverse.slice(0, 4).map((r) => ({
     product: r.product,
     score: r.score,
-    hook: HOOKS[i % HOOKS.length],
   }));
 }
-
-const HOOKS: Recommendation["hook"][] = [
-  {
-    label: "Los más pedidos",
-    icon: <Flame size={10} />,
-    className: "bg-error/20 text-red-300",
-  },
-  {
-    label: "Popular hoy",
-    icon: <Sparkles size={10} />,
-    className: "bg-secondary/20 text-secondary",
-  },
-  {
-    label: "Complemento ideal",
-    icon: <Zap size={10} />,
-    className: "bg-primary/20 text-primary",
-  },
-];
 
 /* ════════════════════════════════════════════════════════════════ */
 /*  Component                                                       */
 /* ════════════════════════════════════════════════════════════════ */
 
+/**
+ * Upsell COMPACTO — patrón Rappi/UberEats/DiDi:
+ * - El cart drawer prioriza la lista de productos (lo que el cliente vino a
+ *   ver/editar). El upsell es secundario: una fila de chips horizontales
+ *   ~70px de alto en total, no cards gigantes.
+ * - Sin badges psicológicos amontonados encima de cada imagen, sin "trust
+ *   signal" debajo, sin subtítulo. El cliente sabe qué es ese row sin
+ *   que se lo expliquemos.
+ *
+ * El scoring (complementariedad por categoría + precio) sigue siendo el
+ * mismo, sólo cambió la presentación.
+ */
 export function UpsellRecommendations() {
   const { items, addItem } = useCart();
+  const notify = useCartFeedback((s) => s.notify);
 
   const { data: menu } = useQuery({
     queryKey: ["menu"],
@@ -190,121 +176,69 @@ export function UpsellRecommendations() {
       notes: "",
       imageUrl,
     });
+    notify(`1× ${product.name}`);
   };
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35 }}
-      className="border-t border-outline-variant/10 bg-surface-container-high/40 px-4 py-4"
-    >
-      <div className="mb-2.5 flex items-end justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-1.5">
-            <motion.span
-              animate={{ rotate: [0, -8, 8, 0] }}
-              transition={{ duration: 2.5, repeat: Infinity, repeatDelay: 3 }}
-              className="text-base"
-            >
-              ✨
-            </motion.span>
-            <h3 className="font-headline text-sm font-extrabold uppercase tracking-tight text-tertiary">
-              ¿Algo más?
-            </h3>
-          </div>
-          <p className="text-[11px] text-on-surface-variant/70">
-            Completa tu pedido con una de estas ideas.
-          </p>
-        </div>
-      </div>
+    <section className="border-t border-outline-variant/10 bg-surface-container-high/30 px-4 py-2.5">
+      <h3 className="mb-1.5 flex items-center gap-1.5 font-headline text-[11px] font-bold uppercase tracking-[0.18em] text-on-surface-variant/70">
+        <span className="text-secondary">✨</span>
+        Complementa tu pedido
+      </h3>
 
       <div
-        className="scrollbar-hide -mx-4 flex gap-3 overflow-x-auto px-4 pb-1"
+        className="scrollbar-hide -mx-4 flex gap-2 overflow-x-auto px-4"
         style={{ scrollbarWidth: "none" }}
       >
         <AnimatePresence initial={false}>
           {recommendations.map((rec, idx) => {
-            const imageUrl = resolveProductImage(rec.product.name, rec.product.imageUrl);
+            const imageUrl = resolveProductImage(
+              rec.product.name,
+              rec.product.imageUrl
+            );
             return (
-              <motion.div
+              <motion.button
                 key={rec.product.id}
                 layout
-                initial={{ opacity: 0, x: 12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -12 }}
-                transition={{ delay: idx * 0.06, duration: 0.3 }}
-                className="group relative flex w-[160px] flex-shrink-0 flex-col overflow-hidden rounded-2xl border border-outline-variant/15 bg-surface-container transition-all hover:border-primary/35 hover:shadow-lg hover:shadow-black/30"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ delay: idx * 0.04, duration: 0.2 }}
+                onClick={() => handleAdd(rec.product)}
+                aria-label={`Agregar ${rec.product.name}`}
+                className="group flex w-[155px] flex-shrink-0 items-center gap-2 rounded-xl border border-outline-variant/15 bg-surface-container px-2 py-1.5 text-left transition-all hover:border-primary/40 active:scale-[0.97]"
               >
-                {/* Image */}
-                <div className="relative aspect-square overflow-hidden">
+                <div className="relative h-11 w-11 flex-shrink-0 overflow-hidden rounded-lg">
                   {imageUrl ? (
                     <Image
                       src={imageUrl}
-                      alt={rec.product.name}
+                      alt=""
                       fill
-                      sizes="160px"
-                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                      sizes="44px"
+                      className="object-cover"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/15 to-surface-variant text-3xl">
+                    <div className="flex h-full w-full items-center justify-center bg-surface-variant text-base">
                       🍽️
                     </div>
                   )}
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
-                  {/* Psychology hook badge */}
-                  <span
-                    className={`absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider backdrop-blur-md ${rec.hook.className}`}
-                  >
-                    {rec.hook.icon}
-                    {rec.hook.label}
-                  </span>
                 </div>
-
-                {/* Body */}
-                <div className="flex flex-1 flex-col p-2.5">
-                  <h4 className="line-clamp-1 font-headline text-[13px] font-bold text-tertiary">
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-1 text-[11px] font-bold leading-tight text-on-surface">
                     {rec.product.name}
-                  </h4>
-                  {rec.product.description && (
-                    <p className="line-clamp-2 text-[10px] leading-snug text-on-surface-variant/70">
-                      {rec.product.description}
-                    </p>
-                  )}
-
-                  <div className="mt-auto flex items-center justify-between gap-1 pt-2">
-                    <div className="flex flex-col leading-none">
-                      <span className="text-[9px] font-semibold uppercase tracking-wider text-on-surface-variant/50">
-                        Agrégalo por
-                      </span>
-                      <span className="font-headline text-sm font-extrabold text-primary">
-                        {formatCents(rec.product.price)}
-                      </span>
-                    </div>
-                    <motion.button
-                      onClick={() => handleAdd(rec.product)}
-                      whileTap={{ scale: 0.9 }}
-                      whileHover={{ scale: 1.08 }}
-                      aria-label={`Agregar ${rec.product.name}`}
-                      className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-on-primary shadow-lg shadow-primary/30 transition-colors"
-                    >
-                      <Plus size={15} strokeWidth={2.8} />
-                    </motion.button>
-                  </div>
+                  </p>
+                  <p className="font-headline text-[11px] font-extrabold text-primary">
+                    {formatCents(rec.product.price)}
+                  </p>
                 </div>
-              </motion.div>
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-primary text-on-primary shadow-sm">
+                  <Plus size={12} strokeWidth={3} />
+                </span>
+              </motion.button>
             );
           })}
         </AnimatePresence>
       </div>
-
-      {/* Trust signal — subtle social proof at the foot */}
-      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-on-surface-variant/60">
-        <Star size={10} className="fill-secondary text-secondary" />
-        <span>
-          8 de cada 10 clientes agregan un complemento antes de pagar
-        </span>
-      </div>
-    </motion.section>
+    </section>
   );
 }

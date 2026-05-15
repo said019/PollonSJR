@@ -5,7 +5,7 @@ import { formatCents } from "@pollon/utils";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { LoyaltyInfo, MenuByCategory, ProductPublic } from "@pollon/types";
-import { X, Minus, Plus, Trash2, ShoppingBag, Bike, Gift, Pencil } from "lucide-react";
+import { X, Minus, Plus, Trash2, ShoppingBag, Gift, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
 import { UpsellRecommendations } from "./upsell-recommendations";
@@ -104,8 +104,15 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
             transition={{ type: "spring", damping: 28, stiffness: 220 }}
             className="fixed right-0 top-0 z-50 flex h-dvh min-h-0 w-full max-w-sm flex-col overflow-hidden border-l border-outline-variant/10 bg-surface-container shadow-2xl sm:max-w-md"
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-outline-variant/10 p-5">
-              <h2 className="text-lg font-headline font-extrabold text-tertiary">Tu carrito</h2>
+            <div className="flex shrink-0 items-center justify-between border-b border-outline-variant/10 px-5 py-4">
+              <h2 className="font-headline text-base font-extrabold text-tertiary">
+                Tu carrito
+                {items.length > 0 && (
+                  <span className="ml-1.5 text-sm font-bold text-on-surface-variant/60">
+                    ({items.reduce((s, i) => s + i.qty, 0)})
+                  </span>
+                )}
+              </h2>
               <button onClick={onClose} className="p-1.5 text-on-surface-variant hover:text-tertiary rounded-lg hover:bg-surface-variant transition-colors">
                 <X size={18} />
               </button>
@@ -292,36 +299,24 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                 </div>
 
                 <div className="shrink-0">
-                  {/* Upsell strip — hidden when there are validation issues
-                      so the user can focus on fixing their cart. */}
+                  {/* Upsell strip — chips compactos, ya no cards gigantes.
+                      Se oculta si hay issues para enfocar al cliente. */}
                   {!hasIssues && <UpsellRecommendations />}
 
+                  {/* Subtotal + CTA — compactos. El subtotal aquí es un peek;
+                      el desglose completo (envío, propina, total) vive en el
+                      CheckoutForm. Antes mostrábamos un banner de envío gordo
+                      que ocupaba espacio innecesario. */}
                   <div
-                    className="space-y-2.5 border-t border-outline-variant/10 px-4 pt-4"
+                    className="space-y-2 border-t border-outline-variant/10 px-4 pt-3"
                     style={{
-                      // En iPhones modernos el home indicator tapaba el botón
-                      // "Proceder al pago" cuando estaba al borde. Reservamos al
-                      // menos 1rem y respetamos safe-area-inset-bottom.
-                      paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+                      paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
                     }}
                   >
-                    <div className="flex justify-between items-center">
-                      <span className="text-on-surface-variant font-headline font-semibold">Subtotal</span>
-                      <span className="text-xl font-headline font-extrabold text-primary">{formatCents(total)}</span>
-                    </div>
-
                     {hasPendingReward && (
-                      <p className="text-xs text-green-400 flex items-center gap-1">
-                        <Gift size={12} /> Tienes un producto gratis — se aplica al pagar
+                      <p className="flex items-center gap-1 rounded-md bg-green-500/10 px-2 py-1 text-[11px] text-green-400">
+                        <Gift size={11} /> Tienes un producto gratis · se aplica al pagar
                       </p>
-                    )}
-
-                    {/* Delivery fee hint — hide when there are issues to save space */}
-                    {!hasIssues && (
-                      <div className="flex items-center gap-2 rounded-lg bg-surface-container-high px-3 py-2 text-[11px] text-on-surface-variant/70">
-                        <Bike size={13} className="text-primary flex-shrink-0" />
-                        <span>Envío a domicilio desde <strong className="text-primary">$25</strong> · Gratis en combos grandes</span>
-                      </div>
                     )}
 
                     {hasIssues && firstInvalidIdx >= 0 && (
@@ -334,16 +329,26 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                       </button>
                     )}
 
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs uppercase tracking-wider text-on-surface-variant">
+                        Subtotal
+                      </span>
+                      <span className="font-headline text-xl font-extrabold text-primary">
+                        {formatCents(total)}
+                      </span>
+                    </div>
+
                     <button
                       onClick={handleCheckout}
                       disabled={hasIssues}
-                      className="w-full bg-primary text-on-primary py-3 rounded-2xl font-headline font-bold hover:brightness-110 transition-all active:scale-[0.98] glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 font-headline text-sm font-extrabold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98] glow-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:brightness-100"
                     >
                       {hasIssues ? "Completa las opciones" : "Proceder al pago"}
                     </button>
+
                     <button
                       onClick={clearCart}
-                      className="w-full text-on-surface-variant/50 text-sm py-2 hover:text-error transition-colors font-medium"
+                      className="w-full text-[11px] text-on-surface-variant/50 transition-colors hover:text-error"
                     >
                       Vaciar carrito
                     </button>
