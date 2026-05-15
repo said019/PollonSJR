@@ -377,7 +377,11 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
               🍗
             </div>
           )}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+          {/* En la variante grid el nombre/precio van DEBAJO de la imagen,
+              no encima — el degradado oscuro no aportaba legibilidad, solo
+              metía una "raya negra" en la base de cada foto. Se quita; un
+              velo casi imperceptible sólo para asentar los badges arriba. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent" />
           {product.soldOut && (
             <span className="absolute left-2.5 top-2.5 rounded-full bg-error/90 px-2.5 py-0.5 text-[9px] font-headline font-extrabold uppercase tracking-wider text-on-error">
               Agotado
