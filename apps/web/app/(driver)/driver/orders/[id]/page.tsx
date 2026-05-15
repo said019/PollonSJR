@@ -1,6 +1,5 @@
 "use client";
 
-import { use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -48,12 +47,15 @@ const STATUS_ACTION: Record<string, StatusAction> = {
   DELIVERED: { kind: "done" },
 };
 
+// Next.js 14.2: params es un objeto plano, NO una Promise. Usar use(params)
+// (patrón Next 15) tira React error #438 y crashea toda la página del
+// repartidor al abrir un pedido.
 export default function DriverOrderDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }) {
-  const { id } = use(params);
+  const { id } = params;
   const router = useRouter();
   const queryClient = useQueryClient();
 
