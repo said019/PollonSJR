@@ -9,6 +9,10 @@ import { updateStatusSchema } from "../orders/orders.schema";
 import { emitMenuUpdated, emitOrderStatus } from "../orders/orders.events";
 import { getStoreConfig, updateStoreConfig } from "./store-config.service";
 import { mexicoDayRange } from "../../utils/timezone";
+import {
+  runReEngagement,
+  sendReEngagementForOne,
+} from "../../jobs/re-engagement.job";
 import { LoyaltyService } from "../loyalty/loyalty.service";
 import { AppleWalletService } from "../loyalty/apple-wallet.service";
 import { GoogleWalletService } from "../loyalty/google-wallet.service";
@@ -762,4 +766,85 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return { success: true, sent, total: cards.length };
   });
+
+  /* ───────────────────────────────────────────────────────── */
+  /*  Jobs manuales (testing / on-demand)                       */
+  /* ───────────────────────────────────────────────────────── */
+
+  /**
+   * Dispara el cron de re-engagement push de inmediato, igual que correrá
+   * a las 11 AM México. Respeta cooldowns y staleness — devuelve stats.
+   */
+  app.post("/jobs/run-reengagement", async () => {
+    return runReEngagement(app);
+  });
+
+  /**
+   * Send de prueba a un cliente específico, IGNORANDO el filtro de "14 días"
+   * y opcionalmente el cooldown. Útil para validar end-to-end (browser realmente
+   * recibe el push).
+   *
+   * Body: { customerId: string, ignoreCooldown?: boolean }
+   */
+  app.post<{
+    Body: { customerId?: string; ignoreCooldown?: boolean };
+  }>("/jobs/test-reengagement-push", async (request, reply) => {
+    const { customerId, ignoreCooldown } = request.body ?? {};
+    if (!customerId) {
+      return reply.status(400).send({ error: "customerId requerido" });
+    }
+    return sendReEngagementForOne(app, customerId, {
+      ignoreCooldown: ignoreCooldown ?? true,
+    });
+  });
+
+  /**
+   * Buscar clientes por nombre / teléfono / email para usar con el test push.
+   * Devuelve sólo los que tienen push subscription activa (los que pueden
+   * recibir push de prueba).
+   */
+  app.get<{ Querystring: { q?: string } }>(
+    "/jobs/pushable-customers",
+    async (request) => {
+      const q = (request.query.q ?? "").trim();
+      const customers = await app.prisma.customer.findMany({
+        where: {
+          pushSubscriptions: { some: {} },
+          ...(q
+            ? {
+                OR: [
+                  { name: { contains: q, mode: "insensitive" } },
+                  { phone: { contains: q } },
+                  { email: { contains: q, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          _count: {
+            select: {
+              pushSubscriptions: true,
+              orders: { where: { status: { notIn: ["PENDING_PAYMENT", "CANCELLED"] } } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+      return {
+        customers: customers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          email: c.email,
+          pushSubs: c._count.pushSubscriptions,
+          orderCount: c._count.orders,
+        })),
+      };
+    }
+  );
 }

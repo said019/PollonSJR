@@ -1,6 +1,23 @@
 import type { FastifyInstance } from "fastify";
 import { pushToCustomer } from "../modules/notifications/web-push.service";
 
+export interface ReEngagementResult {
+  sent: number;
+  skippedCooldown: number;
+  noTopProduct: number;
+  candidates: number;
+}
+
+export interface SendReEngagementForOneResult {
+  ok: boolean;
+  customerId: string;
+  productName?: string;
+  productEmoji?: string;
+  pushSent?: number;
+  pushFailed?: number;
+  reason?: string;
+}
+
 /**
  * Re-engagement push — corre diario a las 11:00 América/México (17:00 UTC).
  *
@@ -20,7 +37,76 @@ const STALE_DAYS = 14;
 const COOLDOWN_DAYS = 30;
 const DAILY_CAP = 50;
 
-export async function runReEngagement(app: FastifyInstance) {
+/**
+ * Manual send para un cliente específico — ignora cooldown y staleness.
+ * Útil para testear desde admin.
+ */
+export async function sendReEngagementForOne(
+  app: FastifyInstance,
+  customerId: string,
+  opts: { ignoreCooldown?: boolean } = {}
+): Promise<SendReEngagementForOneResult> {
+  const top = await app.prisma.orderItem.groupBy({
+    by: ["productId"],
+    where: {
+      order: {
+        customerId,
+        status: { in: ["DELIVERED", "RECEIVED", "PREPARING", "READY", "ON_THE_WAY"] as any },
+      },
+      product: { active: true, soldOut: false },
+    },
+    _sum: { qty: true },
+    orderBy: { _sum: { qty: "desc" } },
+    take: 1,
+  });
+
+  const topProductId = top[0]?.productId;
+  if (!topProductId) {
+    return {
+      ok: false,
+      customerId,
+      reason: "Este cliente no tiene historial de pedidos no-cancelados — no podemos recomendar nada",
+    };
+  }
+
+  const product = await app.prisma.product.findUnique({
+    where: { id: topProductId },
+    select: { name: true, emoji: true },
+  });
+  if (!product) {
+    return { ok: false, customerId, reason: "Producto top no encontrado" };
+  }
+
+  const emoji = product.emoji || "🍗";
+  const result = await pushToCustomer(app, customerId, {
+    title: `Hace tiempo que no pides ${product.name} ${emoji}`,
+    body: "¿Se te antoja? Tu pollón te espera 🔥",
+    url: "/menu",
+    tag: `reengage-${customerId}`,
+    data: { type: "reengagement", productId: topProductId },
+  });
+
+  if (opts.ignoreCooldown !== true && result.sent > 0) {
+    await app.redis
+      .set(`reengaged:${customerId}`, "1", { EX: 30 * 24 * 60 * 60 })
+      .catch(() => null);
+  }
+
+  return {
+    ok: result.sent > 0,
+    customerId,
+    productName: product.name,
+    productEmoji: emoji,
+    pushSent: result.sent,
+    pushFailed: result.failed,
+    reason:
+      result.sent === 0
+        ? "Cliente sin push subscription activa (o todas las subs murieron)"
+        : undefined,
+  };
+}
+
+export async function runReEngagement(app: FastifyInstance): Promise<ReEngagementResult> {
   const since = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
 
   // 1. Clientes elegibles: tienen push sub, su último pedido fue antes de `since`.
@@ -115,4 +201,11 @@ export async function runReEngagement(app: FastifyInstance) {
   app.log.info(
     `Re-engagement: ${sentCount} sent, ${skippedCooldown} on cooldown, ${noTopProduct} no top product. Candidates: ${candidates.length}`
   );
+
+  return {
+    sent: sentCount,
+    skippedCooldown,
+    noTopProduct,
+    candidates: candidates.length,
+  };
 }
