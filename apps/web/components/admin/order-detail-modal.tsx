@@ -930,8 +930,8 @@ function CardReconcileButton({
           ? `Pago confirmado — pedido en estado ${data.orderStatus}`
           : data.message || "MP no encontró el pago todavía",
       });
-      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
-      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-active-orders"] });
     },
     onError: (err: any) => {
       setResult({ ok: false, msg: err?.message || "Error al consultar MP" });
@@ -1026,8 +1026,8 @@ function DriverAssignmentSection({
       api.post(`/api/admin/orders/${orderId}/driver`, { driverId }, adminToken),
     onSuccess: () => {
       setAssignError(null);
-      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
-      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-active-orders"] });
       setPicking(false);
     },
     onError: (err: any) => {
@@ -1040,7 +1040,8 @@ function DriverAssignmentSection({
     mutationFn: () =>
       api.delete(`/api/admin/orders/${orderId}/driver`, adminToken),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-active-orders"] });
     },
   });
 
