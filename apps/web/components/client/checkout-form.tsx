@@ -488,7 +488,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         </div>
         {paymentMethod === "TRANSFER" && (
           <p className="mt-2 rounded-lg bg-surface-container-high p-2 text-xs text-on-surface-variant">
-            Al confirmar te mostraremos banco, CLABE, monto y concepto para transferir.
+            Al confirmar te mostraremos banco, CLABE, monto y concepto. Importante: tu pedido NO se manda a preparar hasta que subas el comprobante de la transferencia en la siguiente pantalla.
           </p>
         )}
       </div>

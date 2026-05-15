@@ -500,6 +500,16 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // For PENDING_PAYMENT orders (CASH/TRANSFER), move to RECEIVED
     if (order.status === "PENDING_PAYMENT") {
+      // Defensa en profundidad: el botón del admin ya se deshabilita sin
+      // comprobante, pero el servidor TAMBIÉN lo exige. Una transferencia
+      // nunca se confirma sin prueba de pago, aunque alguien llame el
+      // endpoint directo.
+      if (order.paymentMethod === "TRANSFER" && !order.transferProofUrl) {
+        return reply.status(400).send({
+          error:
+            "No se puede confirmar: el cliente aún no ha subido el comprobante de transferencia",
+        });
+      }
       await app.prisma.$transaction([
         app.prisma.order.update({
           where: { id: order.id },

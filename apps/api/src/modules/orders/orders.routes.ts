@@ -8,20 +8,72 @@ import { authenticate } from "../../middlewares/authenticate";
 import { validateCoupon, CouponError } from "./coupon.service";
 import { uploadsDir } from "../../plugins/uploads";
 
-const ALLOWED_PROOF_MIME = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "application/pdf",
-]);
-const EXT_BY_MIME: Record<string, string> = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-  "image/heic": ".heic",
-  "application/pdf": ".pdf",
+// Validación del comprobante por el CONTENIDO real (magic bytes), no por el
+// `Content-Type` que declara el navegador. Esto hace la subida a la vez:
+//  - más ROBUSTA: acepta el archivo aunque el celular mande un mimetype raro
+//    (iOS suele mandar application/octet-stream para HEIC/algunas fotos), y
+//  - más SEGURA: rechaza un ejecutable/script renombrado a .jpg.
+// Cero dependencias nuevas (importante: estamos en producción).
+type ProofKind = "jpg" | "png" | "webp" | "heic" | "pdf";
+
+const EXT_BY_KIND: Record<ProofKind, string> = {
+  jpg: ".jpg",
+  png: ".png",
+  webp: ".webp",
+  heic: ".heic",
+  pdf: ".pdf",
 };
+
+function sniffProofKind(buf: Buffer): ProofKind | null {
+  if (buf.length < 12) return null;
+
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpg";
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  )
+    return "png";
+
+  // PDF: "%PDF-" (algunos PDFs traen BOM/espacios antes del header)
+  if (buf.subarray(0, 1024).toString("latin1").includes("%PDF-")) return "pdf";
+
+  // WEBP: "RIFF" .... "WEBP"
+  if (
+    buf.toString("latin1", 0, 4) === "RIFF" &&
+    buf.toString("latin1", 8, 12) === "WEBP"
+  )
+    return "webp";
+
+  // HEIC/HEIF (foto de iPhone): caja `ftyp` con marca heic/heix/mif1/heif/…
+  if (buf.toString("latin1", 4, 8) === "ftyp") {
+    const brand = buf.toString("latin1", 8, 12);
+    const heifBrands = [
+      "heic",
+      "heix",
+      "hevc",
+      "hevx",
+      "heim",
+      "heis",
+      "hevm",
+      "hevs",
+      "mif1",
+      "msf1",
+      "heif",
+    ];
+    if (heifBrands.includes(brand)) return "heic";
+  }
+
+  return null;
+}
 
 export async function ordersRoutes(app: FastifyInstance) {
   const service = new OrdersService(app);
@@ -234,25 +286,38 @@ export async function ordersRoutes(app: FastifyInstance) {
       const file = await request.file().catch(() => null);
       if (!file) return reply.status(400).send({ error: "Archivo requerido" });
 
-      if (!ALLOWED_PROOF_MIME.has(file.mimetype)) {
-        return reply
-          .status(400)
-          .send({ error: "Formato no permitido. Sube JPG, PNG, WEBP, HEIC o PDF." });
+      let buffer: Buffer;
+      try {
+        // toBuffer respeta el límite de 8MB; si lo excede lanza FST_REQ_FILE_TOO_LARGE
+        buffer = await file.toBuffer();
+      } catch (err: any) {
+        if (err?.code === "FST_REQ_FILE_TOO_LARGE") {
+          return reply.status(413).send({ error: "El archivo supera 8 MB" });
+        }
+        request.log.error({ err }, "Error leyendo comprobante");
+        return reply.status(500).send({ error: "No se pudo procesar el archivo" });
+      }
+      if (buffer.length === 0) {
+        return reply.status(400).send({ error: "El archivo está vacío" });
       }
 
-      const ext = EXT_BY_MIME[file.mimetype] ?? path.extname(file.filename || "");
+      // Aceptar/rechazar por el contenido real del archivo.
+      const kind = sniffProofKind(buffer);
+      if (!kind) {
+        return reply.status(400).send({
+          error:
+            "Formato no válido. Sube una foto (JPG, PNG, WEBP, HEIC) o un PDF del comprobante.",
+        });
+      }
+
+      const ext = EXT_BY_KIND[kind];
       const fileName = `${orderId}-${crypto.randomBytes(6).toString("hex")}${ext}`;
       const destDir = path.join(uploadsDir, "transfer-proofs");
       const destPath = path.join(destDir, fileName);
 
       try {
-        const buffer = await file.toBuffer();
-        // toBuffer respects the 8MB limit; if exceeded it throws RequestFileTooLargeError
         await fs.promises.writeFile(destPath, buffer);
       } catch (err: any) {
-        if (err?.code === "FST_REQ_FILE_TOO_LARGE") {
-          return reply.status(413).send({ error: "El archivo supera 8 MB" });
-        }
         request.log.error({ err }, "Error guardando comprobante");
         return reply.status(500).send({ error: "No se pudo guardar el comprobante" });
       }

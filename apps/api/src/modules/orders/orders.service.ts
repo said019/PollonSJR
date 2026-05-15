@@ -361,9 +361,14 @@ export class OrdersService {
       });
     }
 
-    // 8. CASH → received immediately. TRANSFER → waits for receipt + admin confirm,
-    //    but admin still gets a "new order" alert so it appears in "Por confirmar".
-    if (!isScheduled && (paymentMethod === "CASH" || paymentMethod === "TRANSFER")) {
+    // 8. CASH → recibido de inmediato + alerta al admin + sello de compra.
+    //    TRANSFER → el pedido se crea en PENDING_PAYMENT pero NO se notifica
+    //    al admin aquí. El negocio NO debe ver ni poder procesar la orden
+    //    hasta que el cliente suba el comprobante. POST /:id/transfer-proof
+    //    es quien re-emite `order:new` una vez que llega el comprobante, y
+    //    getActiveOrders() filtra las TRANSFER sin comprobante. Así una
+    //    transferencia sin comprobante simplemente no existe para la cocina.
+    if (!isScheduled && paymentMethod === "CASH") {
       emitOrderNew(this.app, {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -377,19 +382,17 @@ export class OrdersService {
         paymentMethod,
       });
 
-      if (paymentMethod === "CASH") {
-        emitOrderStatus(this.app, order.customerId, order.id, "RECEIVED", {
-          orderNumber: order.orderNumber,
-          estimatedMinutes: 30,
-        });
-        // Sello de compra (WhatsApp). Antes NUNCA se mandaba: el template
-        // order_received existía pero no estaba enganchado a ningún punto
-        // donde el pedido pasa a RECEIVED. El cliente nunca recibía
-        // confirmación de su compra.
-        void this.sendOrderReceipt(order.id).catch((err) =>
-          this.app.log.error("Order receipt enqueue error:", err)
-        );
-      }
+      emitOrderStatus(this.app, order.customerId, order.id, "RECEIVED", {
+        orderNumber: order.orderNumber,
+        estimatedMinutes: 30,
+      });
+      // Sello de compra (WhatsApp). Antes NUNCA se mandaba: el template
+      // order_received existía pero no estaba enganchado a ningún punto
+      // donde el pedido pasa a RECEIVED. El cliente nunca recibía
+      // confirmación de su compra.
+      void this.sendOrderReceipt(order.id).catch((err) =>
+        this.app.log.error("Order receipt enqueue error:", err)
+      );
     }
 
     // 9. Return appropriate response per payment method
@@ -723,8 +726,14 @@ export class OrdersService {
       where: {
         OR: [
           { status: { in: ["RECEIVED", "PREPARING", "READY", "ON_THE_WAY", "SCHEDULED"] } },
-          // TRANSFER orders awaiting receipt verification
-          { status: "PENDING_PAYMENT", paymentMethod: "TRANSFER" },
+          // TRANSFER awaiting verification — SOLO si ya subió comprobante.
+          // Sin comprobante la orden no debe aparecer en el panel: el
+          // negocio no procesa transferencias sin prueba de pago.
+          {
+            status: "PENDING_PAYMENT",
+            paymentMethod: "TRANSFER",
+            transferProofUrl: { not: null },
+          },
         ],
       },
       include: { customer: true, _count: { select: { items: true } } },

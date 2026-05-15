@@ -1273,19 +1273,17 @@ function TransferProofUploader({
       if (!token) return;
       setError(null);
 
-      const allowed = [
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "image/heic",
-        "application/pdf",
-      ];
-      if (!allowed.includes(file.type)) {
-        setError("Sube una imagen (JPG/PNG/WEBP) o PDF.");
-        return;
-      }
+      // No bloqueamos por file.type en el cliente: iOS manda HEIC con type
+      // vacío y un allowlist aquí rechazaría fotos válidas. El servidor
+      // valida el formato por el contenido real (magic bytes) y devuelve
+      // un mensaje claro si no sirve. Aquí solo cuidamos el tamaño para
+      // dar feedback inmediato sin subir 8MB en vano.
       if (file.size > 8 * 1024 * 1024) {
         setError("El archivo no puede pesar más de 8 MB.");
+        return;
+      }
+      if (file.size === 0) {
+        setError("El archivo está vacío. Intenta de nuevo.");
         return;
       }
 
@@ -1333,12 +1331,12 @@ function TransferProofUploader({
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="font-headline text-sm font-bold uppercase tracking-tight text-tertiary">
-            {proofUrl ? "Comprobante enviado" : "Sube tu comprobante"}
+            {proofUrl ? "Comprobante enviado" : "Sube tu comprobante para continuar"}
           </h3>
           <p className="mt-0.5 text-[12px] text-on-surface-variant/80">
             {proofUrl
               ? "Estamos verificando tu pago. Puedes reemplazarlo si te equivocaste."
-              : "JPG, PNG, WEBP o PDF. Máximo 8 MB."}
+              : "Tu pedido NO se manda a preparar hasta que subas el comprobante de la transferencia. Sube una foto o PDF (máx. 8 MB)."}
           </p>
 
           {fullProofUrl && (
@@ -1382,7 +1380,7 @@ function TransferProofUploader({
           <input
             id={inputId}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+            accept="image/*,application/pdf,.pdf,.heic,.heif"
             className="hidden"
             disabled={uploading || !token}
             onChange={(e) => {
