@@ -7,6 +7,8 @@ import { getToken } from "@/lib/auth";
 import { Bike, Loader2, MapPin, Phone, Truck } from "lucide-react";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+// Mismo array que el resto del proyecto — el loader es singleton, no podemos pedir libs distintas.
+const MAP_LIBRARIES: ("places")[] = ["places"];
 
 interface DriverInfo {
   id: string;
@@ -43,6 +45,7 @@ export function DriverEnRouteMap({
 }) {
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: MAP_LIBRARIES,
     language: "es",
     region: "MX",
   });

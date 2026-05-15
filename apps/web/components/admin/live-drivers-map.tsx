@@ -9,6 +9,11 @@ import { useSocket } from "@/hooks/useSocket";
 import { Bike, Loader2, RefreshCw, WifiOff } from "lucide-react";
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+// IMPORTANTE: @react-google-maps/api usa un loader singleton. Si distintos
+// componentes piden libraries distintas, el segundo tira "Loader must not be
+// called again with different options". Acá usamos el mismo array que el
+// resto del proyecto (places) y la referencia es estable.
+const MAP_LIBRARIES: ("places")[] = ["places"];
 
 interface DriverPin {
   id: string;
@@ -27,6 +32,7 @@ const DEFAULT_CENTER = { lat: 20.5881, lng: -99.9953 }; // SJR
 export function LiveDriversMap() {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: MAP_LIBRARIES,
     language: "es",
     region: "MX",
   });
@@ -283,7 +289,8 @@ function DriverMapPin({
         y: -(height / 2),
       })}
     >
-      <div className="pollon-driver-pin-wrap pollon-driver-pin">
+      {/* OverlayView usa React.Children.only — TODO debe ir en un solo root */}
+      <div className="pollon-driver-pin-wrap pollon-driver-pin relative">
         <button
           onClick={onClick}
           aria-label={`Repartidor ${driver.name}`}
@@ -318,11 +325,11 @@ function DriverMapPin({
             <Bike size={16} strokeWidth={2.5} />
           </span>
         </button>
-      </div>
 
-      {isSelected && (
-        <InfoWindowAttached driver={driver} onClose={onCloseInfo} />
-      )}
+        {isSelected && (
+          <InfoWindowAttached driver={driver} onClose={onCloseInfo} />
+        )}
+      </div>
     </OverlayView>
   );
 }
