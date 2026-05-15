@@ -51,13 +51,29 @@ type Step = {
   vibe: string; // short tagline shown on the Rappi-style pill
 };
 
-const STATUS_STEPS: Step[] = [
-  { status: "RECEIVED",   label: "Recibido",   short: "Recibido",   icon: <CheckCircle size={18} />, vibe: "Recibimos tu pedido" },
-  { status: "PREPARING",  label: "Preparando", short: "Cocinando",  icon: <ChefHat size={18} />,     vibe: "Estamos cocinando con fuego" },
-  { status: "READY",      label: "Listo",      short: "Listo",      icon: <Package size={18} />,     vibe: "Tu pedido está listo" },
-  { status: "ON_THE_WAY", label: "En camino",  short: "En camino",  icon: <Truck size={18} />,       vibe: "Tu pedido ya va en camino" },
-  { status: "DELIVERED",  label: "Entregado",  short: "Entregado",  icon: <CheckCircle size={18} />, vibe: "Disfruta tu pedido" },
-];
+// Los pasos dependen del tipo de pedido. Para RECOGER no existe el paso
+// "En camino" (no hay repartidor) — antes se mostraba ese paso fantasma
+// que nunca se cumplía y confundía al cliente que iba a recoger.
+function getStatusSteps(type: "DELIVERY" | "PICKUP"): Step[] {
+  const received: Step = { status: "RECEIVED", label: "Recibido", short: "Recibido", icon: <CheckCircle size={18} />, vibe: "Recibimos tu pedido" };
+  const preparing: Step = { status: "PREPARING", label: "Preparando", short: "Cocinando", icon: <ChefHat size={18} />, vibe: "Estamos cocinando con fuego" };
+
+  if (type === "PICKUP") {
+    return [
+      received,
+      preparing,
+      { status: "READY",     label: "Listo para recoger", short: "Listo",     icon: <Package size={18} />,     vibe: "Pasa por tu pedido a la sucursal" },
+      { status: "DELIVERED", label: "Entregado",          short: "Entregado", icon: <CheckCircle size={18} />, vibe: "Disfruta tu pedido" },
+    ];
+  }
+  return [
+    received,
+    preparing,
+    { status: "READY",      label: "Listo",     short: "Listo",     icon: <Package size={18} />,     vibe: "Tu pedido está listo" },
+    { status: "ON_THE_WAY", label: "En camino", short: "En camino", icon: <Truck size={18} />,       vibe: "Tu pedido ya va en camino" },
+    { status: "DELIVERED",  label: "Entregado", short: "Entregado", icon: <CheckCircle size={18} />, vibe: "Disfruta tu pedido" },
+  ];
+}
 
 const PAYMENT_LABELS = {
   CARD: "Pago con tarjeta",
@@ -149,9 +165,14 @@ export function OrderTracker({ orderId }: { orderId: string }) {
     }
   });
 
-  const activeStep = STATUS_STEPS.findIndex((s) => s.status === currentStatus);
-  const currentStep = activeStep >= 0 ? STATUS_STEPS[activeStep] : STATUS_STEPS[0];
-  const progressPct = activeStep < 0 ? 0 : ((activeStep + 1) / STATUS_STEPS.length) * 100;
+  // Pasos según el tipo de pedido (RECOGER no tiene "En camino").
+  const steps =
+    order?.type === "PICKUP"
+      ? getStatusSteps("PICKUP")
+      : getStatusSteps("DELIVERY");
+  const activeStep = steps.findIndex((s) => s.status === currentStatus);
+  const currentStep = activeStep >= 0 ? steps[activeStep] : steps[0];
+  const progressPct = activeStep < 0 ? 0 : ((activeStep + 1) / steps.length) * 100;
   const isDelivered = currentStatus === "DELIVERED";
   const isCancelled = currentStatus === "CANCELLED";
   const isActive =
@@ -432,7 +453,7 @@ export function OrderTracker({ orderId }: { orderId: string }) {
 
             {/* Step icons */}
             <div className="flex items-center justify-between px-4 py-2.5 sm:px-5">
-              {STATUS_STEPS.map((step, i) => {
+              {steps.map((step, i) => {
                 const done = i <= activeStep;
                 return (
                   <div
@@ -716,6 +737,7 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       <ExpandedTrackerModal
         open={showExpandedTracker}
         onClose={() => setShowExpandedTracker(false)}
+        steps={steps}
         activeStep={activeStep}
         currentStep={currentStep}
         isDelivered={isDelivered}
@@ -894,6 +916,7 @@ function CelebrationCard({ order, token }: { order: OrderDetail; token: string |
 function ExpandedTrackerModal({
   open,
   onClose,
+  steps,
   activeStep,
   currentStep,
   isDelivered,
@@ -901,6 +924,7 @@ function ExpandedTrackerModal({
 }: {
   open: boolean;
   onClose: () => void;
+  steps: Step[];
   activeStep: number;
   currentStep: Step;
   isDelivered: boolean;
@@ -994,13 +1018,13 @@ function ExpandedTrackerModal({
                   className="absolute left-[22px] top-6 w-0.5 bg-gradient-to-b from-primary to-primary-dim"
                   initial={{ height: 0 }}
                   animate={{
-                    height: `calc(${(activeStep / (STATUS_STEPS.length - 1)) * 100}% - 12px)`,
+                    height: `calc(${(activeStep / Math.max(1, steps.length - 1)) * 100}% - 12px)`,
                   }}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 />
 
                 <div className="space-y-5">
-                  {STATUS_STEPS.map((step, i) => {
+                  {steps.map((step, i) => {
                     const isActive = i <= activeStep;
                     const isCurrent = i === activeStep;
                     return (
