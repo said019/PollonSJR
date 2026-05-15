@@ -286,17 +286,25 @@ function GpsStatusRow({
     );
   }
   return (
-    <div className="flex items-center justify-between gap-2 text-emerald-400">
-      <span className="flex items-center gap-2 font-semibold">
-        <ShieldCheck size={13} />
-        GPS activo
-      </span>
-      {lastAgo !== null && (
-        <span className="text-on-surface-variant">
-          <Wifi size={11} className="mr-1 inline" />
-          Último ping hace {lastAgo}s
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-emerald-400">
+        <span className="flex items-center gap-2 font-semibold">
+          <ShieldCheck size={13} />
+          GPS activo
         </span>
-      )}
+        {lastAgo !== null && (
+          <span className="text-on-surface-variant">
+            <Wifi size={11} className="mr-1 inline" />
+            Último ping hace {lastAgo}s
+          </span>
+        )}
+      </div>
+      {/* iOS/Android pausan el GPS cuando la pantalla se apaga o cambias de
+          app. Avisamos al repartidor para que no se "congele" su ubicación. */}
+      <p className="text-[10px] leading-tight text-on-surface-variant/70">
+        ⚠️ Mantén esta pantalla abierta mientras repartes. Si bloqueas el
+        celular o cambias de app, tu ubicación deja de actualizarse.
+      </p>
     </div>
   );
 }
