@@ -8,7 +8,7 @@ import type {
 import { formatCents } from "@pollon/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { RelatedProductsRail } from "./related-products-rail";
 import { useModalState } from "@/store/modal-state";
@@ -74,8 +74,36 @@ export function ProductOptionsModal({
     return () => closeProductModal();
   }, [open, openProductModal, closeProductModal]);
 
+  // Firma ESTABLE del estado inicial. Antes el efecto dependía del objeto
+  // `product` y del array `defaultModifiers`: un refetch en segundo plano
+  // del menú (staleTime 30s + refetchOnWindowFocus) devuelve un `product`
+  // nuevo en memoria con los MISMOS datos → el efecto se re-ejecutaba y
+  // BORRABA los complementos que el cliente ya había elegido. La firma se
+  // construye del CONTENIDO, no de la identidad de referencia, así que el
+  // churn de objetos por refetch ya no resetea la selección.
+  const initSig = useMemo(() => {
+    if (!product) return "";
+    const dm = (defaultModifiers ?? [])
+      .map((m) => `${m.name}:${m.option}:${m.qty ?? 1}`)
+      .sort()
+      .join(",");
+    return `${product.id}|${defaultVariant ?? ""}|${defaultQty ?? ""}|${
+      defaultNotes ?? ""
+    }|${dm}`;
+  }, [product, defaultVariant, defaultModifiers, defaultQty, defaultNotes]);
+
+  const initedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!open || !product) return;
+    if (!open || !product) {
+      // Modal cerrado → permitir re-init en la próxima apertura.
+      initedRef.current = null;
+      return;
+    }
+    // Ya inicializado para esta apertura + producto/edición → NO resetear
+    // (esto es lo que protege la selección del cliente del refetch).
+    if (initedRef.current === initSig) return;
+    initedRef.current = initSig;
+
     setVariant(defaultVariant ?? null);
     setQty(defaultQty && defaultQty > 0 ? defaultQty : 1);
     setNotes(defaultNotes ?? "");
@@ -101,7 +129,7 @@ export function ProductOptionsModal({
       }
     }
     setSelections(initial);
-  }, [open, product, defaultVariant, defaultModifiers, defaultQty, defaultNotes]);
+  }, [open, product, initSig, defaultVariant, defaultModifiers, defaultQty, defaultNotes]);
 
   const basePrice = useMemo(() => {
     if (!product) return 0;
