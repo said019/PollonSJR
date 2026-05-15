@@ -77,6 +77,16 @@ export async function paymentsRoutes(app: FastifyInstance) {
   // ─── Webhook de MercadoPago ─────────────────────────────────
 
   app.post("/webhook", async (request, reply) => {
+    // MP manda dos formatos:
+    //  - Moderno: POST con body {type:"payment", data:{id}}
+    //  - Legacy IPN: POST con query params ?id=X&topic=Y (body vacío)
+    // Normalizamos antes de firmar/procesar.
+    const body = (request.body as any) || {};
+    const query = (request.query as any) || {};
+    const dataId: string | undefined =
+      body?.data?.id?.toString?.() || (query.id ? String(query.id) : undefined);
+    const eventType: string | undefined = body?.type || query.topic;
+
     // Verificar firma HMAC (si MP_WEBHOOK_SECRET está configurado)
     const signature = request.headers["x-signature"] as string;
     const webhookSecret = process.env.MP_WEBHOOK_SECRET;
@@ -86,9 +96,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const tsValue = parts.find((p) => p.trim().startsWith("ts="))?.split("=")[1];
       const v1Value = parts.find((p) => p.trim().startsWith("v1="))?.split("=")[1];
 
-      if (tsValue && v1Value) {
-        const body = request.body as any;
-        const dataId = body?.data?.id;
+      if (tsValue && v1Value && dataId) {
         const manifest = `id:${dataId};request-id:${request.headers["x-request-id"]};ts:${tsValue};`;
         const hmac = crypto
           .createHmac("sha256", webhookSecret)
@@ -96,6 +104,10 @@ export async function paymentsRoutes(app: FastifyInstance) {
           .digest("hex");
 
         if (hmac !== v1Value) {
+          app.log.warn(
+            { dataId, signaturePreview: v1Value.slice(0, 8) },
+            "MP webhook: firma HMAC inválida — secreto distinto o manifest distinto"
+          );
           return reply.status(401).send({ error: "Firma inválida" });
         }
       }
@@ -104,8 +116,14 @@ export async function paymentsRoutes(app: FastifyInstance) {
     // Responder 200 INMEDIATAMENTE — MP no espera
     reply.status(200).send({ received: true });
 
-    // Procesar en background (el service maneja idempotencia internamente)
-    service.processWebhook(request.body).catch((err) => {
+    // Sólo procesamos eventos de tipo "payment". merchant_order y otros se ignoran.
+    if (eventType !== "payment" || !dataId) return;
+
+    // Construir payload normalizado para el service.
+    const normalizedPayload =
+      body && body.data ? body : { type: "payment", data: { id: dataId } };
+
+    service.processWebhook(normalizedPayload).catch((err) => {
       app.log.error("Webhook processing error:", err);
     });
   });
