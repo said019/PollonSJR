@@ -573,6 +573,39 @@ export class OrdersService {
       ...(newStatus === "CANCELLED" && cancelReason ? { cancelReason } : {}),
     });
 
+    // Auto-asignar repartidor: cuando un pedido a domicilio pasa a LISTO y
+    // todavía no tiene repartidor, si hay EXACTAMENTE UNO en turno se le
+    // asigna solo. Si hay 0 o >1, no hacemos nada (el admin elige). Esto
+    // quita fricción para negocios con un solo repartidor.
+    if (
+      newStatus === "READY" &&
+      order.type === "DELIVERY" &&
+      !order.driverId
+    ) {
+      try {
+        const onShift = await this.app.prisma.driver.findMany({
+          where: { active: true, onShift: true },
+          select: { id: true },
+          take: 2, // sólo necesitamos saber si es exactamente 1
+        });
+        if (onShift.length === 1) {
+          const { DriversService } = await import(
+            "../drivers/drivers.service"
+          );
+          await new DriversService(this.app)
+            .assignToOrder(orderId, onShift[0].id)
+            .catch((err) =>
+              this.app.log.warn(
+                { err, orderId },
+                "Auto-asignación de repartidor falló (se asignará manual)"
+              )
+            );
+        }
+      } catch (err) {
+        this.app.log.warn({ err, orderId }, "Auto-asignación: error consultando drivers");
+      }
+    }
+
     // Enqueue WhatsApp notification per status
     const name = order.customer.name ?? "Cliente";
     const phone = order.customer.phone;
