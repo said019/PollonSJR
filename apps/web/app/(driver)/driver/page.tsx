@@ -9,6 +9,7 @@ import { getDriverToken, removeDriverToken } from "@/lib/auth";
 import { formatCents } from "@pollon/utils";
 import type { DriverOrderSummary, DriverPublic } from "@pollon/types";
 import { useDriverGeolocation } from "@/hooks/useDriverGeolocation";
+import { DriverAlerts } from "@/components/client/driver-alerts";
 import {
   Bike,
   Loader2,
@@ -119,6 +120,9 @@ export default function DriverDashboardPage() {
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-5">
+        {/* Alerts, install card, notification permission */}
+        <DriverAlerts />
+
         {/* Shift toggle + GPS */}
         <section
           className={`mb-4 overflow-hidden rounded-3xl border ${

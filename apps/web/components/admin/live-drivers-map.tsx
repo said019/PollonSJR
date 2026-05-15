@@ -144,9 +144,9 @@ export function LiveDriversMap() {
         </div>
       ) : (
         <GoogleMap
-          mapContainerStyle={{ width: "100%", height: 320 }}
+          mapContainerClassName="w-full h-[420px] sm:h-[520px] md:h-[600px]"
           center={center}
-          zoom={13}
+          zoom={14}
           options={{
             disableDefaultUI: true,
             zoomControl: true,
