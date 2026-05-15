@@ -475,6 +475,30 @@ export function OrderTracker({ orderId }: { orderId: string }) {
           />
         )}
 
+        {/* Hint pre-mapa: cuando el pedido es DELIVERY y aún está en cocina
+            (RECEIVED/PREPARING/READY), explicar que el mapa aparecerá cuando
+            el repartidor salga. El cliente pregunta seguido "¿dónde está
+            el mapa?" sin esto. */}
+        {order.type === "DELIVERY" &&
+          (currentStatus === "RECEIVED" ||
+            currentStatus === "PREPARING" ||
+            currentStatus === "READY") && (
+            <div className="mb-5 flex items-start gap-3 rounded-2xl border border-outline-variant/15 bg-surface-container/60 p-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Truck size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-headline text-sm font-bold text-tertiary">
+                  El mapa del repartidor aparecerá aquí
+                </p>
+                <p className="mt-0.5 text-[12px] leading-snug text-on-surface-variant/80">
+                  Cuando el pedido esté listo y el repartidor salga con él, vas a
+                  ver su ubicación en tiempo real.
+                </p>
+              </div>
+            </div>
+          )}
+
         {/* ═══════════════════════════════════════════════════════ */}
         {/*  Post-delivery celebration — shown when DELIVERED       */}
         {/* ═══════════════════════════════════════════════════════ */}

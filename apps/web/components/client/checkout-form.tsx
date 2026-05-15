@@ -358,6 +358,18 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         token
       );
       clearCart();
+      // PWA + Mercado Pago issue: cuando MP redirige de vuelta, en iOS abre
+      // Safari (no la PWA). Guardamos el orderId aquí; al re-abrir la PWA,
+      // el MenuPage detecta este flag y rutea al cliente directo al tracker.
+      // Sin esto el cliente cree que la app "perdió" su pedido.
+      try {
+        localStorage.setItem(
+          "pollon:pending_order",
+          JSON.stringify({ orderId: order.orderId, ts: Date.now() })
+        );
+      } catch {
+        /* localStorage puede fallar en private browsing */
+      }
       window.location.href = checkoutUrl;
     } catch (err: any) {
       setError(err.message || "No se pudo redirigir a Mercado Pago. Intenta de nuevo.");

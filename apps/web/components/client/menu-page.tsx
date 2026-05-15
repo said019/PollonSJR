@@ -22,6 +22,7 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { useModalState } from "@/store/modal-state";
 import { useCartFeedback } from "@/store/cart-feedback";
 import { CartAddToast } from "./cart-add-toast";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -552,6 +553,32 @@ function CategorySection({
 /*  Main MenuPage                                                 */
 /* ────────────────────────────────────────────────────────────── */
 export function MenuPage() {
+  const router = useRouter();
+
+  // PWA + MP fix: si el cliente acaba de iniciar un pago con tarjeta
+  // (CheckoutForm guardó `pollon:pending_order` antes del redirect a MP)
+  // y vuelve a abrir la app, lo llevamos directo al tracker del pedido.
+  // En iPhones la PWA no recibe el callback de MP — abre Safari. Al
+  // reabrir la PWA, sin esto el cliente piensa que "se perdió" su pedido.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("pollon:pending_order");
+    if (!raw) return;
+    try {
+      const { orderId, ts } = JSON.parse(raw) as { orderId: string; ts: number };
+      const MAX_AGE_MS = 30 * 60 * 1000; // 30 minutos
+      if (!orderId || !ts || Date.now() - ts > MAX_AGE_MS) {
+        window.localStorage.removeItem("pollon:pending_order");
+        return;
+      }
+      // Limpiar inmediatamente para evitar loops si el cliente toca "Volver".
+      window.localStorage.removeItem("pollon:pending_order");
+      router.replace(`/order/${orderId}?pago=exitoso`);
+    } catch {
+      window.localStorage.removeItem("pollon:pending_order");
+    }
+  }, [router]);
+
   const [cartOpen, setCartOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
