@@ -158,6 +158,20 @@ export async function paymentsRoutes(app: FastifyInstance) {
     }
   );
 
+  // Reconciliar pago manualmente (admin) — útil para rescatar pedidos
+  // antiguos que se quedaron PENDING_PAYMENT por webhook caído.
+  app.post<{ Params: { orderId: string } }>(
+    "/admin/orders/:orderId/reconcile",
+    { preHandler: [adminOnly] },
+    async (request, reply) => {
+      try {
+        return await service.reconcileOrderPayment(request.params.orderId);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err.message });
+      }
+    }
+  );
+
   // Historial de pagos con filtros
   app.get(
     "/admin/payments",
