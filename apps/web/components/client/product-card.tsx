@@ -3,8 +3,10 @@
 import type { ProductPublic } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useCart } from "@/hooks/useCart";
+import { useCartFeedback } from "@/store/cart-feedback";
 import { useFavorites } from "@/hooks/useFavorites";
-import { Plus, Flame, TrendingUp, Heart } from "lucide-react";
+import { Plus, Flame, TrendingUp, Heart, Minus } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import Image from "next/image";
 import { resolveProductImage } from "@/lib/product-images";
@@ -53,6 +55,85 @@ function SocialProofBadge({ name }: { name: string }) {
 
 type Variant = "row" | "grid" | "hero";
 
+/**
+ * Add/qty button compartido. Cuando inCartQty > 0, muestra − N + en lugar
+ * del + simple. Patrón Rappi/UberEats — el cliente puede ajustar sin abrir
+ * el cart drawer.
+ */
+function AddOrQtyControl({
+  inCartQty,
+  onAdd,
+  onDec,
+  onInc,
+  size,
+  disabled,
+}: {
+  inCartQty: number;
+  onAdd: () => void;
+  onDec: () => void;
+  onInc: () => void;
+  size: "sm" | "md" | "lg";
+  disabled?: boolean;
+}) {
+  const dims = {
+    sm: { btn: "h-8 w-8", icon: 15, qty: "w-5 text-sm", group: "h-8 px-1" },
+    md: { btn: "h-9 w-9", icon: 16, qty: "w-6 text-sm", group: "h-9 px-1" },
+    lg: { btn: "h-11 w-11", icon: 22, qty: "w-7 text-base", group: "h-11 px-1.5" },
+  }[size];
+
+  if (inCartQty === 0) {
+    return (
+      <button
+        onClick={onAdd}
+        disabled={disabled}
+        aria-label="Agregar"
+        className={`${dims.btn} flex flex-shrink-0 items-center justify-center rounded-xl bg-primary text-on-primary shadow-md shadow-primary/25 transition-all active:scale-90 disabled:bg-outline-variant/20 disabled:text-on-surface-variant/40 disabled:shadow-none`}
+      >
+        <Plus size={dims.icon} strokeWidth={2.5} />
+      </button>
+    );
+  }
+
+  return (
+    <motion.div
+      key="qty"
+      layout
+      initial={{ width: 36, opacity: 0 }}
+      animate={{ width: "auto", opacity: 1 }}
+      transition={{ type: "spring", damping: 22, stiffness: 320 }}
+      className={`${dims.group} flex flex-shrink-0 items-center gap-1 rounded-xl bg-primary text-on-primary shadow-md shadow-primary/25`}
+    >
+      <button
+        onClick={onDec}
+        aria-label="Quitar uno"
+        className="flex h-full items-center justify-center px-1.5 active:scale-90"
+      >
+        <Minus size={dims.icon - 4} strokeWidth={2.5} />
+      </button>
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={inCartQty}
+          initial={{ y: -8, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 8, opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className={`${dims.qty} text-center font-headline font-extrabold`}
+        >
+          {inCartQty}
+        </motion.span>
+      </AnimatePresence>
+      <button
+        onClick={onInc}
+        disabled={disabled}
+        aria-label="Agregar uno"
+        className="flex h-full items-center justify-center px-1.5 active:scale-90 disabled:opacity-50"
+      >
+        <Plus size={dims.icon - 4} strokeWidth={2.5} />
+      </button>
+    </motion.div>
+  );
+}
+
 interface ProductCardProps {
   product: ProductPublic;
   variant?: Variant;
@@ -60,8 +141,21 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product, variant = "row", featured = false }: ProductCardProps) {
-  const { addItem } = useCart();
+  const { addItem, items, updateQty, removeItem } = useCart();
+  const notify = useCartFeedback((s) => s.notify);
   const { isAuthenticated, isFavorite, toggle } = useFavorites();
+
+  // Agregamos qty de TODAS las líneas de este productId (un producto puede
+  // estar en el carrito con distintas variantes/modificadores). Lo mostramos
+  // como un total único en la card para el patrón Rappi-style.
+  const inCartQty = items
+    .filter((i) => i.productId === product.id)
+    .reduce((sum, i) => sum + i.qty, 0);
+  // Si hay UNA sola línea de este producto en el carrito, podemos dec/inc
+  // directo sin volver a pedir variantes. Si hay varias, el "+" abre el modal
+  // y el "−" actúa sobre la última línea (la más reciente).
+  const ownLines = items.filter((i) => i.productId === product.id);
+  const singleLineMode = ownLines.length === 1;
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const imageUrl = resolveProductImage(product.name, product.imageUrl);
@@ -104,6 +198,33 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
       notes: "",
       imageUrl: imageUrl,
     });
+    notify(`1× ${product.name}${selectedVariant ? ` (${selectedVariant})` : ""}`);
+  };
+
+  // Patrón Rappi: cuando un producto ya está en el carrito, mostramos los
+  // controles − N + en lugar del "+" simple. El "−" decrementa la única
+  // línea (si hay una sola) o la última. El "+" suma 1 si es single-line +
+  // sin modifiers; si no, abre el modal para que pueda elegir otra variante.
+  const handleInlineDec = () => {
+    if (ownLines.length === 0) return;
+    const target = ownLines[ownLines.length - 1];
+    const nextQty = target.qty - 1;
+    if (nextQty <= 0) {
+      removeItem(target.productId, target.variant, target.modifiers);
+    } else {
+      updateQty(target.productId, target.variant, nextQty, target.modifiers);
+    }
+  };
+
+  const handleInlineInc = () => {
+    if (singleLineMode && !hasModifiers) {
+      const target = ownLines[0];
+      updateQty(target.productId, target.variant, target.qty + 1, target.modifiers);
+      notify(`1× ${product.name} más`);
+      return;
+    }
+    // multi-line o con modificadores → modal para que elija
+    handleAdd();
   };
 
   const optionsModal = hasModifiers ? (
@@ -124,6 +245,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
           imageUrl,
           modifiers,
         });
+        notify(`${qty}× ${product.name}${v ? ` (${v})` : ""}`);
         setShowOptions(false);
       }}
     />
@@ -192,14 +314,14 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
                 </p>
               )}
             </div>
-            <button
-              onClick={handleAdd}
+            <AddOrQtyControl
+              inCartQty={inCartQty}
+              onAdd={handleAdd}
+              onDec={handleInlineDec}
+              onInc={handleInlineInc}
+              size="lg"
               disabled={product.soldOut}
-              aria-label={`Agregar ${product.name}`}
-              className="flex-shrink-0 rounded-2xl bg-primary p-3 text-on-primary shadow-xl shadow-primary/30 transition-all hover:scale-110 active:scale-95 disabled:bg-outline-variant/20 disabled:text-on-surface-variant/40 disabled:shadow-none"
-            >
-              <Plus size={22} strokeWidth={2.5} />
-            </button>
+            />
           </div>
 
           {product.variants && product.variants.length > 0 ? (
@@ -286,14 +408,14 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
             <span className="font-headline text-sm font-extrabold tracking-tight text-primary">
               {priceRange}
             </span>
-            <button
-              onClick={handleAdd}
+            <AddOrQtyControl
+              inCartQty={inCartQty}
+              onAdd={handleAdd}
+              onDec={handleInlineDec}
+              onInc={handleInlineInc}
+              size="sm"
               disabled={product.soldOut}
-              aria-label={`Agregar ${product.name}`}
-              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary transition-all hover:bg-primary hover:text-on-primary disabled:bg-outline-variant/20 disabled:text-on-surface-variant/40"
-            >
-              <Plus size={15} strokeWidth={2.5} />
-            </button>
+            />
           </div>
         </div>
       </div>
@@ -369,14 +491,16 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
         )}
       </div>
 
-      <button
-        onClick={handleAdd}
-        disabled={product.soldOut}
-        aria-label={`Agregar ${product.name}`}
-        className="flex h-9 w-9 flex-shrink-0 items-center justify-center self-center rounded-xl bg-primary/15 text-primary transition-all hover:bg-primary hover:text-on-primary disabled:bg-outline-variant/20 disabled:text-on-surface-variant/40"
-      >
-        <Plus size={16} strokeWidth={2.5} />
-      </button>
+      <div className="self-center">
+        <AddOrQtyControl
+          inCartQty={inCartQty}
+          onAdd={handleAdd}
+          onDec={handleInlineDec}
+          onInc={handleInlineInc}
+          size="md"
+          disabled={product.soldOut}
+        />
+      </div>
     </div>
     </>
   );

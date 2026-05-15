@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useCart } from "@/hooks/useCart";
+import { useCartFeedback } from "@/store/cart-feedback";
 import { formatCents } from "@pollon/utils";
 import { History, ShoppingBag, Loader2, Heart, Sparkles } from "lucide-react";
 import { useState } from "react";
@@ -32,6 +33,7 @@ export function ReorderSection({
   onItemsAdded?: () => void;
 }) {
   const { addItem } = useCart();
+  const notify = useCartFeedback((s) => s.notify);
   const [adding, setAdding] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -63,10 +65,18 @@ export function ReorderSection({
         imageUrl: null,
       });
     }
+    const totalItems = order.items.reduce((s, i) => s + i.qty, 0);
+    notify(
+      totalItems === 1
+        ? `1 producto agregado`
+        : `${totalItems} productos agregados al carrito`
+    );
     setTimeout(() => {
       setAdding(null);
-      // Open the cart so the user can review and complete any missing
-      // modifiers (the cart now validates each line).
+      // Patrón Rappi: no abrimos el cart drawer al reorder. El cliente puede
+      // seguir agregando otras cosas. El toast + la barra inferior dan
+      // feedback suficiente. (onItemsAdded sigue existiendo por si lo
+      // queremos usar para otra cosa en el futuro.)
       onItemsAdded?.();
     }, 400);
   };

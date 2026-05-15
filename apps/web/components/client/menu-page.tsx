@@ -20,6 +20,8 @@ import { RecommendationsSection } from "./recommendations-section";
 import { MenuFilters, type MenuFilterTag } from "./menu-filters";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useModalState } from "@/store/modal-state";
+import { useCartFeedback } from "@/store/cart-feedback";
+import { CartAddToast } from "./cart-add-toast";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -279,6 +281,7 @@ function PromotionsSection({ onAdded }: { onAdded: () => void }) {
                 type="button"
                 onClick={() => {
                   addPromotion(meta);
+                  useCartFeedback.getState().notify(`Promo ${p.name} agregada`);
                   onAdded();
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary py-2.5 font-headline text-xs font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 active:scale-[0.98]"
@@ -734,18 +737,7 @@ export function MenuPage() {
                 <span className="hidden sm:inline">Entrar</span>
               </button>
             )}
-            <button
-              onClick={() => setCartOpen(true)}
-              className="relative rounded-xl border border-primary/20 bg-primary/15 p-2.5 text-primary transition-colors hover:bg-primary/25"
-              aria-label="Abrir carrito"
-            >
-              <ShoppingCart size={20} />
-              {itemCount > 0 && (
-                <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary shadow-lg">
-                  {itemCount}
-                </span>
-              )}
-            </button>
+            <CartIconButton onClick={() => setCartOpen(true)} itemCount={itemCount} />
           </div>
         </div>
 
@@ -791,12 +783,11 @@ export function MenuPage() {
                 </div>
               )}
 
-              {/* Promociones cards — shown when not searching and admin has actives today */}
-              {!searchQuery && (
-                <PromotionsSection
-                  onAdded={() => setCartOpen(true)}
-                />
-              )}
+              {/* Promociones cards — shown when not searching and admin has actives today.
+                  ANTES esto abría el cart drawer automáticamente al agregar una promo.
+                  Mala UX — el cliente quedaba forzado al checkout sin terminar de comprar.
+                  Ahora solo agrega; el toast global y la barra inferior dan el feedback. */}
+              {!searchQuery && <PromotionsSection onAdded={() => {}} />}
 
               {/* Featured hero — shown when not searching */}
               {!searchQuery && featured && <FeaturedHero product={featured} />}
@@ -810,12 +801,11 @@ export function MenuPage() {
                 <FavoritesSection products={favoriteProducts} />
               )}
 
-              {/* Reorder section — shown when authed and has past orders */}
+              {/* Reorder section — shown when authed and has past orders.
+                  Igual que con promos: no abrimos el cart drawer automáticamente.
+                  El cliente puede seguir agregando otras cosas si quiere. */}
               {!searchQuery && authed && (
-                <ReorderSection
-                  token={authToken}
-                  onItemsAdded={() => setCartOpen(true)}
-                />
+                <ReorderSection token={authToken} onItemsAdded={() => {}} />
               )}
 
               {/* Filter chips */}
@@ -910,6 +900,58 @@ export function MenuPage() {
           setAuthOpen(false);
         }}
       />
+
+      {/* Toast global — escucha el store cart-feedback y muestra
+          "Agregado al carrito · ..." por 1.6s cuando hay cualquier add. */}
+      <CartAddToast />
     </div>
+  );
+}
+
+/**
+ * Icono del carrito del header con animación de pulso/scale cuando se agrega
+ * un item. El pulseTick del store cart-feedback se incrementa por cada add y
+ * dispara este componente a animarse, dando feedback visual al cliente
+ * aunque el toast lo haya perdido.
+ */
+function CartIconButton({
+  onClick,
+  itemCount,
+}: {
+  onClick: () => void;
+  itemCount: number;
+}) {
+  const pulseTick = useCartFeedback((s) => s.pulseTick);
+  const [pulseKey, setPulseKey] = useState(0);
+  useEffect(() => {
+    if (pulseTick > 0) setPulseKey(pulseTick);
+  }, [pulseTick]);
+
+  return (
+    <button
+      onClick={onClick}
+      className="relative rounded-xl border border-primary/20 bg-primary/15 p-2.5 text-primary transition-colors hover:bg-primary/25"
+      aria-label="Abrir carrito"
+    >
+      <motion.span
+        key={pulseKey}
+        animate={pulseKey > 0 ? { scale: [1, 1.25, 0.95, 1.08, 1] } : undefined}
+        transition={{ duration: 0.55, ease: "easeOut" }}
+        className="flex items-center justify-center"
+      >
+        <ShoppingCart size={20} />
+      </motion.span>
+      {itemCount > 0 && (
+        <motion.span
+          key={`badge-${itemCount}`}
+          initial={pulseKey > 0 ? { scale: 0.4, opacity: 0 } : false}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", damping: 14, stiffness: 360 }}
+          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary shadow-lg"
+        >
+          {itemCount}
+        </motion.span>
+      )}
+    </button>
   );
 }
