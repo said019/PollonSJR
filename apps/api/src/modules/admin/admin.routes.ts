@@ -517,6 +517,10 @@ export async function adminRoutes(app: FastifyInstance) {
       emitOrderStatus(app, order.customerId, order.id, "RECEIVED", {
         orderNumber: order.orderNumber,
       });
+      // Sello de compra (transferencia confirmada por admin).
+      ordersService
+        .sendOrderReceipt(order.id)
+        .catch((err) => app.log.error("Order receipt (transfer) error:", err));
     }
 
     return { ok: true, message: "Pago confirmado" };

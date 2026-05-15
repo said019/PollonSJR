@@ -224,20 +224,48 @@ export default function DriverOrderDetailPage({
             </div>
           </div>
 
-          {order.paymentMethod === "CASH" && order.cashAmount && (
-            <div className="mt-3 grid gap-1 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 text-xs">
-              <div className="flex justify-between">
-                <span className="text-on-surface-variant">Paga con</span>
-                <span className="font-bold text-on-surface">
-                  {formatCents(order.cashAmount)}
-                </span>
-              </div>
-              <div className="flex justify-between border-t border-amber-500/20 pt-1">
-                <span className="text-on-surface-variant">Lleva cambio de</span>
-                <span className="font-headline font-extrabold text-amber-400">
-                  {cashChange !== null ? formatCents(cashChange) : formatCents(0)}
-                </span>
-              </div>
+          {order.paymentMethod === "CASH" && (
+            <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+              {order.cashAmount ? (
+                // El cliente sí indicó con cuánto paga → cambio exacto.
+                <div className="grid gap-1">
+                  <div className="flex justify-between">
+                    <span className="text-on-surface-variant">Cobra</span>
+                    <span className="font-bold text-on-surface">
+                      {formatCents(order.total)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-on-surface-variant">Cliente paga con</span>
+                    <span className="font-bold text-on-surface">
+                      {formatCents(order.cashAmount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t border-amber-500/20 pt-1">
+                    <span className="text-on-surface-variant">Lleva cambio de</span>
+                    <span className="font-headline text-sm font-extrabold text-amber-400">
+                      {cashChange !== null ? formatCents(cashChange) : "$0.00"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                // El cliente NO indicó con cuánto paga → el repartidor debe
+                // llevar cambio surtido. Antes esto no se mostraba y el
+                // repartidor llegaba sin saber cuánto cambio cargar.
+                <div className="space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-on-surface-variant">Cobra</span>
+                    <span className="font-headline text-sm font-extrabold text-amber-400">
+                      {formatCents(order.total)}
+                    </span>
+                  </div>
+                  <p className="leading-snug text-on-surface-variant">
+                    El cliente <strong className="text-amber-400">no indicó</strong> con
+                    cuánto paga. Lleva <strong>cambio surtido</strong> (billetes
+                    chicos + monedas) por si paga con $200, $500 o $1000.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </section>

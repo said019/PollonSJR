@@ -578,6 +578,15 @@ export class PaymentsService {
     // Notificar al cliente
     emitOrderStatus(this.app, order.customerId, order.id, "RECEIVED");
 
+    // Sello de compra por WhatsApp (tarjeta). Reusa el helper de
+    // OrdersService para no duplicar el armado del recibo.
+    try {
+      const { OrdersService } = await import("../orders/orders.service");
+      await new OrdersService(this.app).sendOrderReceipt(order.id);
+    } catch (err) {
+      this.app.log.error("Order receipt (card) enqueue error:", err);
+    }
+
     this.app.log.info(
       `Pedido #${order.orderNumber} activado — pago ${paymentData.id} aprobado`
     );

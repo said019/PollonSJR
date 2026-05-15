@@ -382,6 +382,13 @@ export class OrdersService {
           orderNumber: order.orderNumber,
           estimatedMinutes: 30,
         });
+        // Sello de compra (WhatsApp). Antes NUNCA se mandaba: el template
+        // order_received existía pero no estaba enganchado a ningún punto
+        // donde el pedido pasa a RECEIVED. El cliente nunca recibía
+        // confirmación de su compra.
+        void this.sendOrderReceipt(order.id).catch((err) =>
+          this.app.log.error("Order receipt enqueue error:", err)
+        );
       }
     }
 
@@ -422,6 +429,47 @@ export class OrdersService {
       rewardApplied: reward.rewardApplied,
       rewardMessage,
     };
+  }
+
+  /**
+   * Envía el "sello de compra" por WhatsApp: confirmación con total, método
+   * de pago y tipo de entrega. Se llama cuando el pedido se confirma
+   * (efectivo al crear, tarjeta al aprobar el pago, transferencia al
+   * confirmar comprobante). Idempotencia best-effort: la cola de
+   * notificaciones no re-encola si ya se mandó en la misma corrida, pero
+   * cada activación es un único punto de llamada.
+   */
+  async sendOrderReceipt(orderId: string) {
+    const order = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { customer: true },
+    });
+    if (!order) return;
+
+    const paymentLabel =
+      order.paymentMethod === "CARD"
+        ? "Tarjeta (pagado)"
+        : order.paymentMethod === "TRANSFER"
+          ? "Transferencia (confirmada)"
+          : "Efectivo al recibir";
+
+    const fulfillment =
+      order.type === "DELIVERY"
+        ? `Envío a: ${order.deliveryAddress || order.address || "tu dirección"}`
+        : "Para recoger en sucursal";
+
+    await enqueueNotification(this.app.redis, {
+      type: "whatsapp",
+      to: order.customer.phone,
+      template: "order_received",
+      params: {
+        name: order.customer.name ?? "Cliente",
+        orderNumber: String(order.orderNumber),
+        total: (order.total / 100).toFixed(2),
+        payment: paymentLabel,
+        fulfillment,
+      },
+    });
   }
 
   /** Devuelve sólo el customerId dueño de un pedido (para checks de IDOR). */

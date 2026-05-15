@@ -5,7 +5,11 @@ const TEMPLATES: Record<string, (p: TemplateParams) => string> = {
     `Tu código de verificación de Pollón SJR es: *${p.code}*\n\nVálido por 5 minutos. No lo compartas con nadie.`,
 
   order_received: (p) =>
-    `¡Hola ${p.name}! 🍗 Recibimos tu pedido *#${p.orderNumber}*.\n\nEstamos revisándolo. Te avisamos cuando esté en preparación.\n\n_Pollón SJR_`,
+    `¡Hola ${p.name}! 🍗 *Pedido confirmado #${p.orderNumber}*\n\n` +
+    `🧾 Total: *$${p.total}*\n` +
+    `💳 Pago: ${p.payment}\n` +
+    `📦 ${p.fulfillment}\n\n` +
+    `Te avisamos en cada paso. ¡Gracias por pedir en Pollón SJR! 🔥`,
 
   order_preparing: (p) =>
     `🔥 Tu pollo está en la freidora, ${p.name}!\n\nPedido *#${p.orderNumber}* en preparación.\nTiempo estimado: ~${p.minutes} min.`,
