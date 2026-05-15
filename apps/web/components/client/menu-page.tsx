@@ -16,6 +16,7 @@ import { ActiveOrderBanner } from "./active-order-banner";
 import { InstallAppBanner } from "./install-app-banner";
 import { ReorderSection } from "./reorder-section";
 import { FavoritesSection } from "./favorites-section";
+import { RecommendationsSection } from "./recommendations-section";
 import { MenuFilters, type MenuFilterTag } from "./menu-filters";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
@@ -797,6 +798,10 @@ export function MenuPage() {
 
               {/* Featured hero — shown when not searching */}
               {!searchQuery && featured && <FeaturedHero product={featured} />}
+
+              {/* Data-driven recommendations — "Recomendado para ti" si hay historial,
+                  o "Lo más pedido" si todavía no hay datos personales suficientes. */}
+              {!searchQuery && <RecommendationsSection />}
 
               {/* Favorites section — shown when authed and has favorited products */}
               {!searchQuery && authed && favoriteProducts.length > 0 && (

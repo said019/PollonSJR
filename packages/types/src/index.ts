@@ -438,6 +438,15 @@ export interface MenuByCategory {
   products: ProductPublic[];
 }
 
+export interface RecommendationsResponse {
+  /** Top productos del propio cliente (vacío si no hay sesión o no hay suficiente historial) */
+  personal: ProductPublic[];
+  /** Top productos del negocio (últimos 30 días) */
+  global: ProductPublic[];
+  /** Qué fuente de datos se usó. Útil para el copy del label en UI */
+  source: "personal" | "global" | "mixed" | "empty";
+}
+
 // ─── Loyalty Types ──────────────────────────────────────────
 
 export type LoyaltyTierType = "POLLITO" | "CRUJIENTE" | "VIP_POLLON";
