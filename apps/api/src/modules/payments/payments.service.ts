@@ -54,6 +54,43 @@ export class PaymentsService {
       });
     }
 
+    // Cargo por uso de aplicación (4% en CARD). Antes NO se incluía en la
+    // preferencia MP, así que MP cobraba menos que order.total y luego
+    // processPaymentAsync rechazaba con "monto no coincide". El cliente
+    // pagaba menos y el pedido se quedaba atascado.
+    if (order.appFeeAmount > 0) {
+      mpItems.push({
+        id: "app-fee",
+        title: "Uso de aplicación",
+        quantity: 1,
+        unit_price: order.appFeeAmount / 100,
+        currency_id: "MXN",
+      });
+    }
+
+    // Propina (si el cliente la agregó).
+    if (order.tipAmount > 0) {
+      mpItems.push({
+        id: "tip",
+        title: "Propina para el repartidor",
+        quantity: 1,
+        unit_price: order.tipAmount / 100,
+        currency_id: "MXN",
+      });
+    }
+
+    // Descuento por cupón / lealtad — entra como item negativo si aplica.
+    // MP soporta items con unit_price negativo para descuentos.
+    if (order.discountAmount > 0) {
+      mpItems.push({
+        id: "discount",
+        title: "Descuento aplicado",
+        quantity: 1,
+        unit_price: -(order.discountAmount / 100),
+        currency_id: "MXN",
+      });
+    }
+
     const apiUrl = process.env.API_URL || "http://localhost:3001";
     const webUrl = process.env.WEB_URL || "http://localhost:3000";
 
@@ -409,13 +446,28 @@ export class PaymentsService {
     });
     if (!order) return;
 
-    // 3. Verificar que el monto coincide (seguridad anti-fraude)
+    // 3. Verificar que el monto coincide (seguridad anti-fraude).
+    // Tolerancia:
+    //  - Exacto: order.total
+    //  - O subtotal+delivery sin appFee/tip (preferencias antiguas que no los
+    //    incluían — ya arreglado pero hay órdenes legacy en PENDING_PAYMENT)
+    //  - Tolerancia ±2 centavos por redondeo
     const paidAmount = Math.round((paymentData.transaction_amount || 0) * 100);
-    if (Math.abs(paidAmount - order.total) > 1) {
+    const expectedFull = order.total;
+    const expectedLegacy =
+      order.subtotal + order.deliveryFee - order.discountAmount;
+    const matchesFull = Math.abs(paidAmount - expectedFull) <= 2;
+    const matchesLegacy = Math.abs(paidAmount - expectedLegacy) <= 2;
+    if (!matchesFull && !matchesLegacy) {
       this.app.log.error(
-        `ALERTA: Monto no coincide. Pedido ${orderId}: esperado ${order.total}, recibido ${paidAmount}`
+        `ALERTA: Monto no coincide. Pedido ${orderId}: esperado ${expectedFull} (o legacy ${expectedLegacy}), recibido ${paidAmount}`
       );
       return;
+    }
+    if (matchesLegacy && !matchesFull) {
+      this.app.log.warn(
+        `Pedido ${orderId} cobrado en modo legacy (sin appFee/tip): pagó ${paidAmount}, total esperado ${expectedFull}. Activando igual.`
+      );
     }
 
     // 4. Calcular fee y net amount de MP

@@ -92,6 +92,15 @@ export function OrderTracker({ orderId }: { orderId: string }) {
     return () => clearTimeout(t);
   }, [isPendingPayment]);
 
+  const { data: order, isLoading, refetch } = useQuery({
+    queryKey: ["order", orderId],
+    queryFn: () => api.get<OrderDetail>(`/api/orders/${orderId}`, token || undefined),
+    enabled: !!token,
+    refetchOnMount: "always",
+    // Auto-poll while still waiting for payment confirmation
+    refetchInterval: isPendingPayment ? 3_000 : false,
+  });
+
   // Reconciliación pull-based con MP — no dependemos del webhook.
   // Cuando el cliente regresa de MP con cualquier ?pago=..., consultamos MP
   // directamente para confirmar el estado del pago. Repetimos cada 5s hasta
@@ -127,15 +136,6 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       clearInterval(id);
     };
   }, [isPendingPayment, pagoParam, token, orderId, refetch]);
-
-  const { data: order, isLoading, refetch } = useQuery({
-    queryKey: ["order", orderId],
-    queryFn: () => api.get<OrderDetail>(`/api/orders/${orderId}`, token || undefined),
-    enabled: !!token,
-    refetchOnMount: "always",
-    // Auto-poll while still waiting for payment confirmation
-    refetchInterval: isPendingPayment ? 3_000 : false,
-  });
 
   useEffect(() => {
     if (order) setCurrentStatus(order.status);
