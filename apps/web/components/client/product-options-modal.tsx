@@ -190,6 +190,15 @@ export function ProductOptionsModal({
     const err = validate();
     if (err) {
       setError(err);
+      // El error aparece ARRIBA en el scroll del modal. Si el cliente está
+      // en el footer le queda fuera de vista — auto-scroll al top para que
+      // lo vea sin tener que adivinar por qué el botón "no hizo nada".
+      if (typeof document !== "undefined") {
+        const el = document.querySelector<HTMLDivElement>(
+          ".pollon-modal-scroll"
+        );
+        el?.scrollTo({ top: 0, behavior: "smooth" });
+      }
       return;
     }
     const flatMods: CartItemModifier[] = [];
@@ -272,7 +281,7 @@ export function ProductOptionsModal({
               </div>
             </div>
 
-            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+            <div className="pollon-modal-scroll flex-1 space-y-5 overflow-y-auto px-5 py-4">
               {/* Variants */}
               {product.variants && product.variants.length > 0 && (
                 <Section title="Tamaño" required>
@@ -455,31 +464,39 @@ export function ProductOptionsModal({
             {/* "Va bien con esto" — collaborative filtering. */}
             {product && <RelatedProductsRail productId={product.id} />}
 
-            {/* Footer */}
-            <div className="flex items-center gap-3 border-t border-outline-variant/15 bg-surface-container-high/40 p-4">
-              <div className="flex items-center gap-1 rounded-full border border-outline-variant/30 bg-surface-container px-2 py-1">
+            {/* Footer — safe-area-inset-bottom evita que el home indicator
+                de iPhones tape el botón "Agregar". También se le subió la
+                altura del botón a hit target ≥ 48px (Apple HIG recomienda
+                ≥44pt) para que no se pierdan taps. */}
+            <div
+              className="flex items-center gap-3 border-t border-outline-variant/15 bg-surface-container-high/40 px-4 pt-4"
+              style={{
+                paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+              }}
+            >
+              <div className="flex items-center gap-1 rounded-full border border-outline-variant/30 bg-surface-container px-2 py-1.5">
                 <button
                   onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  className="rounded-full p-1 text-on-surface-variant disabled:opacity-30"
+                  className="rounded-full p-1.5 text-on-surface-variant transition-transform active:scale-90 disabled:opacity-30"
                   disabled={qty <= 1}
                   aria-label="Menos"
                 >
-                  <Minus size={14} />
+                  <Minus size={16} />
                 </button>
                 <span className="w-6 text-center font-headline text-sm font-bold">
                   {qty}
                 </span>
                 <button
                   onClick={() => setQty((q) => Math.min(20, q + 1))}
-                  className="rounded-full p-1 text-on-surface-variant"
+                  className="rounded-full p-1.5 text-on-surface-variant transition-transform active:scale-90"
                   aria-label="Más"
                 >
-                  <Plus size={14} />
+                  <Plus size={16} />
                 </button>
               </div>
               <button
                 onClick={handleConfirm}
-                className="flex flex-1 items-center justify-between rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-on-primary"
+                className="flex flex-1 items-center justify-between rounded-xl bg-primary px-4 py-3.5 text-sm font-bold text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.97]"
               >
                 <span>{editing ? "Guardar cambios" : "Agregar al carrito"}</span>
                 <span>{formatCents(finalUnitPrice * qty)}</span>
