@@ -33,6 +33,21 @@ export async function menuRoutes(app: FastifyInstance) {
     return recommendations.getForCustomer(customerId);
   });
 
+  /**
+   * "Va bien con esto" — productos que la gente pide junto con `:productId`.
+   * Endpoint público, no necesita auth.
+   */
+  app.get<{ Params: { productId: string } }>(
+    "/recommendations/with/:productId",
+    async (request) => {
+      const items = await recommendations.getCoOccurringProducts(
+        request.params.productId,
+        4
+      );
+      return { items };
+    }
+  );
+
   // Redeem a private promotion by code. Returns the promo + items if valid.
   app.post<{ Body: { code?: string } }>(
     "/promotions/redeem",

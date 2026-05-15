@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Minus, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { RelatedProductsRail } from "./related-products-rail";
 
 interface Props {
   open: boolean;
@@ -438,6 +439,9 @@ export function ProductOptionsModal({
                 </div>
               )}
             </div>
+
+            {/* "Va bien con esto" — collaborative filtering. */}
+            {product && <RelatedProductsRail productId={product.id} />}
 
             {/* Footer */}
             <div className="flex items-center gap-3 border-t border-outline-variant/15 bg-surface-container-high/40 p-4">

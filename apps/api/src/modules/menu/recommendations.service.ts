@@ -164,4 +164,74 @@ export class RecommendationsService {
   async invalidateGlobal() {
     await this.app.redis.del("recs:global").catch(() => null);
   }
+
+  /**
+   * "Frequently bought together" / "Va bien con esto".
+   * Encuentra productos que aparecen en los MISMOS pedidos que `productId`,
+   * ordenados por co-ocurrencia. Es collaborative filtering simple — sin ML,
+   * sólo conteo de pares en órdenes históricas.
+   *
+   * Cache 30 min porque cambia lento. Si no hay co-ocurrencias suficientes
+   * (negocio nuevo), cae a productos populares de la misma categoría como
+   * fallback razonable.
+   */
+  async getCoOccurringProducts(
+    productId: string,
+    limit = 4
+  ): Promise<ProductPublic[]> {
+    const cacheKey = `recs:pair:${productId}`;
+    const cached = await this.app.redis.get(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached);
+
+    // Raw SQL: self-join sobre OrderItem por orderId, excluyendo el mismo producto.
+    // Filtro por orders no cancelados, productos activos y en stock.
+    type Row = { productId: string; co: bigint };
+    const rows = await this.app.prisma.$queryRaw<Row[]>`
+      SELECT oi2."productId" AS "productId", COUNT(*) AS co
+      FROM "OrderItem" oi1
+      JOIN "OrderItem" oi2
+        ON oi1."orderId" = oi2."orderId"
+       AND oi2."productId" <> oi1."productId"
+      JOIN "Order" o ON oi1."orderId" = o.id
+      JOIN "Product" p ON oi2."productId" = p.id
+      WHERE oi1."productId" = ${productId}
+        AND o.status NOT IN ('PENDING_PAYMENT', 'CANCELLED')
+        AND p.active = true
+        AND p."soldOut" = false
+      GROUP BY oi2."productId"
+      ORDER BY co DESC
+      LIMIT ${limit}
+    `;
+
+    let productIds = rows.map((r) => r.productId);
+
+    // Fallback: si no hay co-ocurrencias, recomienda populares de la misma categoría.
+    if (productIds.length < limit) {
+      const product = await this.app.prisma.product.findUnique({
+        where: { id: productId },
+        select: { category: true },
+      });
+      if (product) {
+        const fallback = await this.app.prisma.product.findMany({
+          where: {
+            category: product.category,
+            active: true,
+            soldOut: false,
+            id: { notIn: [productId, ...productIds] },
+          },
+          orderBy: { sortOrder: "asc" },
+          take: limit - productIds.length,
+        });
+        productIds = [...productIds, ...fallback.map((f) => f.id)];
+      }
+    }
+
+    const products = await this.hydrate(productIds);
+
+    await this.app.redis
+      .set(cacheKey, JSON.stringify(products), { EX: 1800 })
+      .catch(() => null);
+
+    return products;
+  }
 }

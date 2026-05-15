@@ -5,6 +5,7 @@ import { runExpirePoints } from "./expire-points.job";
 import { cancelZombieOrders } from "./cancel-zombie-orders.job";
 import { reconcilePayments } from "./reconcile-payments.job";
 import { activateScheduledOrders } from "./activate-scheduled.job";
+import { runReEngagement } from "./re-engagement.job";
 
 export function startScheduler(app: FastifyInstance) {
   // */5 * * * * → Activate scheduled orders 30 min before scheduledFor
@@ -34,8 +35,17 @@ export function startScheduler(app: FastifyInstance) {
     runDailyReport(app).catch((err) => app.log.error("Daily report error:", err));
   });
 
+  // 0 17 * * * → Re-engagement push: 17:00 UTC = 11:00 AM México.
+  // Manda push a clientes con push sub que no han pedido en 14 días.
+  cron.schedule("0 17 * * *", () => {
+    runReEngagement(app).catch((err) =>
+      app.log.error("Re-engagement error:", err)
+    );
+  });
+
   app.log.info(
     "Scheduler started: scheduled (*/5min), zombie-orders (*/15min), " +
-    "reconcile (02:00), expire-rewards (10:00), daily-report (23:30)"
+    "reconcile (02:00), expire-rewards (10:00), reengagement (17:00), " +
+    "daily-report (23:30)"
   );
 }
