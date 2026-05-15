@@ -92,6 +92,42 @@ export function OrderTracker({ orderId }: { orderId: string }) {
     return () => clearTimeout(t);
   }, [isPendingPayment]);
 
+  // Reconciliación pull-based con MP — no dependemos del webhook.
+  // Cuando el cliente regresa de MP con cualquier ?pago=..., consultamos MP
+  // directamente para confirmar el estado del pago. Repetimos cada 5s hasta
+  // que el pedido salga de PENDING_PAYMENT o pasen 90s.
+  useEffect(() => {
+    if (!isPendingPayment || !pagoParam || !token) return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 18; // 18 × 5s = 90s
+
+    const reconcile = async () => {
+      if (cancelled || attempts >= maxAttempts) return;
+      attempts++;
+      try {
+        await api.post(
+          `/api/payments/reconcile/${orderId}`,
+          {},
+          token
+        );
+        // Refetch order para tomar nuevo status
+        void refetch();
+      } catch (err) {
+        // Silencioso — el polling lo intentará de nuevo
+        console.warn("Reconcile attempt failed:", err);
+      }
+    };
+
+    // Disparar inmediato + cada 5s
+    void reconcile();
+    const id = setInterval(() => void reconcile(), 5_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isPendingPayment, pagoParam, token, orderId, refetch]);
+
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ["order", orderId],
     queryFn: () => api.get<OrderDetail>(`/api/orders/${orderId}`, token || undefined),

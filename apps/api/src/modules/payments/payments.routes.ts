@@ -74,6 +74,21 @@ export async function paymentsRoutes(app: FastifyInstance) {
     }
   );
 
+  // Reconciliación pull-based — el cliente la llama cuando regresa de MP.
+  // Consulta MP directamente y activa el pedido si encuentra un pago aprobado.
+  // No depende del webhook (que puede fallar/tardar).
+  app.post<{ Params: { orderId: string } }>(
+    "/reconcile/:orderId",
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      try {
+        return await service.reconcileOrderPayment(request.params.orderId);
+      } catch (err: any) {
+        return reply.status(400).send({ error: err.message });
+      }
+    }
+  );
+
   // ─── Webhook de MercadoPago ─────────────────────────────────
 
   app.post("/webhook", async (request, reply) => {

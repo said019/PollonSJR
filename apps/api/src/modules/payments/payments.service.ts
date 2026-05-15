@@ -296,6 +296,102 @@ export class PaymentsService {
   }
 
   /**
+   * Reconciliación pull-based — el cliente la dispara cuando regresa de MP.
+   *
+   * Por qué existe: el webhook de MP puede no llegar (URL mal configurada,
+   * firewall, rate limit, sandbox sin webhook, lo que sea). Si solo
+   * dependemos del webhook, el pedido se queda atascado en PENDING_PAYMENT.
+   * Pero MP siempre redirige al cliente a back_urls.success cuando paga
+   * — esa redirección ES la señal. Aquí consultamos MP directamente
+   * buscando pagos con external_reference=orderId y los procesamos con
+   * la misma rutina idempotente que el webhook.
+   *
+   * Idempotente: si ya hay un pago APPROVED registrado, no hace nada.
+   * Seguro contra polling: el cliente lo llama cada 5s mientras está en
+   * PENDING_PAYMENT.
+   */
+  async reconcileOrderPayment(orderId: string) {
+    if (!process.env.MP_ACCESS_TOKEN) {
+      throw new Error("MercadoPago no está configurado");
+    }
+
+    const order = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payment: true },
+    });
+    if (!order) throw new Error("Pedido no encontrado");
+
+    // Si ya fue activado (status != PENDING_PAYMENT y status != CANCELLED),
+    // no hay nada que reconciliar — devolvemos su estado actual.
+    if (order.status !== "PENDING_PAYMENT") {
+      return {
+        orderStatus: order.status,
+        paymentStatus: order.payment?.status ?? null,
+        message: "Pedido ya procesado",
+        action: "none" as const,
+      };
+    }
+
+    // Buscar pagos en MP filtrados por external_reference.
+    const mpPayment = new MpPayment(this.mp);
+    const searchResult = (await mpPayment.search({
+      options: { external_reference: orderId, sort: "date_created", criteria: "desc" } as any,
+    })) as { results?: any[] };
+
+    const payments = searchResult?.results ?? [];
+    if (payments.length === 0) {
+      return {
+        orderStatus: order.status,
+        paymentStatus: order.payment?.status ?? null,
+        message: "No encontramos el pago en MercadoPago todavía",
+        action: "wait" as const,
+      };
+    }
+
+    // Procesar el pago aprobado más reciente primero. Si no hay aprobados,
+    // procesar el más reciente (lo que arrastre rejected/pending).
+    const approved = payments.find((p: any) => p.status === "approved");
+    const candidate = approved ?? payments[0];
+
+    if (!candidate?.id) {
+      return {
+        orderStatus: order.status,
+        paymentStatus: order.payment?.status ?? null,
+        message: "Pago sin ID en MercadoPago",
+        action: "wait" as const,
+      };
+    }
+
+    // Usar el mismo path que el webhook — idempotente. Esto inserta el row
+    // de Payment (si no existe), actualiza el mpPaymentId, y si está
+    // approved llama a onPaymentApproved para activar el pedido.
+    await this.processPaymentAsync(
+      String(candidate.id),
+      `reconcile:${orderId}:${candidate.id}`
+    ).catch((err) => {
+      this.app.log.error({ err, orderId }, "Error en reconcile processPaymentAsync");
+    });
+
+    // Releer estado actualizado
+    const updated = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payment: true },
+    });
+
+    return {
+      orderStatus: updated?.status ?? order.status,
+      paymentStatus: updated?.payment?.status ?? null,
+      message:
+        candidate.status === "approved"
+          ? "Pago confirmado"
+          : candidate.status === "rejected"
+            ? "El pago fue rechazado"
+            : "Pago en revisión",
+      action: candidate.status === "approved" ? ("activated" as const) : ("wait" as const),
+    };
+  }
+
+  /**
    * Procesamiento asíncrono del pago — consulta MP directamente y actualiza la orden.
    */
   private async processPaymentAsync(mpPaymentId: string, eventKey: string) {
