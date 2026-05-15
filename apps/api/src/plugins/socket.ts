@@ -2,7 +2,11 @@ import { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { FastifyInstance } from "fastify";
-import jwt from "jsonwebtoken";
+import {
+  verifyAdminToken,
+  verifyCustomerToken,
+  verifyDriverToken,
+} from "../modules/auth/jwt.service";
 import type { ServerToClientEvents, ClientToServerEvents } from "@pollon/types";
 
 declare module "fastify" {
@@ -50,20 +54,23 @@ export async function registerSocket(
       return next();
     }
 
+    // Usamos las funciones centralizadas de jwt.service (algoritmo HS256
+    // fijo + fail-fast de secretos en prod). Antes este archivo leía los
+    // secrets con fallback inseguro propio y, peor, si el token era inválido
+    // degradaba SILENCIOSAMENTE a "anonymous" — un atacante con role spoofeado
+    // igual entraba (limitado, pero es defense-in-depth flojo).
     try {
       if (role === "admin") {
-        const secret = process.env.JWT_ADMIN_SECRET || "admin-dev-secret";
-        const payload = jwt.verify(token, secret) as { adminId: string; role: string };
-        if (payload.role !== "admin") return next(new Error("Token de admin inválido"));
+        const payload = verifyAdminToken(token);
         (socket.data as SocketData).role = "admin";
-        (socket.data as SocketData).adminId = payload.adminId;
+        (socket.data as SocketData).adminId =
+          (payload.adminId as string) || (payload.sub as string);
         return next();
       }
 
       if (role === "customer") {
-        const secret = process.env.JWT_SECRET || "dev-secret-change-me";
-        const payload = jwt.verify(token, secret) as { sub?: string; id?: string };
-        const customerId = payload.sub || payload.id;
+        const payload = verifyCustomerToken(token);
+        const customerId = (payload.sub as string) || (payload as any).id;
         if (!customerId) return next(new Error("Token de cliente inválido"));
         (socket.data as SocketData).role = "customer";
         (socket.data as SocketData).customerId = customerId;
@@ -71,23 +78,22 @@ export async function registerSocket(
       }
 
       if (role === "driver") {
-        const secret = process.env.JWT_DRIVER_SECRET || "driver-dev-secret";
-        const payload = jwt.verify(token, secret) as { sub?: string; role?: string };
-        if (payload.role !== "driver" || !payload.sub) {
-          return next(new Error("Token de repartidor inválido"));
-        }
+        const payload = verifyDriverToken(token);
+        if (!payload.sub) return next(new Error("Token de repartidor inválido"));
         (socket.data as SocketData).role = "driver";
-        (socket.data as SocketData).driverId = payload.sub;
+        (socket.data as SocketData).driverId = payload.sub as string;
         return next();
       }
 
-      // Unknown role — allow as anonymous
+      // role desconocido pero mandó token → tratamos como anónimo
+      // (no es un intento de auth con rol privilegiado).
       (socket.data as SocketData).role = "anonymous";
-      next();
+      return next();
     } catch {
-      // Invalid token — allow as anonymous (can still receive public events)
-      (socket.data as SocketData).role = "anonymous";
-      next();
+      // Mandó role + token pero el token NO verifica. Esto es un intento
+      // fallido de autenticarse con un rol — RECHAZAR la conexión, no
+      // degradar a anonymous.
+      return next(new Error("Token inválido o expirado"));
     }
   });
 

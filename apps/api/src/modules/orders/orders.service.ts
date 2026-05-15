@@ -424,6 +424,15 @@ export class OrdersService {
     };
   }
 
+  /** Devuelve sólo el customerId dueño de un pedido (para checks de IDOR). */
+  async getOrderCustomerId(orderId: string): Promise<string | null> {
+    const o = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true },
+    });
+    return o?.customerId ?? null;
+  }
+
   async getById(orderId: string): Promise<OrderDetail | null> {
     const order = await this.app.prisma.order.findUnique({
       where: { id: orderId },

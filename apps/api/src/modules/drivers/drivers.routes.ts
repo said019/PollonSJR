@@ -150,7 +150,10 @@ export async function driversRoutes(app: FastifyInstance) {
   const service = new DriversService(app);
 
   // Public: login
-  app.post("/login", async (request, reply) => {
+  app.post(
+    "/login",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Email y password requeridos" });

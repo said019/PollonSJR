@@ -78,17 +78,31 @@ export async function ordersRoutes(app: FastifyInstance) {
 
   // ── Parametric routes ─────────────────────────────────────
 
-  // Cliente: ver status de un pedido
+  // Cliente: ver status de un pedido.
+  // IDOR fix: getById es compartido con rutas admin. Aquí (contexto cliente)
+  // verificamos que el pedido le pertenezca al usuario autenticado, si no
+  // cualquier cliente podía leer dirección/teléfono/GPS de pedidos ajenos
+  // con sólo cambiar el orderId.
   app.get<{ Params: { id: string } }>("/:id", { preHandler: [authenticate] }, async (request, reply) => {
+    const user = request.user as { id: string; role?: string };
     const order = await service.getById(request.params.id);
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
+    const ownerId = await service.getOrderCustomerId(request.params.id);
+    if (user.role !== "admin" && ownerId !== user.id) {
+      return reply.status(404).send({ error: "Pedido no encontrado" });
+    }
     return order;
   });
 
   // Cliente: items de un pedido
   app.get<{ Params: { id: string } }>("/:id/items", { preHandler: [authenticate] }, async (request, reply) => {
+    const user = request.user as { id: string; role?: string };
     const order = await service.getById(request.params.id);
     if (!order) return reply.status(404).send({ error: "Pedido no encontrado" });
+    const ownerId = await service.getOrderCustomerId(request.params.id);
+    if (user.role !== "admin" && ownerId !== user.id) {
+      return reply.status(404).send({ error: "Pedido no encontrado" });
+    }
     return order.items;
   });
 

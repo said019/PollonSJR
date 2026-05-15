@@ -61,11 +61,34 @@ export async function paymentsRoutes(app: FastifyInstance) {
     }
   });
 
+  // Helper IDOR: verifica que el pedido pertenezca al usuario autenticado
+  // (admins exentos). Antes cualquier cliente podía leer el estado de pago
+  // o forzar reconciliación de pedidos ajenos sólo cambiando el orderId.
+  async function assertOwnsOrder(
+    request: any,
+    reply: any,
+    orderId: string
+  ): Promise<boolean> {
+    const user = request.user as { id: string; role?: string };
+    if (user.role === "admin") return true;
+    const order = await app.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { customerId: true },
+    });
+    if (!order || order.customerId !== user.id) {
+      reply.status(404).send({ error: "Pedido no encontrado" });
+      return false;
+    }
+    return true;
+  }
+
   // Status del pago de un pedido
   app.get<{ Params: { orderId: string } }>(
     "/:orderId",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      if (!(await assertOwnsOrder(request, reply, request.params.orderId)))
+        return;
       try {
         return await service.getPaymentStatus(request.params.orderId);
       } catch (err: any) {
@@ -81,6 +104,8 @@ export async function paymentsRoutes(app: FastifyInstance) {
     "/reconcile/:orderId",
     { preHandler: [authenticate] },
     async (request, reply) => {
+      if (!(await assertOwnsOrder(request, reply, request.params.orderId)))
+        return;
       try {
         return await service.reconcileOrderPayment(request.params.orderId);
       } catch (err: any) {
@@ -112,13 +137,38 @@ export async function paymentsRoutes(app: FastifyInstance) {
       const v1Value = parts.find((p) => p.trim().startsWith("v1="))?.split("=")[1];
 
       if (tsValue && v1Value && dataId) {
+        // Replay protection: rechazar webhooks con ts fuera de ±5 min.
+        // Sin esto un atacante que capture un webhook válido puede
+        // re-enviarlo indefinidamente.
+        const tsNum = Number(tsValue);
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (
+          Number.isFinite(tsNum) &&
+          Math.abs(nowSec - tsNum) > 300
+        ) {
+          app.log.warn(
+            { dataId, tsValue },
+            "MP webhook: ts fuera de ventana (posible replay)"
+          );
+          return reply.status(401).send({ error: "Webhook expirado" });
+        }
+
         const manifest = `id:${dataId};request-id:${request.headers["x-request-id"]};ts:${tsValue};`;
         const hmac = crypto
           .createHmac("sha256", webhookSecret)
           .update(manifest)
           .digest("hex");
 
-        if (hmac !== v1Value) {
+        // timingSafeEqual evita timing attacks. Requiere buffers de igual
+        // longitud — comparamos longitud primero (no leak: la longitud de
+        // un hex sha256 siempre es 64).
+        const hmacBuf = Buffer.from(hmac, "hex");
+        const v1Buf = Buffer.from(v1Value, "hex");
+        const valid =
+          hmacBuf.length === v1Buf.length &&
+          crypto.timingSafeEqual(hmacBuf, v1Buf);
+
+        if (!valid) {
           app.log.warn(
             { dataId, signaturePreview: v1Value.slice(0, 8) },
             "MP webhook: firma HMAC inválida — secreto distinto o manifest distinto"

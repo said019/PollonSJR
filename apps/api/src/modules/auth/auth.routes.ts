@@ -32,7 +32,13 @@ const loginSchema = z.object({
 export async function authRoutes(app: FastifyInstance) {
   // ─── Client: Request OTP ─────────────────────────────────
 
-  app.post("/request-otp", async (request, reply) => {
+  app.post(
+    "/request-otp",
+    {
+      // Anti-brute/spam: máx 5 solicitudes de OTP por IP por minuto.
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
     const parsed = requestOtpSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
@@ -46,7 +52,11 @@ export async function authRoutes(app: FastifyInstance) {
       const message = `Tu código de Pollón SJR es: *${code}*\n\nVálido por 5 minutos. No lo compartas con nadie.`;
       const waLink = buildWALink(parsed.data.phone, message);
 
-      app.log.info(`OTP for ${parsed.data.phone}: ${code}`);
+      // El código NUNCA debe loguearse en producción (cualquiera con acceso
+      // a logs podría secuestrar la cuenta). Sólo en desarrollo.
+      if (process.env.NODE_ENV === "development") {
+        app.log.info(`OTP for ${parsed.data.phone}: ${code}`);
+      }
 
       return {
         ok: true,
@@ -64,7 +74,13 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Client: Verify OTP ──────────────────────────────────
 
-  app.post("/verify-otp", async (request, reply) => {
+  app.post(
+    "/verify-otp",
+    {
+      // Anti-brute del código de 6 dígitos: 10 intentos/IP/min.
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
     const parsed = verifyOtpSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Se requieren phone y code." });
@@ -216,7 +232,10 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Client: Login with email or phone + password ────────
 
-  app.post("/login", async (request, reply) => {
+  app.post(
+    "/login",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos" });
@@ -264,7 +283,13 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Admin: Login ────────────────────────────────────────
 
-  app.post("/admin/login", async (request, reply) => {
+  app.post(
+    "/admin/login",
+    {
+      // Cuenta privilegiada: 5 intentos/IP/min contra brute force.
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
     const parsed = adminLoginSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: "Datos inválidos" });
