@@ -75,12 +75,15 @@ export function ProductOptionsModal({
     return () => closeProductModal();
   }, [open, openProductModal, closeProductModal]);
 
-  // TEMPORAL: si el modal se desmonta/remonta mientras el cliente llena
-  // complementos, sus selecciones (useState) se pierden y validate falla.
+  // TEMPORAL: solo registramos cuando el modal se ABRE/CIERRA de verdad
+  // (no el montaje de los ~11 modales cerrados que cada tarjeta del menú
+  // monta al cargar — eso ahogaba el log). Si entre OPEN y el TAP aparece
+  // otro OPEN, hay modales encimados.
   useEffect(() => {
-    logCart(`MODAL mount (${product?.name ?? "?"})`);
-    return () => logCart(`MODAL UNMOUNT`);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!open) return;
+    logCart(`MODAL OPEN (${product?.name ?? "?"})`);
+    return () => logCart(`MODAL CLOSE (${product?.name ?? "?"})`);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Firma ESTABLE del estado inicial. Antes el efecto dependía del objeto
   // `product` y del array `defaultModifiers`: un refetch en segundo plano
