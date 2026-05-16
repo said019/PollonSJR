@@ -931,6 +931,53 @@ export function MenuPage() {
       {/* Toast global — escucha el store cart-feedback y muestra
           "Agregado al carrito · ..." por 1.6s cuando hay cualquier add. */}
       <CartAddToast />
+
+      {/* TEMPORAL — panel de depuración del carrito. Se quita cuando
+          encontremos el bug del combo. */}
+      <CartDebugPanel />
+    </div>
+  );
+}
+
+/* ─── TEMPORAL: panel de depuración del estado del carrito ─── */
+function CartDebugPanel() {
+  const { items, itemCount } = useCart();
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: 6,
+        bottom: 6,
+        zIndex: 99999,
+        maxWidth: "62vw",
+        maxHeight: "40vh",
+        overflow: "auto",
+        background: "rgba(0,0,0,0.85)",
+        color: "#0f0",
+        font: "10px/1.3 monospace",
+        padding: "6px 8px",
+        borderRadius: 8,
+        border: "1px solid #0f0",
+        pointerEvents: "none",
+      }}
+    >
+      <div style={{ color: "#ff0", fontWeight: 700 }}>
+        DEBUG cart · count={itemCount} · lines={items.length}
+      </div>
+      {items.map((it, i) => {
+        const sig =
+          it.modifiers && it.modifiers.length
+            ? it.modifiers
+                .map((m) => `${m.name}:${m.option}:${m.qty ?? 1}`)
+                .join("|")
+            : "—";
+        return (
+          <div key={i} style={{ marginTop: 2 }}>
+            #{i} {it.name} · id={String(it.productId).slice(-6)} · q
+            {it.qty} · v={it.variant ?? "·"} · mods={sig}
+          </div>
+        );
+      })}
     </div>
   );
 }
