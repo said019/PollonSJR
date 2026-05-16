@@ -9,7 +9,7 @@ import { AuthModal } from "./auth-modal";
 import { useCart } from "@/hooks/useCart";
 import { formatCents } from "@pollon/utils";
 import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star, Plus, Sparkles } from "lucide-react";
-import { useCartStore } from "@/store/cart";
+import { useCartStore, useCartLog } from "@/store/cart";
 import type { CartPromotionMeta } from "@pollon/types";
 import { StoreStatusBanner } from "./store-status-banner";
 import { ActiveOrderBanner } from "./active-order-banner";
@@ -942,6 +942,7 @@ export function MenuPage() {
 /* ─── TEMPORAL: panel de depuración del estado del carrito ─── */
 function CartDebugPanel() {
   const { items, itemCount } = useCart();
+  const log = useCartLog((s) => s.lines);
   return (
     <div
       style={{
@@ -978,6 +979,26 @@ function CartDebugPanel() {
           </div>
         );
       })}
+      <div
+        style={{
+          color: "#ff0",
+          fontWeight: 700,
+          marginTop: 6,
+          borderTop: "1px solid #0a0",
+          paddingTop: 4,
+        }}
+      >
+        EVENTOS (últimos):
+      </div>
+      {log.length === 0 ? (
+        <div style={{ color: "#0a0" }}>— sin eventos aún —</div>
+      ) : (
+        log.map((l, i) => (
+          <div key={i} style={{ color: "#0ff" }}>
+            {l}
+          </div>
+        ))
+      )}
     </div>
   );
 }
