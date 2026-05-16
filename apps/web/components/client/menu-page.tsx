@@ -22,6 +22,7 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { useModalState } from "@/store/modal-state";
 import { useCartFeedback } from "@/store/cart-feedback";
 import { CartAddToast } from "./cart-add-toast";
+import { GlobalProductModal } from "./global-product-modal";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
@@ -927,6 +928,11 @@ export function MenuPage() {
           setAuthOpen(false);
         }}
       />
+
+      {/* Modal de opciones de producto ÚNICO de toda la app. Antes cada
+          tarjeta montaba el suyo (11+ a la vez) y se encimaban: el toque
+          "Agregar" cruzaba al modal equivocado. Ahora hay UNO solo. */}
+      <GlobalProductModal />
 
       {/* Toast global — escucha el store cart-feedback y muestra
           "Agregado al carrito · ..." por 1.6s cuando hay cualquier add. */}

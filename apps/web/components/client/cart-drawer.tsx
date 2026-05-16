@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckoutForm } from "./checkout-form";
 import { UpsellRecommendations } from "./upsell-recommendations";
 import { EmptyCartSuggestions } from "./empty-cart-suggestions";
-import { ProductOptionsModal } from "./product-options-modal";
+import { useProductModal } from "@/store/product-modal";
 import { useState, useEffect, useMemo } from "react";
 import { getToken } from "@/lib/auth";
 import { resolveProductImage } from "@/lib/product-images";
@@ -24,9 +24,9 @@ interface CartDrawerProps {
 }
 
 export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
-  const { items, updateQty, removeItem, addItem, total, clearCart } = useCart();
+  const { items, updateQty, removeItem, total, clearCart } = useCart();
   const [showCheckout, setShowCheckout] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const openProductModal = useProductModal((s) => s.open);
 
   // Pull menu so we can re-open the options modal AND validate items.
   // Fetched whenever the cart is open and there's at least one item.
@@ -45,10 +45,29 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
     }
     return m;
   }, [menu]);
-  const editingItem = editingIdx != null ? items[editingIdx] : null;
-  const editingProduct = editingItem
-    ? productById.get(editingItem.productId) ?? null
-    : null;
+  // Abre el modal compartido para editar la línea idx del carrito.
+  const openEdit = (idx: number) => {
+    const item = items[idx];
+    if (!item) return;
+    const product = productById.get(item.productId);
+    if (!product) return;
+    openProductModal({
+      product,
+      imageUrl: resolveProductImage(product.name, product.imageUrl),
+      editing: true,
+      editKey: {
+        productId: item.productId,
+        variant: item.variant,
+        modifiers: item.modifiers,
+      },
+      defaultVariant: item.variant ?? null,
+      defaultModifiers: item.modifiers ?? [],
+      defaultQty: item.qty,
+      defaultNotes: item.notes ?? "",
+      editName: item.name,
+      editImageUrl: item.imageUrl,
+    });
+  };
 
   // Per-item validation: flag missing required modifiers / quota / variant
   const itemIssues = useMemo(
@@ -234,7 +253,7 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                       >
                         <button
                           type="button"
-                          onClick={() => editable && setEditingIdx(idx)}
+                          onClick={() => editable && openEdit(idx)}
                           disabled={!editable}
                           className={`flex-1 min-w-0 text-left ${
                             editable
@@ -321,7 +340,7 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
 
                     {hasIssues && firstInvalidIdx >= 0 && (
                       <button
-                        onClick={() => setEditingIdx(firstInvalidIdx)}
+                        onClick={() => openEdit(firstInvalidIdx)}
                         className="flex w-full items-center justify-center gap-2 rounded-xl border border-error/50 bg-error/10 px-3 py-2 text-sm font-bold text-error transition-colors hover:bg-error/20"
                       >
                         <AlertTriangle size={14} />
@@ -360,42 +379,8 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
         </>
       )}
 
-      {/* Edit-item modal: re-opens product options for an existing cart line */}
-      {editingIdx !== null && editingItem && editingProduct && (
-        <ProductOptionsModal
-          open={true}
-          editing
-          product={editingProduct}
-          defaultVariant={editingItem.variant ?? null}
-          defaultModifiers={editingItem.modifiers ?? []}
-          defaultQty={editingItem.qty}
-          defaultNotes={editingItem.notes ?? ""}
-          imageUrl={resolveProductImage(
-            editingProduct.name,
-            editingProduct.imageUrl
-          )}
-          onClose={() => setEditingIdx(null)}
-          onConfirm={(data) => {
-            // Replace: remove the original line, then add the edited one.
-            removeItem(
-              editingItem.productId,
-              editingItem.variant,
-              editingItem.modifiers
-            );
-            addItem({
-              productId: editingItem.productId,
-              name: editingItem.name,
-              price: data.finalUnitPrice,
-              qty: data.qty,
-              variant: data.variant,
-              notes: data.notes,
-              imageUrl: editingItem.imageUrl,
-              modifiers: data.modifiers,
-            });
-            setEditingIdx(null);
-          }}
-        />
-      )}
+      {/* La edición de líneas usa el modal ÚNICO global (GlobalProductModal,
+          montado en MenuPage). openEdit() arriba dispara useProductModal. */}
     </AnimatePresence>
   );
 }

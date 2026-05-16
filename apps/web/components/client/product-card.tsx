@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import Image from "next/image";
 import { resolveProductImage } from "@/lib/product-images";
-import { ProductOptionsModal } from "./product-options-modal";
+import { useProductModal } from "@/store/product-modal";
 
 // Social proof — these are the crowd-pleasers that sell fastest.
 // Showing a badge activates herd-behaviour (Cialdini social proof).
@@ -157,7 +157,7 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   const ownLines = items.filter((i) => i.productId === product.id);
   const singleLineMode = ownLines.length === 1;
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
-  const [showOptions, setShowOptions] = useState(false);
+  const openProductModal = useProductModal((s) => s.open);
   const imageUrl = resolveProductImage(product.name, product.imageUrl);
   const hasModifiers = !!(product.modifiers && product.modifiers.length > 0);
   const fav = isFavorite(product.id);
@@ -181,7 +181,11 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
 
   const handleAdd = () => {
     if (hasModifiers) {
-      setShowOptions(true);
+      openProductModal({
+        product,
+        imageUrl,
+        defaultVariant: selectedVariant,
+      });
       return;
     }
     const price =
@@ -227,29 +231,6 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
     handleAdd();
   };
 
-  const optionsModal = hasModifiers ? (
-    <ProductOptionsModal
-      open={showOptions}
-      product={product}
-      defaultVariant={selectedVariant}
-      imageUrl={imageUrl}
-      onClose={() => setShowOptions(false)}
-      onConfirm={({ variant: v, modifiers, qty, notes, finalUnitPrice }) => {
-        addItem({
-          productId: product.id,
-          name: product.name,
-          price: finalUnitPrice,
-          qty,
-          variant: v,
-          notes,
-          imageUrl,
-          modifiers,
-        });
-        notify(`${qty}× ${product.name}${v ? ` (${v})` : ""}`);
-        setShowOptions(false);
-      }}
-    />
-  ) : null;
 
   const priceRange = (() => {
     if (product.variants && product.variants.length > 0) {
@@ -267,7 +248,6 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   if (variant === "hero") {
     return (
       <>
-      {optionsModal}
       <div
         className={`group relative overflow-hidden rounded-3xl border border-outline-variant/15 bg-surface-container transition-all duration-500 hover:border-primary/30 ${
           product.soldOut ? "opacity-50" : ""
@@ -357,7 +337,6 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   if (variant === "grid") {
     return (
       <>
-      {optionsModal}
       <div
         className={`group relative flex flex-col overflow-hidden rounded-2xl border border-outline-variant/10 bg-surface-container transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-2xl hover:shadow-black/40 ${
           product.soldOut ? "opacity-50" : ""
@@ -432,7 +411,6 @@ export function ProductCard({ product, variant = "row", featured = false }: Prod
   // ═══════════════════════════════════════════════════════════
   return (
     <>
-    {optionsModal}
     <div
       className={`group flex gap-3.5 rounded-2xl border border-outline-variant/10 bg-surface-container p-3 transition-all duration-300 hover:border-primary/25 ${
         product.soldOut ? "opacity-40" : ""
