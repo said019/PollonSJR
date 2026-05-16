@@ -27,6 +27,7 @@ const PRODUCT_IMAGES: Record<string, string> = {
   "Hamburguesa Crujiente": "/menu/hamburguesas-dobles.jpeg",
   "Hamburguesa de Res": "/menu/hamburguesas-dobles.jpeg",
   "Hot-Dog": "/menu/hamburguesas-dobles.jpeg",
+  "Hot-Dog 3 piezas": "/menu/hamburguesas-dobles.jpeg",
 
   // SNACKS
   "Banderillas": "/menu/tiras-pollo-papas.jpeg",
