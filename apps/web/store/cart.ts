@@ -26,7 +26,7 @@ export const useCartLog = create<{
     })),
 }));
 
-function logCart(s: string) {
+export function logCart(s: string) {
   const t = new Date().toTimeString().slice(0, 8);
   useCartLog.getState().push(`${t} ${s}`);
 }
