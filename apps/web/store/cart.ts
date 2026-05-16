@@ -11,26 +11,6 @@ export const promoCartKey = (promoId: string) => `${PROMO_PRODUCT_PREFIX}${promo
 export const isPromoCartItem = (item: { productId: string }) =>
   item.productId.startsWith(PROMO_PRODUCT_PREFIX);
 
-/* ─── TEMPORAL: registro de eventos del carrito (debug bug combo) ───
-   Store separado, NO persistido. Anota cada add/remove/clear con hora
-   y conteo antes→después para atrapar el fallo intermitente en mobile
-   aunque el estado se borre justo después. Se quita con el panel. */
-export const useCartLog = create<{
-  lines: string[];
-  push: (s: string) => void;
-}>((set) => ({
-  lines: [],
-  push: (s) =>
-    set((st) => ({
-      lines: [...st.lines.slice(-17), s],
-    })),
-}));
-
-export function logCart(s: string) {
-  const t = new Date().toTimeString().slice(0, 8);
-  useCartLog.getState().push(`${t} ${s}`);
-}
-
 function modifierSignature(mods?: CartItemModifier[] | null): string {
   if (!mods || mods.length === 0) return "";
   return mods
@@ -60,14 +40,11 @@ export const useCartStore = create<CartState>()(
       items: [],
 
       addItem: (item) => {
-        const before = get().items.length;
-        let merged = false;
         set((state) => {
           const key = itemKey(item);
           const existing = state.items.find((i) => itemKey(i) === key);
 
           if (existing) {
-            merged = true;
             return {
               items: state.items.map((i) =>
                 itemKey(i) === key ? { ...i, qty: i.qty + item.qty } : i
@@ -77,18 +54,6 @@ export const useCartStore = create<CartState>()(
 
           return { items: [...state.items, item] };
         });
-        const after = get().items.length;
-        const sig =
-          item.modifiers && item.modifiers.length
-            ? item.modifiers
-                .map((m) => `${m.name}:${m.option}:${m.qty ?? 1}`)
-                .join("|")
-            : "—";
-        logCart(
-          `ADD ${item.name} q${item.qty} mods=${sig} | ${before}->${after}${
-            merged ? " (MERGE)" : ""
-          }`
-        );
       },
 
       addPromotion: (promo) => {
@@ -117,12 +82,10 @@ export const useCartStore = create<CartState>()(
       },
 
       removeItem: (productId, variant, modifiers) => {
-        const before = get().items.length;
         const key = itemKey({ productId, variant, modifiers });
         set((state) => ({
           items: state.items.filter((i) => itemKey(i) !== key),
         }));
-        logCart(`REMOVE ${productId} | ${before}->${get().items.length}`);
       },
 
       updateQty: (productId, variant, qty, modifiers) => {
@@ -138,24 +101,12 @@ export const useCartStore = create<CartState>()(
         }));
       },
 
-      clearCart: () => {
-        const before = get().items.length;
-        set({ items: [] });
-        logCart(`CLEAR | ${before}->0`);
-      },
+      clearCart: () => set({ items: [] }),
 
       getTotal: () => get().items.reduce((sum, i) => sum + i.price * i.qty, 0),
 
       getItemCount: () => get().items.reduce((sum, i) => sum + i.qty, 0),
     }),
-    {
-      name: "pollon-cart",
-      // TEMPORAL: si una rehidratación tardía pisa el combo recién
-      // agregado, el log mostrará "ADD ... 1->2" seguido de
-      // "REHYDRATE -> 1" — esa es la prueba del bug.
-      onRehydrateStorage: () => (state) => {
-        logCart(`REHYDRATE -> ${state?.items.length ?? "?"} lines`);
-      },
-    }
+    { name: "pollon-cart" }
   )
 );

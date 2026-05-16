@@ -11,7 +11,6 @@ import { Minus, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { RelatedProductsRail } from "./related-products-rail";
-import { logCart } from "@/store/cart";
 import { useModalState } from "@/store/modal-state";
 
 interface Props {
@@ -75,15 +74,6 @@ export function ProductOptionsModal({
     return () => closeProductModal();
   }, [open, openProductModal, closeProductModal]);
 
-  // TEMPORAL: solo registramos cuando el modal se ABRE/CIERRA de verdad
-  // (no el montaje de los ~11 modales cerrados que cada tarjeta del menú
-  // monta al cargar — eso ahogaba el log). Si entre OPEN y el TAP aparece
-  // otro OPEN, hay modales encimados.
-  useEffect(() => {
-    if (!open) return;
-    logCart(`MODAL OPEN (${product?.name ?? "?"})`);
-    return () => logCart(`MODAL CLOSE (${product?.name ?? "?"})`);
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Firma ESTABLE del estado inicial. Antes el efecto dependía del objeto
   // `product` y del array `defaultModifiers`: un refetch en segundo plano
@@ -114,7 +104,6 @@ export function ProductOptionsModal({
     // (esto es lo que protege la selección del cliente del refetch).
     if (initedRef.current === initSig) return;
     initedRef.current = initSig;
-    logCart(`MODAL reset-sel ${product.name}`);
 
     setVariant(defaultVariant ?? null);
     setQty(defaultQty && defaultQty > 0 ? defaultQty : 1);
@@ -174,7 +163,6 @@ export function ProductOptionsModal({
       else current[label] = next;
       return { ...s, [modId]: current };
     });
-    logCart(`PICK ${label}=${next}`);
   };
 
   const togglePick = (mod: ProductModifierPublic, optionLabel: string) => {
@@ -233,13 +221,8 @@ export function ProductOptionsModal({
   const blocker = useMemo(() => validate(), [product, selections, variant]);
 
   const handleConfirm = () => {
-    logCart(`TAP confirm-btn (${product?.name ?? "NULL-PRODUCT"})`);
     if (!product) return;
     const err = validate();
-    const sel = (product.modifiers ?? [])
-      .map((m) => `${m.name}=${totalPicks(selections[m.id])}`)
-      .join(",");
-    logCart(`CONFIRM ${product.name} validate=${err ?? "OK"} sel=[${sel}]`);
     if (err) {
       setError(err);
       // El error aparece ARRIBA en el scroll del modal. Si el cliente está
