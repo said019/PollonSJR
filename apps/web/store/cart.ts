@@ -22,7 +22,7 @@ export const useCartLog = create<{
   lines: [],
   push: (s) =>
     set((st) => ({
-      lines: [...st.lines.slice(-7), s],
+      lines: [...st.lines.slice(-17), s],
     })),
 }));
 

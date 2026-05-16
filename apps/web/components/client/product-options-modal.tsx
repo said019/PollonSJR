@@ -230,6 +230,7 @@ export function ProductOptionsModal({
   const blocker = useMemo(() => validate(), [product, selections, variant]);
 
   const handleConfirm = () => {
+    logCart(`TAP confirm-btn (${product?.name ?? "NULL-PRODUCT"})`);
     if (!product) return;
     const err = validate();
     const sel = (product.modifiers ?? [])
