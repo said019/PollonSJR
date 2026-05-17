@@ -98,9 +98,15 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   // se atascó (webhook MP retrasado / red / ngrok caído en staging) y mostramos
   // el botón "Reintentar pago" aunque pagoParam no diga "error". Sin esto el
   // cliente se queda viendo el spinner indefinidamente.
+  // MP confirmó que NO hay pago para este pedido (action:"wait" + no
+  // encontró el pago). En ese caso el cliente realmente no pagó —
+  // mostramos copy honesto y el botón de reintentar de inmediato.
+  const [paymentMissing, setPaymentMissing] = useState(false);
+
   const [pendingPaymentStuck, setPendingPaymentStuck] = useState(false);
   useEffect(() => {
     if (!isPendingPayment) {
+      setPaymentMissing(false);
       setPendingPaymentStuck(false);
       return;
     }
@@ -122,7 +128,11 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   // directamente para confirmar el estado del pago. Repetimos cada 5s hasta
   // que el pedido salga de PENDING_PAYMENT o pasen 90s.
   useEffect(() => {
-    if (!isPendingPayment || !pagoParam || !token) return;
+    // Corre para cualquier pedido CARD atascado en PENDING_PAYMENT, venga
+    // o no de un redirect de MP (?pago=...). Así un link viejo reabierto
+    // también detecta si el pago falta y muestra el copy correcto.
+    if (!isPendingPayment || !token) return;
+    if (order && order.paymentMethod !== "CARD") return;
     let cancelled = false;
     let attempts = 0;
     const maxAttempts = 18; // 18 × 5s = 90s
@@ -131,11 +141,22 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       if (cancelled || attempts >= maxAttempts) return;
       attempts++;
       try {
-        await api.post(
-          `/api/payments/reconcile/${orderId}`,
-          {},
-          token
-        );
+        const res = await api.post<{
+          orderStatus?: string;
+          paymentStatus?: string | null;
+          action?: string;
+          message?: string;
+        }>(`/api/payments/reconcile/${orderId}`, {}, token);
+        // MP no tiene pago para este pedido → el cliente no pagó.
+        // "wait" sin pago = no existe; lo tratamos como pago faltante.
+        if (
+          res?.action === "wait" &&
+          (res?.paymentStatus == null || res?.paymentStatus === "PENDING")
+        ) {
+          if (!cancelled) setPaymentMissing(true);
+        } else if (res?.action === "activated" || res?.orderStatus === "RECEIVED") {
+          if (!cancelled) setPaymentMissing(false);
+        }
         // Refetch order para tomar nuevo status
         void refetch();
       } catch (err) {
@@ -151,7 +172,7 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [isPendingPayment, pagoParam, token, orderId, refetch]);
+  }, [isPendingPayment, token, orderId, order, refetch]);
 
   useEffect(() => {
     if (order) setCurrentStatus(order.status);
@@ -259,57 +280,88 @@ export function OrderTracker({ orderId }: { orderId: string }) {
           >
             <div className="flex items-center gap-4 p-5">
               <div className="relative flex-shrink-0">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-dim shadow-lg shadow-primary/30">
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-                  >
-                    <Loader2 size={22} className="text-on-primary" />
-                  </motion.div>
+                <div
+                  className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg ${
+                    paymentMissing
+                      ? "bg-gradient-to-br from-error to-error/70 shadow-error/30"
+                      : "bg-gradient-to-br from-primary to-primary-dim shadow-primary/30"
+                  }`}
+                >
+                  {paymentMissing ? (
+                    <Ban size={22} className="text-white" />
+                  ) : (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+                    >
+                      <Loader2 size={22} className="text-on-primary" />
+                    </motion.div>
+                  )}
                 </div>
-                <motion.span
-                  className="absolute inset-0 rounded-2xl border-2 border-primary"
-                  animate={{ scale: [1, 1.25, 1], opacity: [0.6, 0, 0.6] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
-                />
+                {!paymentMissing && (
+                  <motion.span
+                    className="absolute inset-0 rounded-2xl border-2 border-primary"
+                    animate={{ scale: [1, 1.25, 1], opacity: [0.6, 0, 0.6] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+                  />
+                )}
               </div>
               <div className="min-w-0 flex-1">
-                <span className="font-headline text-[10px] font-bold uppercase tracking-[0.2em] text-primary">
-                  {pagoParam === "exitoso" ? "Pago recibido" : "Procesando"}
+                <span
+                  className={`font-headline text-[10px] font-bold uppercase tracking-[0.2em] ${
+                    paymentMissing ? "text-error" : "text-primary"
+                  }`}
+                >
+                  {paymentMissing
+                    ? "Pago no completado"
+                    : pagoParam === "exitoso"
+                      ? "Pago recibido"
+                      : "Procesando"}
                 </span>
                 <p className="mt-0.5 font-headline text-lg font-extrabold leading-tight text-tertiary">
-                  {pagoParam === "exitoso"
-                    ? "Confirmando tu pago…"
-                    : pagoParam === "pendiente"
-                      ? "Tu pago está en revisión"
-                      : "Procesando tu pago…"}
+                  {paymentMissing
+                    ? "No recibimos tu pago"
+                    : pagoParam === "exitoso"
+                      ? "Confirmando tu pago…"
+                      : pagoParam === "pendiente"
+                        ? "Tu pago está en revisión"
+                        : "Procesando tu pago…"}
                 </p>
                 <p className="mt-0.5 text-[11px] text-on-surface-variant/70">
-                  {pagoParam === "exitoso"
-                    ? "Mercado Pago confirmó el pago. Activando tu pedido."
-                    : "En unos segundos te confirmamos el estado."}
+                  {paymentMissing
+                    ? "Tu pedido sigue guardado. Vuelve a pagar para que entre a cocina."
+                    : pagoParam === "exitoso"
+                      ? "Mercado Pago confirmó el pago. Activando tu pedido."
+                      : "En unos segundos te confirmamos el estado."}
                 </p>
               </div>
             </div>
-            {/* Shimmer progress bar */}
-            <div className="relative h-1 w-full overflow-hidden bg-surface-variant/50">
-              <motion.div
-                className="absolute inset-y-0 h-full w-1/3 bg-gradient-to-r from-transparent via-primary to-transparent"
-                animate={{ x: ["-100%", "400%"] }}
-                transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
-              />
-            </div>
+            {/* Shimmer progress bar — solo mientras seguimos esperando */}
+            {!paymentMissing && (
+              <div className="relative h-1 w-full overflow-hidden bg-surface-variant/50">
+                <motion.div
+                  className="absolute inset-y-0 h-full w-1/3 bg-gradient-to-r from-transparent via-primary to-transparent"
+                  animate={{ x: ["-100%", "400%"] }}
+                  transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+                />
+              </div>
+            )}
 
-            {/* Retry payment button — visible si MP devolvió error explícito
-                O si llevamos 30s+ atascados en "Procesando" (webhook que nunca
-                llegó). Antes solo aparecía con pago=error, dejando al cliente
-                colgado en pagos lentos. */}
-            {(pagoParam === "error" ||
+            {/* Retry payment button — visible si MP confirma que no hay pago,
+                si MP devolvió error explícito, o si llevamos 30s+ atascados. */}
+            {(paymentMissing ||
+              pagoParam === "error" ||
               pagoParam === "fallido" ||
               pendingPaymentStuck) && (
               <RetryPaymentButton
                 orderId={order.id}
-                stuck={pendingPaymentStuck && pagoParam !== "error" && pagoParam !== "fallido"}
+                stuck={
+                  !paymentMissing &&
+                  pendingPaymentStuck &&
+                  pagoParam !== "error" &&
+                  pagoParam !== "fallido"
+                }
+                missing={paymentMissing}
               />
             )}
           </motion.div>
@@ -1515,7 +1567,15 @@ function CancelOrderButton({
 
 /* ─── Retry payment (CARD) ────────────────────────────────── */
 
-function RetryPaymentButton({ orderId, stuck = false }: { orderId: string; stuck?: boolean }) {
+function RetryPaymentButton({
+  orderId,
+  stuck = false,
+  missing = false,
+}: {
+  orderId: string;
+  stuck?: boolean;
+  missing?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1541,12 +1601,17 @@ function RetryPaymentButton({ orderId, stuck = false }: { orderId: string; stuck
 
   return (
     <div className="border-t border-outline-variant/15 p-4">
-      {stuck && (
+      {missing ? (
+        <p className="mb-2 text-center text-[11px] leading-tight text-on-surface-variant/80">
+          No registramos tu pago. Tu pedido sigue guardado — paga ahora para
+          que el negocio lo prepare. No se hará doble cobro.
+        </p>
+      ) : stuck ? (
         <p className="mb-2 text-center text-[11px] leading-tight text-on-surface-variant/80">
           ¿Está tardando demasiado? Puedes reintentar tu pago — no se va a
           duplicar el cobro.
         </p>
-      )}
+      ) : null}
       <button
         type="button"
         onClick={handleRetry}
@@ -1558,7 +1623,7 @@ function RetryPaymentButton({ orderId, stuck = false }: { orderId: string; stuck
         ) : (
           <RefreshCw size={14} />
         )}
-        Reintentar pago
+        {missing ? "Pagar ahora" : "Reintentar pago"}
       </button>
       {error && <p className="mt-2 text-center text-xs text-error">{error}</p>}
     </div>
