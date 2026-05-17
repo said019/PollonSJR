@@ -416,11 +416,69 @@ export class PaymentsService {
       this.app.log.error({ err, orderId }, "Error en reconcile processPaymentAsync");
     });
 
-    // Releer estado actualizado
-    const updated = await this.app.prisma.order.findUnique({
+    // Releer estado tras processPaymentAsync.
+    let updated = await this.app.prisma.order.findUnique({
       where: { id: orderId },
       include: { payment: true },
     });
+
+    // RED DE SEGURIDAD: si MP confirma un pago APROBADO para este pedido
+    // pero processPaymentAsync no logró activarlo (token, error de red,
+    // external_reference raro, lo que sea), activamos AQUÍ directamente.
+    // Principio: pago aprobado en MP = pedido en cocina, sin excepción.
+    if (
+      candidate.status === "approved" &&
+      updated &&
+      updated.status === "PENDING_PAYMENT"
+    ) {
+      const paid = Math.round((candidate.transaction_amount || 0) * 100);
+      const mismatch =
+        paid > 0 &&
+        Math.abs(paid - updated.total) > 2 &&
+        Math.abs(paid - (updated.subtotal + updated.deliveryFee - updated.discountAmount)) > 2;
+
+      this.app.log.warn(
+        { orderId, orderNumber: updated.orderNumber, paid, total: updated.total },
+        "Reconcile: pago aprobado pero pedido seguía PENDING_PAYMENT — activando como red de seguridad"
+      );
+
+      await this.app.prisma.payment.upsert({
+        where: { orderId },
+        create: {
+          orderId,
+          mpPaymentId: String(candidate.id),
+          status: "APPROVED",
+          statusDetail: mismatch
+            ? `REVISAR: monto MP $${(paid / 100).toFixed(2)} ≠ pedido $${(updated.total / 100).toFixed(2)} (reconcile)`
+            : "Aprobado vía reconcile (red de seguridad)",
+          amount: paid > 0 ? paid : updated.total,
+          installments: candidate.installments || 1,
+          providerPayload: candidate as any,
+          approvedAt: new Date(),
+        },
+        update: {
+          mpPaymentId: String(candidate.id),
+          status: "APPROVED",
+          approvedAt: new Date(),
+          ...(mismatch && {
+            statusDetail: `REVISAR: monto MP $${(paid / 100).toFixed(2)} ≠ pedido $${(updated.total / 100).toFixed(2)} (reconcile)`,
+          }),
+        },
+      });
+
+      await this.onPaymentApproved(updated, {
+        id: candidate.id,
+        status: "approved",
+        payment_method_id: candidate.payment_method_id,
+      }).catch((err) =>
+        this.app.log.error({ err, orderId }, "Error activando pedido en red de seguridad del reconcile")
+      );
+
+      updated = await this.app.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { payment: true },
+      });
+    }
 
     return {
       orderStatus: updated?.status ?? order.status,
@@ -444,34 +502,53 @@ export class PaymentsService {
     const paymentData = await mpPayment.get({ id: mpPaymentId });
 
     const orderId = paymentData.external_reference;
-    if (!orderId) return;
+    if (!orderId) {
+      // Pago aprobado sin external_reference = dinero cobrado que no
+      // podemos ligar a un pedido. NUNCA en silencio.
+      this.app.log.error(
+        { mpPaymentId, mpStatus: paymentData.status },
+        "ALERTA: pago MP sin external_reference — no se puede ligar a un pedido"
+      );
+      return;
+    }
 
     // 2. Obtener la orden
     const order = await this.app.prisma.order.findUnique({
       where: { id: orderId },
       include: { customer: true },
     });
-    if (!order) return;
+    if (!order) {
+      this.app.log.error(
+        { mpPaymentId, orderId, mpStatus: paymentData.status },
+        "ALERTA: pago MP con external_reference que no existe como pedido"
+      );
+      return;
+    }
 
-    // 3. Verificar que el monto coincide (seguridad anti-fraude).
-    // Tolerancia:
-    //  - Exacto: order.total
-    //  - O subtotal+delivery sin appFee/tip (preferencias antiguas que no los
-    //    incluían — ya arreglado pero hay órdenes legacy en PENDING_PAYMENT)
-    //  - Tolerancia ±2 centavos por redondeo
+    // 3. Sanity-check del monto. PRINCIPIO: si MP aprobó el pago para este
+    // pedido, el pedido SE ACTIVA. El monto solo dispara una ALERTA visible
+    // al admin si difiere — nunca descartamos un pago aprobado en silencio
+    // (eso dejaba clientes que pagaron sin comida en cocina).
     const paidAmount = Math.round((paymentData.transaction_amount || 0) * 100);
     const expectedFull = order.total;
     const expectedLegacy =
       order.subtotal + order.deliveryFee - order.discountAmount;
     const matchesFull = Math.abs(paidAmount - expectedFull) <= 2;
     const matchesLegacy = Math.abs(paidAmount - expectedLegacy) <= 2;
-    if (!matchesFull && !matchesLegacy) {
+    const amountMismatch = !matchesFull && !matchesLegacy;
+    if (amountMismatch && paymentData.status === "approved") {
       this.app.log.error(
-        `ALERTA: Monto no coincide. Pedido ${orderId}: esperado ${expectedFull} (o legacy ${expectedLegacy}), recibido ${paidAmount}`
+        {
+          orderId,
+          orderNumber: order.orderNumber,
+          expectedFull,
+          expectedLegacy,
+          paidAmount,
+          mpPaymentId,
+        },
+        "ALERTA: monto MP no coincide con el pedido — se ACTIVA igual (pago aprobado) y se marca para revisión manual"
       );
-      return;
-    }
-    if (matchesLegacy && !matchesFull) {
+    } else if (matchesLegacy && !matchesFull) {
       this.app.log.warn(
         `Pedido ${orderId} cobrado en modo legacy (sin appFee/tip): pagó ${paidAmount}, total esperado ${expectedFull}. Activando igual.`
       );
@@ -485,6 +562,15 @@ export class PaymentsService {
       (paymentData.transaction_details?.net_received_amount ?? 0) * 100
     );
 
+    // Si el monto no coincide, lo dejamos asentado en statusDetail para que
+    // el admin lo vea en el panel de pagos y pueda revisar/reembolsar.
+    const statusDetail =
+      amountMismatch && paymentData.status === "approved"
+        ? `REVISAR: monto MP $${(paidAmount / 100).toFixed(2)} ≠ pedido $${(
+            expectedFull / 100
+          ).toFixed(2)}. ${paymentData.status_detail || ""}`.trim()
+        : paymentData.status_detail || null;
+
     // 5. Upsert del registro de pago
     await this.app.prisma.payment.upsert({
       where: { orderId },
@@ -493,7 +579,7 @@ export class PaymentsService {
         mpPaymentId: String(paymentData.id),
         mpPrefId: (paymentData as any).preference_id || null,
         status: this.mapMpStatus(paymentData.status),
-        statusDetail: paymentData.status_detail || null,
+        statusDetail,
         amount: paidAmount,
         mpFee,
         netAmount,
@@ -505,7 +591,7 @@ export class PaymentsService {
       update: {
         mpPaymentId: String(paymentData.id),
         status: this.mapMpStatus(paymentData.status),
-        statusDetail: paymentData.status_detail || null,
+        statusDetail,
         mpFee,
         netAmount,
         paymentMethod: paymentData.payment_method_id || null,
