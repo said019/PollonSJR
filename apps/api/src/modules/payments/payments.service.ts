@@ -118,10 +118,17 @@ export class PaymentsService {
       },
     });
 
-    // Guardar registro de pago
-    await this.app.prisma.payment.create({
-      data: {
+    // Guardar/actualizar registro de pago. Idempotente: si el cliente
+    // reintenta el pago (o vuelve atrás), reutilizamos la fila existente
+    // en vez de chocar con el unique constraint de orderId.
+    await this.app.prisma.payment.upsert({
+      where: { orderId },
+      create: {
         orderId,
+        mpPrefId: result.id!,
+        amount: order.total,
+      },
+      update: {
         mpPrefId: result.id!,
         amount: order.total,
       },
@@ -584,7 +591,7 @@ export class PaymentsService {
       const { OrdersService } = await import("../orders/orders.service");
       await new OrdersService(this.app).sendOrderReceipt(order.id);
     } catch (err) {
-      this.app.log.error("Order receipt (card) enqueue error:", err);
+      this.app.log.error({ err }, "Order receipt (card) enqueue error");
     }
 
     this.app.log.info(
