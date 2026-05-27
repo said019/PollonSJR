@@ -564,61 +564,83 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                         Productos ({order.items.length})
                       </h3>
                       <ul className="divide-y divide-outline-variant/10">
-                        {order.items.map((item) => (
-                          <li key={item.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-on-surface">
-                                <span className="font-bold text-primary">{item.qty}×</span>{" "}
-                                {item.productName}
-                                {item.variant && (
-                                  <span className="ml-1 text-on-surface-variant">
-                                    ({item.variant})
-                                  </span>
-                                )}
-                              </p>
-                              {item.modifiers && item.modifiers.length > 0 && (
-                                <ul className="mt-1 space-y-0.5">
-                                  {(() => {
-                                    // Group by modifier name (e.g. "Complementos")
-                                    const grouped = item.modifiers.reduce<
-                                      Record<string, typeof item.modifiers>
-                                    >((acc, m) => {
-                                      (acc[m.name] = acc[m.name] || []).push(m);
-                                      return acc;
-                                    }, {});
-                                    return Object.entries(grouped).map(([groupName, mods]) => (
-                                      <li
-                                        key={groupName}
-                                        className="rounded-md bg-surface px-2 py-1 text-[11px]"
-                                      >
-                                        <span className="font-bold uppercase tracking-wider text-tertiary">
-                                          {groupName}:
-                                        </span>{" "}
-                                        <span className="text-on-surface">
-                                          {mods
-                                            .map((m) =>
-                                              m.qty > 1
-                                                ? `${m.qty}× ${m.option}`
-                                                : m.option
-                                            )
-                                            .join(" · ")}
-                                        </span>
-                                      </li>
-                                    ));
-                                  })()}
-                                </ul>
-                              )}
-                              {item.notes && (
-                                <p className="mt-0.5 text-[11px] italic text-on-surface-variant/70">
-                                  “{item.notes}”
+                        {order.items.map((item) => {
+                          const modsPerUnit = (item.modifiers ?? []).reduce(
+                            (sum, m) => sum + (m.price || 0) * (m.qty || 1),
+                            0
+                          );
+                          const lineTotal = (item.unitPrice + modsPerUnit) * item.qty;
+                          return (
+                            <li key={item.id} className="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-on-surface">
+                                  <span className="font-bold text-primary">{item.qty}×</span>{" "}
+                                  {item.productName}
+                                  {item.variant && (
+                                    <span className="ml-1 text-on-surface-variant">
+                                      ({item.variant})
+                                    </span>
+                                  )}
                                 </p>
-                              )}
-                            </div>
-                            <p className="flex-shrink-0 font-headline text-sm font-bold text-on-surface">
-                              {formatCents(item.unitPrice * item.qty)}
-                            </p>
-                          </li>
-                        ))}
+                                {item.modifiers && item.modifiers.length > 0 && (
+                                  <ul className="mt-1 space-y-0.5">
+                                    {(() => {
+                                      // Group by modifier name (e.g. "Complementos")
+                                      const grouped = item.modifiers.reduce<
+                                        Record<string, typeof item.modifiers>
+                                      >((acc, m) => {
+                                        (acc[m.name] = acc[m.name] || []).push(m);
+                                        return acc;
+                                      }, {});
+                                      return Object.entries(grouped).map(([groupName, mods]) => {
+                                        const groupCents = mods.reduce(
+                                          (sum, m) => sum + (m.price || 0) * (m.qty || 1) * item.qty,
+                                          0
+                                        );
+                                        return (
+                                          <li
+                                            key={groupName}
+                                            className="rounded-md bg-surface px-2 py-1 text-[11px]"
+                                          >
+                                            <div className="flex items-baseline justify-between gap-2">
+                                              <div className="min-w-0">
+                                                <span className="font-bold uppercase tracking-wider text-tertiary">
+                                                  {groupName}:
+                                                </span>{" "}
+                                                <span className="text-on-surface">
+                                                  {mods
+                                                    .map((m) =>
+                                                      m.qty > 1
+                                                        ? `${m.qty}× ${m.option}`
+                                                        : m.option
+                                                    )
+                                                    .join(" · ")}
+                                                </span>
+                                              </div>
+                                              {groupCents > 0 && (
+                                                <span className="flex-shrink-0 font-semibold text-on-surface-variant">
+                                                  +{formatCents(groupCents)}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </li>
+                                        );
+                                      });
+                                    })()}
+                                  </ul>
+                                )}
+                                {item.notes && (
+                                  <p className="mt-0.5 text-[11px] italic text-on-surface-variant/70">
+                                    “{item.notes}”
+                                  </p>
+                                )}
+                              </div>
+                              <p className="flex-shrink-0 font-headline text-sm font-bold text-on-surface">
+                                {formatCents(lineTotal)}
+                              </p>
+                            </li>
+                          );
+                        })}
                       </ul>
 
                       <div className="mt-4 space-y-1 border-t border-outline-variant/10 pt-3">

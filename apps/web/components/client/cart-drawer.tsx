@@ -271,15 +271,28 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                             )}
                           </p>
                           {item.modifiers && item.modifiers.length > 0 && (
-                            <p className="text-[11px] text-on-surface-variant/70 mt-0.5">
-                              {item.modifiers
-                                .map((m) =>
-                                  (m.qty ?? 1) > 1
-                                    ? `${m.qty}× ${m.option}`
-                                    : m.option
-                                )
-                                .join(" · ")}
-                            </p>
+                            <ul className="mt-1 space-y-0.5">
+                              {item.modifiers.map((m, mIdx) => {
+                                const q = m.qty ?? 1;
+                                const lineCents = (m.price || 0) * q;
+                                return (
+                                  <li
+                                    key={`${m.name}-${m.option}-${mIdx}`}
+                                    className="flex items-center justify-between gap-2 text-[11px] text-on-surface-variant/80"
+                                  >
+                                    <span className="truncate">
+                                      {q > 1 ? `${q}× ` : "+ "}
+                                      {m.option}
+                                    </span>
+                                    {lineCents > 0 && (
+                                      <span className="flex-shrink-0 font-semibold text-on-surface-variant">
+                                        +{formatCents(lineCents)}
+                                      </span>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
                           )}
                           {issues.length > 0 && (
                             <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-error/15 px-2 py-0.5 text-[10px] font-bold text-error">

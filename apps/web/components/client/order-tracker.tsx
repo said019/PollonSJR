@@ -691,31 +691,54 @@ export function OrderTracker({ orderId }: { orderId: string }) {
           className="rounded-2xl border border-outline-variant/15 bg-surface-container p-5"
         >
           <h2 className="mb-3 font-headline font-bold text-tertiary">Detalle</h2>
-          {order.items.map((item) => (
-            <div
-              key={item.id}
-              className="flex justify-between border-b border-outline-variant/10 py-2 last:border-0"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-on-surface">
-                  {item.qty}x {item.productName}
-                  {item.variant && (
-                    <span className="ml-1 text-on-surface-variant">({item.variant})</span>
-                  )}
-                </p>
-                {item.modifiers && item.modifiers.length > 0 && (
-                  <p className="mt-0.5 text-[11px] text-on-surface-variant/70">
-                    {item.modifiers
-                      .map((m) => (m.qty > 1 ? `${m.qty}× ${m.option}` : m.option))
-                      .join(" · ")}
+          {order.items.map((item) => {
+            const modsPerUnit = (item.modifiers ?? []).reduce(
+              (sum, m) => sum + (m.price || 0) * (m.qty || 1),
+              0
+            );
+            const lineTotal = (item.unitPrice + modsPerUnit) * item.qty;
+            return (
+              <div
+                key={item.id}
+                className="flex justify-between gap-3 border-b border-outline-variant/10 py-2 last:border-0"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-on-surface">
+                    {item.qty}x {item.productName}
+                    {item.variant && (
+                      <span className="ml-1 text-on-surface-variant">({item.variant})</span>
+                    )}
                   </p>
-                )}
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <ul className="mt-1 space-y-0.5">
+                      {item.modifiers.map((m, i) => {
+                        const lineCents = (m.price || 0) * (m.qty || 1) * item.qty;
+                        return (
+                          <li
+                            key={`${m.name}-${m.option}-${i}`}
+                            className="flex items-center justify-between gap-2 text-[11px] text-on-surface-variant/80"
+                          >
+                            <span className="truncate">
+                              {(m.qty ?? 1) > 1 ? `${m.qty}× ` : "+ "}
+                              {m.option}
+                            </span>
+                            {lineCents > 0 && (
+                              <span className="flex-shrink-0 font-semibold text-on-surface-variant">
+                                +{formatCents(lineCents)}
+                              </span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <p className="flex-shrink-0 text-sm font-bold text-on-surface">
+                  {formatCents(lineTotal)}
+                </p>
               </div>
-              <p className="text-sm font-bold text-on-surface">
-                {formatCents(item.unitPrice * item.qty)}
-              </p>
-            </div>
-          ))}
+            );
+          })}
 
           <div className="mt-4 space-y-1">
             <div className="flex justify-between text-sm text-on-surface-variant">
