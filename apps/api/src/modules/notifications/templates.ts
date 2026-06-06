@@ -48,6 +48,15 @@ const TEMPLATES: Record<string, (p: TemplateParams) => string> = {
 
   loyalty_reward_expiring: (p) =>
     `⏰ Hola ${p.name}, tu recompensa de *${p.productName} gratis* vence en 7 días.\n\n¡Aprovéchala antes de que expire!`,
+
+  // Aviso al DUEÑO de pedido nuevo (cuando la app está cerrada).
+  owner_new_order: (p) =>
+    `🔔 *NUEVO PEDIDO #${p.orderNumber}*\n\n` +
+    `📦 ${p.type} · ${p.payment}\n` +
+    `💵 Total: *$${p.total}*\n` +
+    `👤 ${p.customerName} · ${p.customerPhone}\n` +
+    (p.note ? `📝 ${p.note}\n` : "") +
+    `\n👉 Abrir panel:\n${p.adminUrl}`,
 };
 
 export function renderTemplate(template: string, params: TemplateParams): string {

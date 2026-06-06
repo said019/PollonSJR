@@ -20,9 +20,64 @@ const PUSH_TITLES: Record<string, string> = {
   CANCELLED: "Pedido cancelado",
 };
 
-// ── Nuevo pedido llega al kanban del admin
+const PAYMENT_LABEL: Record<string, string> = {
+  CARD: "Tarjeta",
+  CASH: "Efectivo",
+  TRANSFER: "Transferencia",
+};
+const TYPE_LABEL: Record<string, string> = {
+  DELIVERY: "A domicilio",
+  PICKUP: "Recoger en tienda",
+};
+
+// ── Nuevo pedido: socket al panel + WhatsApp a los dueños (para que se
+//    enteren aunque la app esté cerrada).
 export function emitOrderNew(app: FastifyInstance, orderSummary: any) {
   app.io.to("admin:pollon-sjr").emit("order:new", orderSummary);
+
+  // OWNER_PHONES = "5576108444,5538914735" (10 dígitos MX, sin +52, separados por coma)
+  const raw = process.env.OWNER_PHONES || "";
+  const phones = raw
+    .split(",")
+    .map((s) => s.replace(/\D/g, "").slice(-10))
+    .filter((s) => s.length === 10);
+  if (phones.length === 0) return;
+
+  const webUrl = process.env.WEB_URL || "https://pollon-web-production.up.railway.app";
+  const adminUrl = `${webUrl.replace(/\/$/, "")}/admin/orders`;
+
+  // Mostrar nota para TRANSFER pendiente (avisa al dueño que hay que verificar comprobante)
+  const note =
+    orderSummary?.paymentMethod === "TRANSFER" && orderSummary?.status === "PENDING_PAYMENT"
+      ? "Falta verificar comprobante"
+      : "";
+
+  const params = {
+    orderNumber: String(orderSummary?.orderNumber ?? "?"),
+    type: TYPE_LABEL[orderSummary?.type] ?? orderSummary?.type ?? "—",
+    payment: PAYMENT_LABEL[orderSummary?.paymentMethod] ?? orderSummary?.paymentMethod ?? "—",
+    total: ((orderSummary?.total ?? 0) / 100).toFixed(2),
+    customerName: orderSummary?.customerName || "Cliente",
+    customerPhone: orderSummary?.customerPhone || "",
+    note,
+    adminUrl,
+  };
+
+  // Encolar (no bloquear creación si falla)
+  void import("../notifications/queue")
+    .then(({ enqueueNotification }) =>
+      Promise.all(
+        phones.map((phone) =>
+          enqueueNotification(app.redis, {
+            type: "whatsapp",
+            to: phone,
+            template: "owner_new_order",
+            params,
+          })
+        )
+      )
+    )
+    .catch((err) => app.log.error({ err }, "Owner new-order WA enqueue failed"));
 }
 
 // ── Status del pedido cambió — notifica admin y cliente
