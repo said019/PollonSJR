@@ -8,6 +8,7 @@ import { formatCents } from "@pollon/utils";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Calendar, ChevronLeft, ChevronRight, X, Search } from "lucide-react";
+import { OrderDetailModal } from "./order-detail-modal";
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING_PAYMENT: "Pago pendiente",
@@ -56,6 +57,7 @@ export function OrdersHistory() {
   const initialType = params.get("type");
 
   const [page, setPage]         = useState(1);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
   // Default a "hoy" (TZ México) si la URL no especifica fechas. Antes el
   // historial abría completamente vacío y el admin tenía que tocar un preset
   // para ver cualquier cosa.
@@ -275,7 +277,19 @@ export function OrdersHistory() {
                     </tr>
                   )
                 : data?.orders.map((order) => (
-                    <tr key={order.id} className="hover:bg-surface-container/60 transition-colors">
+                    <tr
+                      key={order.id}
+                      onClick={() => setDetailOrderId(order.id)}
+                      className="cursor-pointer hover:bg-surface-container/60 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setDetailOrderId(order.id);
+                        }
+                      }}
+                    >
                       <td className="p-3 font-mono font-bold text-primary">{order.orderNumber}</td>
                       <td className="p-3">{order.customerName || "—"}</td>
                       <td className="p-3">
@@ -327,6 +341,11 @@ export function OrdersHistory() {
           </div>
         )}
       </div>
+
+      <OrderDetailModal
+        orderId={detailOrderId}
+        onClose={() => setDetailOrderId(null)}
+      />
     </div>
   );
 }
