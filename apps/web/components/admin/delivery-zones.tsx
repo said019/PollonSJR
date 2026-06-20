@@ -268,7 +268,7 @@ function AdminDeliveryPageInner() {
                           <input
                             value={zone.name}
                             onChange={(e) => updateZone(idx, "name", e.target.value)}
-                            className="w-full border rounded-lg p-2 text-sm"
+                            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container p-2 text-sm text-on-surface outline-none transition-colors focus:border-primary/50"
                           />
                         </div>
                         <div>
@@ -291,7 +291,7 @@ function AdminDeliveryPageInner() {
                             onChange={(e) =>
                               updateZone(idx, "minKm", Number(e.target.value))
                             }
-                            className="w-full border rounded-lg p-2 text-sm"
+                            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container p-2 text-sm text-on-surface outline-none transition-colors focus:border-primary/50"
                           />
                         </div>
                         <div>
@@ -303,7 +303,7 @@ function AdminDeliveryPageInner() {
                             onChange={(e) =>
                               updateZone(idx, "maxKm", Number(e.target.value))
                             }
-                            className="w-full border rounded-lg p-2 text-sm"
+                            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container p-2 text-sm text-on-surface outline-none transition-colors focus:border-primary/50"
                           />
                         </div>
                         <div>
@@ -314,7 +314,7 @@ function AdminDeliveryPageInner() {
                             onChange={(e) =>
                               updateZone(idx, "fee", Number(e.target.value))
                             }
-                            className="w-full border rounded-lg p-2 text-sm"
+                            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container p-2 text-sm text-on-surface outline-none transition-colors focus:border-primary/50"
                           />
                           <span className="text-xs text-on-surface-variant">
                             {formatCents(zone.fee)}
@@ -334,7 +334,7 @@ function AdminDeliveryPageInner() {
                             onChange={(e) =>
                               updateZone(idx, "startTime", e.target.value || null)
                             }
-                            className="w-full border rounded-lg p-2 text-sm [color-scheme:dark]"
+                            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container p-2 text-sm text-on-surface outline-none transition-colors focus:border-primary/50 [color-scheme:dark]"
                           />
                         </div>
                         <div>
@@ -347,7 +347,7 @@ function AdminDeliveryPageInner() {
                             onChange={(e) =>
                               updateZone(idx, "endTime", e.target.value || null)
                             }
-                            className="w-full border rounded-lg p-2 text-sm [color-scheme:dark]"
+                            className="w-full rounded-lg border border-outline-variant/30 bg-surface-container p-2 text-sm text-on-surface outline-none transition-colors focus:border-primary/50 [color-scheme:dark]"
                           />
                         </div>
                       </div>
