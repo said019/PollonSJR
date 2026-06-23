@@ -6,12 +6,21 @@ import { FastifyInstance } from "fastify";
  * Cron: diario a las 02:00.
  */
 export async function reconcilePayments(app: FastifyInstance) {
-  // 1. Pagos aprobados con pedido no activado
+  // 1. Rescatar pedidos PAGADOS pero NUNCA activados (webhook perdido,
+  //    bug viejo de validación de monto, etc.). SOLO PENDING_PAYMENT.
+  //
+  //    Antes incluía CANCELLED y se creaba un LOOP: si el negocio cancelaba
+  //    a propósito un pedido CARD (duplicado, fuera de zona, etc.) y el
+  //    pago seguía APPROVED en MP, el cron lo reactivaba al día siguiente.
+  //    Caso real: #217 reactivado 4 días seguidos hasta detectarlo.
+  //    Los pedidos cancelados intencionalmente con pago APPROVED son tema
+  //    de REEMBOLSO, no de reactivación — se reportan abajo (orphan-like)
+  //    para que el admin reembolse manual.
   const missedActivations = await app.prisma.payment.findMany({
     where: {
       status: "APPROVED",
       order: {
-        status: { in: ["PENDING_PAYMENT", "CANCELLED"] },
+        status: "PENDING_PAYMENT",
       },
       approvedAt: { lt: new Date(Date.now() - 10 * 60 * 1000) },
     },
@@ -44,6 +53,24 @@ export async function reconcilePayments(app: FastifyInstance) {
         `Pedido #${payment.order.orderNumber} reactivado por conciliación`
       );
     }
+  }
+
+  // 1b. Pedidos CANCELLED con pago APPROVED — ALERTA para reembolso manual,
+  //     pero NO reactivar (el negocio canceló a propósito).
+  const cancelledWithPaidPayment = await app.prisma.payment.findMany({
+    where: {
+      status: "APPROVED",
+      order: { status: "CANCELLED" },
+      refundedAmount: 0,
+    },
+    include: { order: { select: { orderNumber: true, total: true } } },
+  });
+  if (cancelledWithPaidPayment.length > 0) {
+    app.log.warn(
+      `Conciliación: ${cancelledWithPaidPayment.length} pedido(s) CANCELLED con pago APPROVED sin reembolsar — requieren reembolso manual: ${cancelledWithPaidPayment
+        .map((p) => `#${p.order.orderNumber} ($${p.order.total / 100})`)
+        .join(", ")}`
+    );
   }
 
   // 2. Pedidos RECEIVED sin pago aprobado (anomalía — solo alerta, no cancelar)
