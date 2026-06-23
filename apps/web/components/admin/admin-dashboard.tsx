@@ -31,7 +31,7 @@ export function AdminDashboard() {
     queryKey: ["admin-dashboard"],
     queryFn: () =>
       api.get<DashboardResponse>("/api/admin/dashboard", token || undefined),
-    refetchInterval: 60000,
+    refetchInterval: 20000,
   });
 
   // Live stats via Socket.io

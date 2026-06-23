@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getSocket } from "@/lib/socket";
 import { getAdminToken } from "@/lib/auth";
 
@@ -12,30 +13,22 @@ interface DashboardStats {
 }
 
 /**
- * Live dashboard stats — initializes from server, then updates via Socket.io
- * as new orders arrive and complete.
+ * Live dashboard stats — server is the only source of truth.
  *
- * NOTE: watches primitive values of `initial` to avoid infinite render loops
- * when the caller passes a fresh object literal every render.
+ * Antes: este hook mantenía contadores en memoria y los
+ * incrementaba/decrementaba con eventos socket. Cuando el socket se
+ * desconectaba un instante (token vencido, internet inestable), perdía
+ * algún order:status y el contador local se desincronizaba del backend
+ * hasta el próximo refetch (60s). Caso real: #217 cancelado pero
+ * "Activos ahora: 1" en pantalla por minutos.
+ *
+ * Ahora: el hook NO mantiene estado. Devuelve directo el `initial` del
+ * servidor y al recibir cualquier socket event invalida el query del
+ * dashboard, forzando un refetch inmediato. La data del servidor SIEMPRE
+ * gana — no hay forma de que UI y backend queden desincronizados.
  */
 export function useDashboardStats(initial: DashboardStats) {
-  const [stats, setStats] = useState<DashboardStats>(initial);
-
-  // Sync from server when primitive values change (not reference)
-  useEffect(() => {
-    setStats({
-      totalOrdersToday: initial.totalOrdersToday,
-      activeOrders: initial.activeOrders,
-      revenueToday: initial.revenueToday,
-      avgTicket: initial.avgTicket,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    initial.totalOrdersToday,
-    initial.activeOrders,
-    initial.revenueToday,
-    initial.avgTicket,
-  ]);
+  const qc = useQueryClient();
 
   useEffect(() => {
     const token = getAdminToken();
@@ -44,38 +37,18 @@ export function useDashboardStats(initial: DashboardStats) {
     const socket = getSocket(token, "admin");
     if (!socket.connected) socket.connect();
 
-    // New order arrives → increment counters
-    const handleNew = (order: any) => {
-      setStats((prev) => {
-        const newTotal = prev.totalOrdersToday + 1;
-        const newRevenue = prev.revenueToday + (order?.total ?? 0);
-        return {
-          totalOrdersToday: newTotal,
-          activeOrders: prev.activeOrders + 1,
-          revenueToday: newRevenue,
-          avgTicket: newTotal > 0 ? Math.round(newRevenue / newTotal) : 0,
-        };
-      });
+    const refresh = () => {
+      qc.invalidateQueries({ queryKey: ["admin-dashboard"] });
     };
 
-    // Order delivered/cancelled → decrement active
-    const handleStatus = ({ status }: { status: string }) => {
-      if (["DELIVERED", "CANCELLED"].includes(status)) {
-        setStats((prev) => ({
-          ...prev,
-          activeOrders: Math.max(0, prev.activeOrders - 1),
-        }));
-      }
-    };
-
-    socket.on("order:new", handleNew);
-    socket.on("order:status", handleStatus);
+    socket.on("order:new", refresh);
+    socket.on("order:status", refresh);
 
     return () => {
-      socket.off("order:new", handleNew);
-      socket.off("order:status", handleStatus);
+      socket.off("order:new", refresh);
+      socket.off("order:status", refresh);
     };
-  }, []);
+  }, [qc]);
 
-  return stats;
+  return initial;
 }
