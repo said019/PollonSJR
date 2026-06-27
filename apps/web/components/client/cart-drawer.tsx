@@ -21,12 +21,32 @@ interface CartDrawerProps {
   open: boolean;
   onClose: () => void;
   onRequireAuth?: () => void;
+  /** Cuando el carrito reabre tras iniciar sesión, entra directo al checkout
+   *  en vez de dejar al cliente varado en la lista (continuidad del pago). */
+  autoCheckout?: boolean;
+  onAutoCheckoutConsumed?: () => void;
 }
 
-export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
+export function CartDrawer({
+  open,
+  onClose,
+  onRequireAuth,
+  autoCheckout,
+  onAutoCheckoutConsumed,
+}: CartDrawerProps) {
   const { items, updateQty, removeItem, total, clearCart } = useCart();
   const [showCheckout, setShowCheckout] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const openProductModal = useProductModal((s) => s.open);
+
+  // Reanudar el checkout tras autenticarse: si el padre pide autoCheckout y ya
+  // hay token + items, abre el formulario de pago directamente al reabrir.
+  useEffect(() => {
+    if (open && autoCheckout && getToken() && items.length > 0) {
+      setShowCheckout(true);
+      onAutoCheckoutConsumed?.();
+    }
+  }, [open, autoCheckout, items.length, onAutoCheckoutConsumed]);
 
   // Pull menu so we can re-open the options modal AND validate items.
   // Fetched whenever the cart is open and there's at least one item.
@@ -378,12 +398,35 @@ export function CartDrawer({ open, onClose, onRequireAuth }: CartDrawerProps) {
                       {hasIssues ? "Completa las opciones" : "Proceder al pago"}
                     </button>
 
-                    <button
-                      onClick={clearCart}
-                      className="w-full text-[11px] text-on-surface-variant/50 transition-colors hover:text-error"
-                    >
-                      Vaciar carrito
-                    </button>
+                    {confirmClear ? (
+                      <div className="flex items-center justify-center gap-3 text-[11px]">
+                        <span className="text-on-surface-variant/70">
+                          ¿Vaciar todo el carrito?
+                        </span>
+                        <button
+                          onClick={() => {
+                            clearCart();
+                            setConfirmClear(false);
+                          }}
+                          className="font-bold text-error hover:underline"
+                        >
+                          Sí, vaciar
+                        </button>
+                        <button
+                          onClick={() => setConfirmClear(false)}
+                          className="font-bold text-on-surface-variant/60 hover:text-on-surface"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmClear(true)}
+                        className="w-full text-[11px] text-on-surface-variant/50 transition-colors hover:text-error"
+                      >
+                        Vaciar carrito
+                      </button>
+                    )}
                   </div>
                 </div>
               </>

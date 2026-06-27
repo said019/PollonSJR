@@ -77,6 +77,38 @@ const PAYMENT_METHODS: Array<{
   },
 ];
 
+/* Recompra más rápida: recordamos el tipo de pedido y la forma de pago del
+   último pedido en este dispositivo, para no obligar a re-elegirlos cada vez.
+   Es solo localStorage — no toca el backend. */
+const LAST_PREFS_KEY = "pollon:last-prefs";
+
+function readLastPrefs(): Partial<Pick<CheckoutData, "type" | "paymentMethod">> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LAST_PREFS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    const out: Partial<Pick<CheckoutData, "type" | "paymentMethod">> = {};
+    if (p.type === "DELIVERY" || p.type === "PICKUP") out.type = p.type;
+    if (p.paymentMethod === "CARD" || p.paymentMethod === "CASH" || p.paymentMethod === "TRANSFER")
+      out.paymentMethod = p.paymentMethod;
+    return Object.keys(out).length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastPrefs(data: Pick<CheckoutData, "type" | "paymentMethod">) {
+  try {
+    window.localStorage.setItem(
+      LAST_PREFS_KEY,
+      JSON.stringify({ type: data.type, paymentMethod: data.paymentMethod })
+    );
+  } catch {
+    /* private browsing — ignorar */
+  }
+}
+
 /** Mercado Pago logotype in SVG — displays inline in the button */
 function MercadoPagoLogo({ className }: { className?: string }) {
   return (
@@ -145,8 +177,18 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
   const { register, handleSubmit, watch, setValue } = useForm<CheckoutData>({
     resolver: zodResolver(checkoutSchema),
-    defaultValues: { type: "PICKUP", paymentMethod: "CARD" },
+    // Cold-start: Domicilio por defecto (la mayoría de los pedidos de comida son
+    // a domicilio; antes arrancaba en "Recoger" y obligaba a un tap extra).
+    defaultValues: { type: "DELIVERY", paymentMethod: "CARD" },
   });
+
+  // Tras el primer pedido, recordamos la última elección del cliente y la
+  // aplicamos al montar (en efecto, para no romper la hidratación SSR).
+  useEffect(() => {
+    const prefs = readLastPrefs();
+    if (prefs?.type) setValue("type", prefs.type);
+    if (prefs?.paymentMethod) setValue("paymentMethod", prefs.paymentMethod);
+  }, [setValue]);
 
   const orderType = watch("type");
   const paymentMethod = watch("paymentMethod");
@@ -352,6 +394,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
     try {
       const order = await createOrder(data, token);
+      saveLastPrefs(data);
       const { checkoutUrl } = await api.post<{ preferenceId: string; checkoutUrl: string }>(
         "/api/payments/create",
         { orderId: order.orderId },
@@ -396,6 +439,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
 
     try {
       const order = await createOrder(data, token);
+      saveLastPrefs(data);
       clearCart();
       window.location.href = `/order/${order.orderId}`;
     } catch (err: any) {
@@ -518,12 +562,16 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
               </div>
             )}
           <div>
-            <label className="text-sm font-medium mb-1 block text-on-surface">Dirección y referencias</label>
+            <label className="text-sm font-medium mb-1 block text-on-surface">Detalles de entrega</label>
+            <p className="mb-1.5 text-xs text-on-surface-variant">
+              Tu dirección la tomamos del pin del mapa 📍. Aquí solo agrega lo que
+              el mapa no sabe: número interior, color de puerta, entre qué calles…
+            </p>
             <textarea
               {...register("address")}
-              placeholder="Calle, número, colonia, casa/depto, referencias..."
+              placeholder="Ej.: Depto 4, portón negro, entre Hidalgo y Juárez"
               className="w-full border border-outline-variant/40 bg-white text-neutral-900 rounded-xl p-3 text-sm resize-none placeholder:text-neutral-400 focus:ring-2 focus:ring-primary focus:border-primary"
-              rows={3}
+              rows={2}
             />
           </div>
         </div>

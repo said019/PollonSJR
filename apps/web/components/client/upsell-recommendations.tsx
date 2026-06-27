@@ -30,6 +30,8 @@ import type { MenuByCategory, ProductPublic } from "@pollon/types";
 import { useCart } from "@/hooks/useCart";
 import { useCartFeedback } from "@/store/cart-feedback";
 import { resolveProductImage } from "@/lib/product-images";
+import { productNeedsOptions } from "@/lib/cart-validation";
+import { useProductModal } from "@/store/product-modal";
 
 interface CartLike {
   productId: string;
@@ -151,6 +153,7 @@ function pickRecommendations(
 export function UpsellRecommendations() {
   const { items, addItem } = useCart();
   const notify = useCartFeedback((s) => s.notify);
+  const openProductModal = useProductModal((s) => s.open);
 
   const { data: menu } = useQuery({
     queryKey: ["menu"],
@@ -167,6 +170,13 @@ export function UpsellRecommendations() {
 
   const handleAdd = (product: ProductPublic) => {
     const imageUrl = resolveProductImage(product.name, product.imageUrl);
+    // Si el producto tiene opciones requeridas (modificadores, cuota, variantes),
+    // abrir el modal de opciones en vez de meterlo incompleto al carrito —
+    // si no, entra como línea inválida y bloquea el checkout justo antes de pagar.
+    if (productNeedsOptions(product)) {
+      openProductModal({ product, imageUrl });
+      return;
+    }
     addItem({
       productId: product.id,
       name: product.name,

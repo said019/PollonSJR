@@ -11,7 +11,6 @@ import { formatCents } from "@pollon/utils";
 import { ShoppingCart, ArrowLeft, User, Search, Flame, Clock, Star, Plus, Sparkles } from "lucide-react";
 import { useCartStore } from "@/store/cart";
 import type { CartPromotionMeta } from "@pollon/types";
-import { StoreStatusBanner } from "./store-status-banner";
 import { ActiveOrderBanner } from "./active-order-banner";
 import { InstallAppBanner } from "./install-app-banner";
 import { ReorderSection } from "./reorder-section";
@@ -582,6 +581,7 @@ export function MenuPage() {
 
   const [cartOpen, setCartOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState(false);
   const [authed, setAuthed] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -703,8 +703,8 @@ export function MenuPage() {
       {/* Subtle grain */}
       <div className="pointer-events-none fixed inset-0 z-0 grain" />
 
-      {/* Store closed banner */}
-      <StoreStatusBanner />
+      {/* El aviso de tienda cerrada ahora se monta una sola vez en
+          (client)/layout.tsx para que cubra también el landing. */}
 
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-outline-variant/10 bg-surface/85 backdrop-blur-xl">
@@ -913,7 +913,12 @@ export function MenuPage() {
       <CartDrawer
         open={cartOpen}
         onClose={() => setCartOpen(false)}
+        autoCheckout={pendingCheckout}
+        onAutoCheckoutConsumed={() => setPendingCheckout(false)}
         onRequireAuth={() => {
+          // Recordamos la intención de pagar: tras autenticarse, el carrito
+          // reabre directo en el checkout en vez de dejar al cliente en el menú.
+          setPendingCheckout(true);
           setCartOpen(false);
           setAuthOpen(true);
         }}
@@ -922,10 +927,15 @@ export function MenuPage() {
       {/* Auth modal */}
       <AuthModal
         open={authOpen}
-        onClose={() => setAuthOpen(false)}
+        onClose={() => {
+          setAuthOpen(false);
+          setPendingCheckout(false);
+        }}
         onSuccess={() => {
           setAuthed(true);
           setAuthOpen(false);
+          // Reanuda el flujo de pago donde lo dejó.
+          if (pendingCheckout) setCartOpen(true);
         }}
       />
 

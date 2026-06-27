@@ -25,7 +25,7 @@ export function CartAddToast() {
       // Mantener el evento en el store por un momento más para evitar flicker
       // si llegan dos adds seguidos.
       setTimeout(() => clear(), 200);
-    }, 1600);
+    }, 2200);
     return () => clearTimeout(t);
   }, [last, clear]);
 

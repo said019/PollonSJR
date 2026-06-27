@@ -49,6 +49,9 @@ export function GlobalProductModal() {
             imageUrl: req.editImageUrl ?? req.imageUrl,
             modifiers,
           });
+          // Antes la edición cerraba sin confirmación: el cliente no sabía
+          // si su cambio se guardó. Mismo feedback que al agregar.
+          notify("Cambios guardados");
         } else {
           addItem({
             productId: req.product.id,

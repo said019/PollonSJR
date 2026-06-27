@@ -7,7 +7,7 @@ import { useSocket } from "@/hooks/useSocket";
 import type { OrderDetail, OrderStatusType } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Ban,
@@ -42,6 +42,21 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { DriverEnRouteMap } from "./driver-en-route-map";
+import { useCart } from "@/hooks/useCart";
+import { useCartFeedback } from "@/store/cart-feedback";
+import { resolveProductImage } from "@/lib/product-images";
+
+/* Número de la tienda para contacto directo por WhatsApp durante el pedido.
+   Reusa las mismas envs que el landing. */
+const STORE_WA_NUMBER = (
+  process.env.NEXT_PUBLIC_STORE_PHONE || ""
+).replace(/\D/g, "");
+
+function storeWhatsAppLink(orderNumber: number): string | null {
+  if (!STORE_WA_NUMBER) return null;
+  const msg = `Hola Pollón 👋, tengo una duda sobre mi pedido #${orderNumber}`;
+  return `https://wa.me/${STORE_WA_NUMBER}?text=${encodeURIComponent(msg)}`;
+}
 
 type Step = {
   status: OrderStatusType;
@@ -91,6 +106,10 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   const pagoParam = searchParams.get("pago"); // "exitoso" | "error" | "pendiente" | null
   const [currentStatus, setCurrentStatus] = useState<OrderStatusType | null>(null);
   const [showExpandedTracker, setShowExpandedTracker] = useState(false);
+  // Banner de confirmación "una sola vez": el cliente no-técnico dudaba de si
+  // "ya quedó" al aterrizar en el tracker tras pagar. Lo mostramos solo la
+  // primera vez que se ve este pedido en la sesión.
+  const [showConfirmed, setShowConfirmed] = useState(false);
 
   const isPendingPayment = currentStatus === "PENDING_PAYMENT";
 
@@ -202,6 +221,22 @@ export function OrderTracker({ orderId }: { orderId: string }) {
   const canCustomerCancel =
     currentStatus === "PENDING_PAYMENT" || currentStatus === "RECEIVED";
 
+  // Mostrar la confirmación una vez por pedido (no en cada visita al tracker),
+  // y solo si el pedido está activo y ya no espera pago.
+  useEffect(() => {
+    if (!currentStatus) return;
+    if (isDelivered || isCancelled || isPendingPayment) return;
+    try {
+      const key = `pollon:confirmed-seen:${orderId}`;
+      if (!sessionStorage.getItem(key)) {
+        setShowConfirmed(true);
+        sessionStorage.setItem(key, "1");
+      }
+    } catch {
+      /* sessionStorage no disponible — ignorar */
+    }
+  }, [currentStatus, isDelivered, isCancelled, isPendingPayment, orderId]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface">
@@ -266,7 +301,40 @@ export function OrderTracker({ orderId }: { orderId: string }) {
       </header>
 
       <main className="relative z-10 mx-auto max-w-2xl px-4 pb-32 pt-6">
+        {showConfirmed && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 flex items-center gap-3 rounded-2xl border border-green-500/30 bg-green-500/10 px-4 py-3"
+          >
+            <CheckCircle size={20} className="flex-shrink-0 text-green-500" />
+            <div>
+              <p className="font-headline text-sm font-extrabold text-green-500">
+                ¡Pedido #{order.orderNumber} confirmado!
+              </p>
+              <p className="text-xs text-on-surface-variant">
+                Te avisamos aquí cuando esté listo. No cierres si quieres seguirlo.
+              </p>
+            </div>
+          </motion.div>
+        )}
+
         {isActive && <NotificationOptInBanner />}
+
+        {/* Contacto directo con la tienda durante el pedido — antes no había
+            forma de preguntar "¿dónde está mi pedido?" salvo (a veces) llamar
+            al repartidor ya en camino. Visible en todo estado activo. */}
+        {isActive && storeWhatsAppLink(order.orderNumber) && (
+          <a
+            href={storeWhatsAppLink(order.orderNumber)!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-4 flex items-center justify-center gap-2 rounded-2xl border border-green-500/30 bg-green-500/10 px-4 py-2.5 font-headline text-sm font-bold text-green-500 transition-all hover:bg-green-500/20 active:scale-[0.98]"
+          >
+            <MessageCircle size={16} />
+            ¿Dudas con tu pedido? Escríbenos por WhatsApp
+          </a>
+        )}
 
         {/* ═══════════════════════════════════════════════════════ */}
         {/*  PENDING_PAYMENT — waiting for MP webhook (CARD only)   */}
@@ -831,6 +899,65 @@ function CelebrationCard({ order, token }: { order: OrderDetail; token: string |
   const [hoverRating, setHoverRating] = useState(0);
   const [ratingDone, setRatingDone] = useState(!!order.rating);
   const [submitting, setSubmitting] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  const { addItem } = useCart();
+  const notify = useCartFeedback((s) => s.notify);
+  const router = useRouter();
+
+  // "Pedir de nuevo" antes era solo un link al menú VACÍO: el cliente creía
+  // que repetiría su pedido y tenía que rearmarlo producto por producto. Ahora
+  // repuebla el carrito con el pedido recién entregado (mismo patrón que el
+  // ReorderButton del perfil) y lleva al menú listo para pagar.
+  const handleReorder = async () => {
+    const t = token || getToken();
+    if (!t) {
+      router.push("/menu");
+      return;
+    }
+    setReordering(true);
+    try {
+      const res = await api.get<{
+        items: Array<{
+          productId: string;
+          name: string;
+          currentPrice: number;
+          qty: number;
+          variant: string | null;
+          notes: string | null;
+          available: boolean;
+        }>;
+        unavailableCount: number;
+        warning: string | null;
+      }>(`/api/orders/${order.id}/repeat`, t);
+      res.items
+        .filter((i) => i.available)
+        .forEach((item) =>
+          addItem({
+            productId: item.productId,
+            name: item.name,
+            price: item.currentPrice,
+            qty: item.qty,
+            variant: item.variant,
+            notes: item.notes ?? "",
+            imageUrl: resolveProductImage(item.name, null),
+          })
+        );
+      if (res.unavailableCount > 0) {
+        notify(
+          res.warning ??
+            `Quitamos ${res.unavailableCount} producto(s) que ya no están disponibles`
+        );
+      } else {
+        notify("Tu pedido está listo en el carrito");
+      }
+      router.push("/menu");
+    } catch {
+      // Si falla la repetición, al menos llévalo al menú.
+      router.push("/menu");
+    } finally {
+      setReordering(false);
+    }
+  };
 
   const handleRate = async (stars: number) => {
     setSelectedRating(stars);
@@ -965,13 +1092,14 @@ function CelebrationCard({ order, token }: { order: OrderDetail; token: string |
 
         {/* ── CTAs ── */}
         <div className="mt-5 flex flex-col gap-2.5 sm:flex-row sm:justify-center">
-          <Link
-            href="/menu"
-            className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98]"
+          <button
+            onClick={() => void handleReorder()}
+            disabled={reordering}
+            className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-all active:scale-[0.98] disabled:opacity-60"
           >
-            <RotateCcw size={15} />
+            {reordering ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
             Pedir de nuevo
-          </Link>
+          </button>
           <button
             onClick={handleShare}
             className="flex items-center justify-center gap-2 rounded-2xl border border-outline-variant/25 bg-surface-container px-5 py-3 font-headline text-sm font-bold uppercase tracking-wider text-tertiary transition-all hover:border-primary/40 active:scale-[0.98]"

@@ -387,7 +387,7 @@ export function LoyaltyPage() {
                     <p className={`text-xs font-extrabold ${
                       info.pendingReward ? "text-secondary" : "text-primary"
                     }`}>
-                      {info.pendingReward ? "Premio lista 🎉" : "Activa"}
+                      {info.pendingReward ? "¡Premio listo! 🎉" : "Activa"}
                     </p>
                   </div>
                 </div>

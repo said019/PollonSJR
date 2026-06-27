@@ -581,6 +581,11 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
     };
   }, []);
 
+  // Evita que el autocompletado vuelva a buscar tras seleccionar una sugerencia
+  // (la selección cambia addressQuery) y que repita la misma búsqueda ya hecha.
+  const skipAutoSearchRef = useRef(false);
+  const lastSearchedQueryRef = useRef<string>("");
+
   const handleAddressSearch = useCallback(
     async () => {
       const query = addressQuery.trim();
@@ -591,6 +596,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
         return;
       }
 
+      lastSearchedQueryRef.current = query;
       setSearchingAddress(true);
       setAddressError("");
 
@@ -677,6 +683,24 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
     [addressQuery]
   );
 
+  // Autocompletado en vivo: busca sola tras 800ms sin teclear (en vez de obligar
+  // a tocar "Buscar"). El debounce mantiene 1 búsqueda por pausa, no por tecla,
+  // para no saturar el geocoder. Se salta si la query no cambió o si viene de
+  // seleccionar una sugerencia.
+  useEffect(() => {
+    if (skipAutoSearchRef.current) {
+      skipAutoSearchRef.current = false;
+      return;
+    }
+    const q = addressQuery.trim();
+    if (q.length < 5) return;
+    if (q === lastSearchedQueryRef.current) return;
+    const id = setTimeout(() => {
+      void handleAddressSearch();
+    }, 800);
+    return () => clearTimeout(id);
+  }, [addressQuery, handleAddressSearch]);
+
   const selectSuggestion = useCallback(
     (suggestion: AddressSuggestion) => {
       const lat = Number(suggestion.lat);
@@ -691,6 +715,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
       setAddressError("");
       setSaveAddressError("");
       setSelectedSavedAddressId(null);
+      skipAutoSearchRef.current = true;
       setAddressQuery(suggestionTitle(suggestion));
       updateSelectedAddress(suggestion.display_name);
       placeMarker(lat, lng, true);
@@ -705,6 +730,7 @@ export function DeliveryMapInner({ onDeliveryChange, onAddressChange }: Props) {
       setSuggestions([]);
       setAddressError("");
       setSaveAddressError("");
+      skipAutoSearchRef.current = true;
       setAddressQuery(savedAddress.alias);
       updateSelectedAddress(savedAddress.address);
       placeMarker(savedAddress.lat, savedAddress.lng, true);

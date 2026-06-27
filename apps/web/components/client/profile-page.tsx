@@ -38,6 +38,7 @@ import type {
   OrderStatusType,
 } from "@pollon/types";
 import { useCart } from "@/hooks/useCart";
+import { useCartFeedback } from "@/store/cart-feedback";
 import { resolveProductImage } from "@/lib/product-images";
 
 /* ═══════════════════════════════════════════════════════════════ */
@@ -678,6 +679,7 @@ interface RepeatResponse {
 
 function ReorderButton({ orderId, token }: { orderId: string; token: string }) {
   const { addItem } = useCart();
+  const notify = useCartFeedback((s) => s.notify);
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -700,6 +702,14 @@ function ReorderButton({ orderId, token }: { orderId: string; token: string }) {
           imageUrl: resolveProductImage(item.name, null),
         });
       });
+      // Antes el aviso de productos no disponibles se descartaba en silencio:
+      // el cliente creía que pidió "lo mismo" y le faltaba algo. Ahora se avisa.
+      if (res.unavailableCount > 0) {
+        notify(
+          res.warning ??
+            `Quitamos ${res.unavailableCount} producto(s) que ya no están disponibles`
+        );
+      }
       setDone(true);
       // Redirect to menu so the user sees the cart bar and can checkout
       setTimeout(() => router.push("/menu"), 600);

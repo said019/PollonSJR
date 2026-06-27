@@ -1331,7 +1331,7 @@ function FloatingCartButton() {
       className="fixed bottom-6 right-6 z-50 bg-primary w-14 h-14 rounded-2xl flex items-center justify-center text-on-primary shadow-2xl hover:scale-110 active:scale-90 transition-transform lg:hidden animate-pulse-glow"
     >
       <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }} aria-hidden>
-        shopping_basket
+        restaurant_menu
       </span>
     </Link>
   );

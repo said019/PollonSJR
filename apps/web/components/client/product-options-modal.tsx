@@ -105,7 +105,10 @@ export function ProductOptionsModal({
     if (initedRef.current === initSig) return;
     initedRef.current = initSig;
 
-    setVariant(defaultVariant ?? null);
+    // Preseleccionar la primera variante por defecto: ahorra un tap obligatorio
+    // y evita que una línea entre "sin tamaño" y bloquee el checkout. El cliente
+    // igual puede cambiarla.
+    setVariant(defaultVariant ?? product.variants?.[0]?.label ?? null);
     setQty(defaultQty && defaultQty > 0 ? defaultQty : 1);
     setNotes(defaultNotes ?? "");
     setError(null);
