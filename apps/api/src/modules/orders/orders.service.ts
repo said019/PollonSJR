@@ -6,6 +6,7 @@ import { isAcceptingOrders, getStoreConfig } from "../admin/store-config.service
 import { validateCoupon } from "./coupon.service";
 import { enqueueNotification } from "../notifications/queue";
 import { mexicoStartOfTomorrow } from "../../utils/timezone";
+import { DeliveryService } from "../delivery/delivery.service";
 
 export class OrdersService {
   constructor(private app: FastifyInstance) {}
@@ -209,20 +210,38 @@ export class OrdersService {
       promoDiscount += diff;
     }
 
-    // 4. Delivery fee + zone time-window validation
+    // 4. Delivery fee + zone validation.
+    // La ZONA se revalida en el SERVIDOR (no se confía en el cliente): se
+    // recalcula la distancia real desde la tienda a las coordenadas del pedido
+    // y se exige que caiga en una zona activa. Así los km configurados en el
+    // panel SÍ gobiernan qué pedidos se aceptan, y se cierra el hueco de que un
+    // cliente mande deliveryFee=0 o un deliveryZoneId que no le corresponde.
     let deliveryFee = 0;
+    let resolvedDeliveryZoneId: string | null = null;
     if (data.type === "DELIVERY") {
-      if (data.deliveryZoneId) {
-        const zone = await this.app.prisma.deliveryZone.findUnique({
-          where: { id: data.deliveryZoneId },
-        });
-        if (zone && !isScheduled) {
-          assertZoneOpen(zone);
-        }
-        deliveryFee = data.deliveryFee ?? zone?.fee ?? 0;
-      } else if (data.deliveryFee) {
-        deliveryFee = data.deliveryFee;
+      const lat = (data as any).deliveryLat;
+      const lng = (data as any).deliveryLng;
+      if (typeof lat !== "number" || typeof lng !== "number") {
+        throw new Error(
+          "Falta la ubicación de entrega. Selecciona tu dirección en el mapa."
+        );
       }
+      const zoneCheck = await new DeliveryService(this.app).calculate(lat, lng);
+      if (!zoneCheck.available) {
+        throw new Error(
+          zoneCheck.reason ?? "Esa dirección está fuera de la zona de entrega."
+        );
+      }
+      // Ventana horaria de la zona real (los pedidos programados la omiten).
+      if (zoneCheck.zoneId && !isScheduled) {
+        const zone = await this.app.prisma.deliveryZone.findUnique({
+          where: { id: zoneCheck.zoneId },
+        });
+        if (zone) assertZoneOpen(zone);
+      }
+      // Tarifa y zona REALES calculadas por el servidor; se ignora lo del cliente.
+      deliveryFee = zoneCheck.fee ?? 0;
+      resolvedDeliveryZoneId = zoneCheck.zoneId ?? null;
     }
 
     // 5. Apply coupon if provided
@@ -289,7 +308,7 @@ export class OrdersService {
         address: data.address || null,
         deliveryLat: data.type === "DELIVERY" ? (data as any).deliveryLat ?? null : null,
         deliveryLng: data.type === "DELIVERY" ? (data as any).deliveryLng ?? null : null,
-        deliveryZoneId: data.deliveryZoneId || null,
+        deliveryZoneId: resolvedDeliveryZoneId,
         deliveryAddress: data.type === "DELIVERY" ? (data as any).deliveryAddress ?? null : null,
         subtotal,
         deliveryFee,

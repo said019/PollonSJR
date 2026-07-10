@@ -58,6 +58,8 @@ function AdminDeliveryPageInner() {
   const [testMarker, setTestMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [expandedZone, setExpandedZone] = useState<number | null>(null);
   const [showZones, setShowZones] = useState(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveOk, setSaveOk] = useState(false);
 
   // Map state is now handled by Google Maps components (google-store-map.tsx)
 
@@ -99,8 +101,38 @@ function AdminDeliveryPageInner() {
   });
 
   const handleSaveAll = () => {
-    saveStoreMut.mutate({ lat: storeLat, lng: storeLng, address: storeAddress });
-    saveZonesMut.mutate(zoneList);
+    setSaveError(null);
+    setSaveOk(false);
+    // Validar ANTES de mandar: un km en 0/vacío o mínimo >= máximo hacía que el
+    // backend rechazara TODO el guardado con un 400 que antes se tragaba en
+    // silencio (el dueño creía que había guardado y no era así).
+    for (const z of zoneList) {
+      if (!z.name.trim()) {
+        setSaveError("Cada zona necesita un nombre.");
+        return;
+      }
+      if (z.minKm < 0 || z.maxKm <= 0 || z.maxKm <= z.minKm) {
+        setSaveError(
+          `Revisa los km de "${z.name || "una zona"}": el km máximo debe ser mayor que el mínimo y mayor que 0.`
+        );
+        return;
+      }
+      if (z.fee < 0) {
+        setSaveError(`El costo de envío de "${z.name}" no puede ser negativo.`);
+        return;
+      }
+    }
+    saveStoreMut.mutate(
+      { lat: storeLat, lng: storeLng, address: storeAddress },
+      { onError: () => setSaveError("No se pudo guardar la ubicación de la tienda.") }
+    );
+    saveZonesMut.mutate(zoneList, {
+      onSuccess: () => setSaveOk(true),
+      onError: (e: any) =>
+        setSaveError(
+          e?.message ?? "No se pudieron guardar las zonas. Revisa los km de cada zona."
+        ),
+    });
   };
 
   const addZone = () => {
@@ -162,6 +194,17 @@ function AdminDeliveryPageInner() {
           Guardar todo
         </button>
       </div>
+
+      {saveError && (
+        <div className="mb-4 rounded-xl border border-error/40 bg-error/10 px-4 py-3 text-sm font-semibold text-error">
+          {saveError}
+        </div>
+      )}
+      {saveOk && !saveError && (
+        <div className="mb-4 rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm font-semibold text-green-600">
+          Zonas guardadas ✓ — tus km ya están activos.
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
