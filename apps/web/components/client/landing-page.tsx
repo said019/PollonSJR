@@ -7,7 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken, clearTokens } from "@/lib/auth";
 import { formatCents } from "@pollon/utils";
-import type { MenuByCategory, ProductPublic } from "@pollon/types";
+import type { MenuByCategory, ProductPublic, LoyaltyInfo } from "@pollon/types";
 import { AuthModal } from "./auth-modal";
 import {
   User,
@@ -848,6 +848,25 @@ function SecretProcess() {
 /*  Loyalty Section — VIP club with metallic card                 */
 /* ────────────────────────────────────────────────────────────── */
 function LoyaltySection() {
+  // La tarjeta mostraba "3/5" clavado en el código. Un cliente que ya llevaba
+  // 4 compras entraba, leía 3/5 y creía que la app le estaba perdiendo compras.
+  // Ahora muestra su avance REAL si tiene sesión, y se marca como ejemplo si no.
+  const [loyaltyToken, setLoyaltyToken] = useState<string | null>(null);
+  useEffect(() => {
+    setLoyaltyToken(getToken());
+  }, []);
+
+  const { data: loyaltyInfo } = useQuery({
+    queryKey: ["loyalty-landing"],
+    queryFn: () => api.get<LoyaltyInfo>("/api/loyalty/me", loyaltyToken || undefined),
+    enabled: !!loyaltyToken,
+  });
+
+  const loyaltyTarget = loyaltyInfo?.target || 5;
+  const loyaltyProgress = loyaltyInfo
+    ? Math.min(loyaltyInfo.pendingReward ? loyaltyTarget : loyaltyInfo.progress, loyaltyTarget)
+    : null;
+
   return (
     <section id="rewards" className="py-28 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto">
@@ -862,7 +881,7 @@ function LoyaltySection() {
                 VIP<br />POLLÓN
               </h2>
               <p className="text-on-surface-variant text-base lg:text-lg mb-10 max-w-md leading-relaxed">
-                Junta cinco compras entregadas y desbloquea un producto gratis.
+                Junta cinco compras en la app y desbloquea una sorpresa 🎁
                 Tu recompensa se guarda en tu tarjeta y vence a los seis meses.
               </p>
 
@@ -910,10 +929,10 @@ function LoyaltySection() {
                 {/* Member level */}
                 <div className="mb-8">
                   <div className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.2em] mb-1">
-                    Nivel de Miembro
+                    {loyaltyProgress !== null ? "Tu tarjeta" : "Así funciona"}
                   </div>
                   <div className="text-secondary font-headline font-extrabold text-2xl uppercase tracking-tight">
-                    EXTRA CRISPY
+                    {loyaltyInfo?.pendingReward ? "¡SORPRESA LISTA!" : "CLUB POLLÓN"}
                   </div>
                 </div>
 
@@ -923,14 +942,18 @@ function LoyaltySection() {
                     <span className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.15em]">
                       Compras
                     </span>
-                    <span className="text-tertiary font-headline font-extrabold text-lg">3/5</span>
+                    <span className="text-tertiary font-headline font-extrabold text-lg">
+                      {loyaltyProgress !== null
+                        ? `${loyaltyProgress}/${loyaltyTarget}`
+                        : `0/${loyaltyTarget}`}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center border-b border-outline-variant/15 pb-3">
                     <span className="text-on-surface-variant/50 text-[10px] uppercase font-bold tracking-[0.15em]">
                       Próxima Recompensa
                     </span>
                     <span className="text-tertiary font-headline font-bold text-sm">
-                      Producto gratis
+                      Una sorpresa 🎁
                     </span>
                   </div>
                 </div>

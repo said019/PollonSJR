@@ -689,23 +689,39 @@ export class OrdersService {
       DELIVERED: "order_delivered",
     };
 
+    // Al ENTREGAR se acredita la compra ANTES de avisar, para que el mensaje
+    // lleve el avance real. Antes se mandaba primero (y con "1 puntos" fijo),
+    // así que el cliente recibía un dato inventado y desactualizado.
+    let loyaltyParams: Record<string, string> = {};
+    if (newStatus === "DELIVERED") {
+      try {
+        const { LoyaltyService } = await import("../loyalty/loyalty.service");
+        const loyaltyService = new LoyaltyService(this.app);
+        const res = await loyaltyService.processAfterDelivery(orderId);
+        if (res) {
+          const done = res.pendingReward
+            ? res.target
+            : res.completedOrders % res.target;
+          loyaltyParams = {
+            rewardReady: res.pendingReward ? "1" : "0",
+            progress: String(done),
+            target: String(res.target),
+            remaining: String(res.ordersToNext),
+          };
+        }
+      } catch (err) {
+        this.app.log.error({ err }, "Loyalty processing error");
+      }
+    }
+
     const template = templateMap[newStatus];
     if (template) {
       enqueueNotification(this.app.redis, {
         type: "whatsapp",
         to: phone,
         template,
-        params: { name, orderNumber: orderNum, minutes, points: "1" },
+        params: { name, orderNumber: orderNum, minutes, ...loyaltyParams },
       }).catch((err) => this.app.log.error("Enqueue notification error:", err));
-    }
-
-    // Process loyalty after delivery
-    if (newStatus === "DELIVERED") {
-      const { LoyaltyService } = await import("../loyalty/loyalty.service");
-      const loyaltyService = new LoyaltyService(this.app);
-      loyaltyService.processAfterDelivery(orderId).catch((err) =>
-        this.app.log.error("Loyalty processing error:", err)
-      );
     }
 
     return { success: true };

@@ -166,6 +166,17 @@ export class LoyaltyService {
         },
       }).catch(() => {});
     }
+
+    // Devolvemos el avance ya actualizado para que el aviso de "entregado"
+    // pueda decir el número REAL de compras (antes mandaba "1 puntos" fijo).
+    return {
+      completedOrders: newCompletedOrders,
+      target: ORDERS_PER_REWARD,
+      pendingReward,
+      ordersToNext: pendingReward
+        ? 0
+        : (ORDERS_PER_REWARD - (newCompletedOrders % ORDERS_PER_REWARD)) % ORDERS_PER_REWARD,
+    };
   }
 
   /**

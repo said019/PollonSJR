@@ -23,8 +23,33 @@ const TEMPLATES: Record<string, (p: TemplateParams) => string> = {
   order_on_the_way: (p) =>
     `🛵 ¡Tu pedido *#${p.orderNumber}* ya va en camino, ${p.name}!\n\nTiempo estimado: ~${p.minutes} min.`,
 
-  order_delivered: (p) =>
-    `🎉 ¡Buen provecho ${p.name}!\n\nEsperamos que disfrutes tu Pollón. Ganaste *${p.points} puntos* de lealtad.\n\nVuelve pronto 🍗`,
+  // Este mensaje llega al 100% de los clientes justo después de comer: es el
+  // mejor momento para empujar la siguiente compra. Antes decía "Ganaste 1
+  // puntos de lealtad" — un número fijo y una palabra ("puntos") que no existe
+  // en el sistema, que cuenta COMPRAS.
+  order_delivered: (p) => {
+    const cierre = "\n\nSólo cuentan los pedidos hechos en la app 🍗";
+    if (p.rewardReady === "1") {
+      return (
+        `🎉 ¡Buen provecho ${p.name}!\n\n` +
+        `🎁 *¡Tu sorpresa está lista!* Se aplica sola en tu próximo pedido.` +
+        cierre
+      );
+    }
+    if (p.progress && p.target) {
+      const faltan = Number(p.remaining);
+      const empuje =
+        faltan === 1
+          ? "¡Sólo *1 compra más* y te llevas una sorpresa! 🎁"
+          : `*${faltan} compras más* y te llevas una sorpresa 🎁`;
+      return (
+        `🎉 ¡Buen provecho ${p.name}!\n\n` +
+        `Llevas *${p.progress} de ${p.target} compras*. ${empuje}` +
+        cierre
+      );
+    }
+    return `🎉 ¡Buen provecho ${p.name}!\n\nEsperamos que disfrutes tu Pollón. ¡Vuelve pronto! 🍗`;
+  },
 
   order_cancelled_refund: (p) =>
     `😔 Hola ${p.name}, tu pedido *#${p.orderNumber}* fue cancelado.\n\nEl reembolso de *$${p.amount}* llegará en 1-5 días hábiles. Disculpa el inconveniente.`,
@@ -43,8 +68,10 @@ const TEMPLATES: Record<string, (p: TemplateParams) => string> = {
     `🔥 ¡Empezamos a preparar tu pedido *#${p.orderNumber}*, ${p.name}!\n\nEstará listo en ~30 min. Ten el saldo pendiente listo al recibir.`,
 
   // Loyalty rewards (5-order count system)
+  // Aquí SÍ se revela el premio: es el momento de la sorpresa, y además es un
+  // descuento real que conviene que el cliente sepa.
   loyalty_reward_earned: (p) =>
-    `🎉 ¡Felicidades ${p.name}! Completaste 5 pedidos en Pollón SJR.\n\nGanaste *${p.productName} gratis* 🍗\n\nSe aplica automáticamente en tu próximo pedido. Vence en 6 meses.`,
+    `🎁 ¡Felicidades ${p.name}! Completaste tus 5 compras en Pollón SJR.\n\nTu sorpresa es: *${p.productName} GRATIS* 🍗\n\nSe aplica solita en tu próximo pedido. Tienes 6 meses para usarla.`,
 
   loyalty_reward_expiring: (p) =>
     `⏰ Hola ${p.name}, tu recompensa de *${p.productName} gratis* vence en 7 días.\n\n¡Aprovéchala antes de que expire!`,
