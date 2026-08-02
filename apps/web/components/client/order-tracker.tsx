@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { useSocket } from "@/hooks/useSocket";
-import type { OrderDetail, OrderStatusType } from "@pollon/types";
+import type { OrderDetail, OrderStatusType, LoyaltyInfo } from "@pollon/types";
 import { formatCents } from "@pollon/utils";
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -904,6 +904,15 @@ function CelebrationCard({ order, token }: { order: OrderDetail; token: string |
   const notify = useCartFeedback((s) => s.notify);
   const router = useRouter();
 
+  // Avance de lealtad justo al recibir el pedido: es el momento de mayor
+  // emoción y el mejor lugar para empujar la siguiente compra ("te falta 1").
+  const { data: loyalty } = useQuery({
+    queryKey: ["loyalty-celebration", order.id],
+    queryFn: () => api.get<LoyaltyInfo>("/api/loyalty/me", token || getToken() || undefined),
+    enabled: !!(token || getToken()),
+    staleTime: 30_000,
+  });
+
   // "Pedir de nuevo" antes era solo un link al menú VACÍO: el cliente creía
   // que repetiría su pedido y tenía que rearmarlo producto por producto. Ahora
   // repuebla el carrito con el pedido recién entregado (mismo patrón que el
@@ -1029,6 +1038,46 @@ function CelebrationCard({ order, token }: { order: OrderDetail; token: string |
         <p className="mt-1 text-sm text-on-surface-variant/80">
           Tu pedido fue entregado. Esperamos que lo disfrutes mucho.
         </p>
+
+        {/* ── Avance de lealtad ── */}
+        {loyalty && (
+          <div className="mx-auto mt-4 max-w-xs rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3">
+            {loyalty.pendingReward ? (
+              <p className="font-headline text-sm font-extrabold text-secondary">
+                🎁 ¡Tu sorpresa está lista!
+                <span className="mt-0.5 block text-[11px] font-semibold text-on-surface-variant">
+                  Se aplica sola en tu próximo pedido.
+                </span>
+              </p>
+            ) : (
+              <>
+                <p className="font-headline text-sm font-extrabold text-secondary">
+                  {loyalty.ordersToNext === 1
+                    ? "¡Te falta 1 pedido para tu sorpresa! 🎁"
+                    : `Te faltan ${loyalty.ordersToNext} pedidos para tu sorpresa 🎁`}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-variant">
+                    <motion.div
+                      className="h-full rounded-full bg-secondary"
+                      initial={{ width: 0 }}
+                      animate={{
+                        width: `${Math.round((loyalty.progress / (loyalty.target || 5)) * 100)}%`,
+                      }}
+                      transition={{ duration: 0.7, ease: "easeOut", delay: 0.3 }}
+                    />
+                  </div>
+                  <span className="font-headline text-[11px] font-bold text-on-surface-variant">
+                    {loyalty.progress}/{loyalty.target || 5}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[10px] text-on-surface-variant/70">
+                  Sólo los pedidos por la app cuentan.
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         {/* ── Rating stars ── */}
         <div className="mt-5">

@@ -63,14 +63,18 @@ function LoyaltyMiniBar({ token }: { token: string }) {
   return (
     <Link
       href="/loyalty"
-      className="group hidden items-center gap-2 rounded-xl border border-outline-variant/20 bg-surface-container px-3 py-1.5 transition-all hover:border-secondary/40 sm:flex"
+      // Antes: `hidden ... sm:flex` — el avance sólo se veía en pantallas
+      // grandes, así que en el celular (donde pide TODO el mundo) la tarjeta
+      // de lealtad era invisible y nadie sabía cuánto le faltaba.
+      className="group flex items-center gap-1.5 rounded-xl border border-outline-variant/20 bg-surface-container px-2 py-1.5 transition-all hover:border-secondary/40 sm:gap-2 sm:px-3"
     >
-      <Star size={12} className="text-secondary" />
+      <Star size={12} className="flex-shrink-0 text-secondary" />
       <div className="min-w-0">
         <span className="font-headline text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/70">
-          {progress}/{target} compras
+          {progress}/{target}
+          <span className="hidden sm:inline"> compras</span>
         </span>
-        <div className="mt-0.5 h-1 w-16 overflow-hidden rounded-full bg-surface-variant">
+        <div className="mt-0.5 h-1 w-10 overflow-hidden rounded-full bg-surface-variant sm:w-16">
           <motion.div
             className="h-full rounded-full bg-secondary"
             initial={{ width: 0 }}

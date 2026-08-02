@@ -478,14 +478,15 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
         </div>
       </div>
 
-      {/* Loyalty reward banner */}
-      {loyaltyInfo?.pendingReward && (
+      {/* Loyalty reward banner — al canjear SÍ se revela el producto (es un
+          descuento real en su cuenta), pero se enmarca como "tu sorpresa". */}
+      {loyaltyInfo?.pendingReward ? (
         <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/5 p-3">
           <div className="flex items-center gap-2">
             <Gift size={16} className="text-green-400" />
             <div>
               <p className="text-sm font-bold text-green-400">
-                Tienes un {loyaltyInfo.pendingProduct?.name ?? "producto"} gratis
+                🎁 Tu sorpresa: {loyaltyInfo.pendingProduct?.name ?? "un producto"} gratis
               </p>
               <p className="text-xs text-on-surface-variant">
                 Se descuenta automáticamente de tu pedido
@@ -493,6 +494,20 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
             </div>
           </div>
         </div>
+      ) : (
+        loyaltyInfo &&
+        loyaltyInfo.ordersToNext > 0 && (
+          <div className="mb-4 rounded-xl border border-secondary/30 bg-secondary/5 p-3">
+            <div className="flex items-center gap-2">
+              <Gift size={16} className="text-secondary" />
+              <p className="text-sm font-bold text-secondary">
+                {loyaltyInfo.ordersToNext === 1
+                  ? "¡Con este pedido te queda 1 para tu sorpresa! 🎁"
+                  : `Te faltan ${loyaltyInfo.ordersToNext} pedidos para tu sorpresa 🎁`}
+              </p>
+            </div>
+          </div>
+        )
       )}
 
       {/* Payment method */}

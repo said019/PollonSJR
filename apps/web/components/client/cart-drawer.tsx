@@ -365,10 +365,22 @@ export function CartDrawer({
                       paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
                     }}
                   >
-                    {hasPendingReward && (
+                    {hasPendingReward ? (
                       <p className="flex items-center gap-1 rounded-md bg-green-500/10 px-2 py-1 text-[11px] text-green-400">
-                        <Gift size={11} /> Tienes un producto gratis · se aplica al pagar
+                        <Gift size={11} /> Tienes una sorpresa · se aplica al pagar
                       </p>
+                    ) : (
+                      // Empujón de lealtad en el momento de decidir: antes sólo
+                      // se avisaba cuando YA había ganado, nunca cuánto faltaba.
+                      loyaltyInfo &&
+                      loyaltyInfo.ordersToNext > 0 && (
+                        <p className="flex items-center gap-1 rounded-md bg-secondary/10 px-2 py-1 text-[11px] text-secondary">
+                          <Gift size={11} />
+                          {loyaltyInfo.ordersToNext === 1
+                            ? "¡Este pedido te deja a 1 de tu sorpresa!"
+                            : `Te faltan ${loyaltyInfo.ordersToNext} pedidos para tu sorpresa`}
+                        </p>
+                      )
                     )}
 
                     {hasIssues && firstInvalidIdx >= 0 && (
