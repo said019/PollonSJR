@@ -3,7 +3,20 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { saveTokens } from "@/lib/auth";
-import { Lock, Mail, Phone, User, Loader2, Eye, EyeOff, Users, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  Lock,
+  Mail,
+  Phone,
+  User,
+  Loader2,
+  Eye,
+  EyeOff,
+  Users,
+  ShieldCheck,
+  MessageCircle,
+  ArrowLeft,
+} from "lucide-react";
 import Image from "next/image";
 
 interface AuthModalProps {
@@ -12,13 +25,24 @@ interface AuthModalProps {
   onSuccess?: () => void;
 }
 
-type Mode = "login" | "register";
+// "otp" es el modo por defecto: entrar con teléfono + código por WhatsApp, sin
+// contraseña. El registro/login con contraseña sigue disponible para quien ya
+// tiene cuenta con contraseña.
+type Mode = "otp" | "login" | "register";
+type OtpStep = "phone" | "code" | "name";
 
 export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
-  const [mode, setMode] = useState<Mode>("login");
+  const [mode, setMode] = useState<Mode>("otp");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPw, setShowPw] = useState(false);
+
+  // Flujo sin contraseña (OTP por WhatsApp)
+  const { requestOTP, verifyOTP, saveName } = useAuth();
+  const [otpStep, setOtpStep] = useState<OtpStep>("phone");
+  const [otpPhone, setOtpPhone] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpName, setOtpName] = useState("");
 
   // Login fields
   const [identifier, setIdentifier] = useState("");
@@ -37,8 +61,74 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setRegPhone("");
     setRegEmail("");
     setRegPassword("");
+    setOtpStep("phone");
+    setOtpPhone("");
+    setOtpCode("");
+    setOtpName("");
     setError(null);
     setLoading(false);
+  };
+
+  /* ── Flujo sin contraseña: teléfono → código por WhatsApp → nombre ── */
+
+  const handleRequestOtp = async () => {
+    if (otpPhone.length !== 10) {
+      setError("Escribe tu WhatsApp a 10 dígitos");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await requestOTP(otpPhone);
+      setOtpStep("code");
+    } catch (err: any) {
+      setError(err.message || "No pudimos enviar el código. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (otpCode.length !== 6) {
+      setError("El código tiene 6 dígitos");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const { isNewCustomer } = await verifyOTP(otpPhone, otpCode);
+      if (isNewCustomer) {
+        // Cliente nuevo: sólo falta su nombre (para el pedido y el saludo).
+        setOtpStep("name");
+      } else {
+        onSuccess?.();
+        onClose();
+        resetAll();
+      }
+    } catch (err: any) {
+      setError(err.message || "Código incorrecto o vencido");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveOtpName = async () => {
+    if (otpName.trim().length < 2) {
+      setError("Escribe tu nombre");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await saveName(otpName.trim());
+    } catch {
+      // Si falla guardar el nombre no bloqueamos el pedido: ya tiene sesión.
+    } finally {
+      setLoading(false);
+      onSuccess?.();
+      onClose();
+      resetAll();
+    }
   };
 
   const handleLogin = async () => {
@@ -124,8 +214,25 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
             />
           </div>
           <h2 className="text-xl font-headline font-bold text-on-surface">
-            {mode === "login" ? "Bienvenido de vuelta" : "Crea tu cuenta"}
+            {mode === "otp"
+              ? otpStep === "phone"
+                ? "Entra con tu WhatsApp"
+                : otpStep === "code"
+                  ? "Escribe tu código"
+                  : "¿Cómo te llamas?"
+              : mode === "login"
+                ? "Bienvenido de vuelta"
+                : "Crea tu cuenta"}
           </h2>
+          {mode === "otp" && (
+            <p className="mt-1 px-2 text-xs text-on-surface-variant">
+              {otpStep === "phone"
+                ? "Sin contraseñas: te mandamos un código por WhatsApp."
+                : otpStep === "code"
+                  ? `Te lo enviamos por WhatsApp al ${otpPhone}`
+                  : "Es lo último que necesitamos para tu pedido."}
+            </p>
+          )}
 
           {/* Social proof trust signal */}
           <div className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-surface-container-high px-3 py-2">
@@ -137,7 +244,8 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs — sólo en el modo con contraseña */}
+        {mode !== "otp" && (
         <div className="flex bg-surface-container-high rounded-xl p-1 mb-5">
           <button
             onClick={() => {
@@ -166,6 +274,176 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
             Registrarme
           </button>
         </div>
+        )}
+
+        {/* ─── SIN CONTRASEÑA — código por WhatsApp ─── */}
+        {mode === "otp" && (
+          <div className="space-y-3">
+            {/* Paso 1: teléfono */}
+            {otpStep === "phone" && (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 block">
+                    Tu WhatsApp (10 dígitos)
+                  </label>
+                  <div className="relative">
+                    <Phone
+                      size={16}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 pointer-events-none"
+                    />
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                      value={otpPhone}
+                      onChange={(e) =>
+                        setOtpPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                      }
+                      placeholder="4421234567"
+                      className="w-full pl-10 pr-4 py-3 bg-surface-container-high border border-outline-variant text-on-surface rounded-xl text-base tracking-wider focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-on-surface-variant/40"
+                      onKeyDown={(e) => e.key === "Enter" && handleRequestOtp()}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <p className="text-error text-sm text-center py-1">{error}</p>
+                )}
+
+                <button
+                  onClick={handleRequestOtp}
+                  disabled={loading || otpPhone.length !== 10}
+                  className="w-full bg-primary text-on-primary py-3.5 rounded-xl font-headline font-bold disabled:opacity-50 hover:brightness-110 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <>
+                      <MessageCircle size={16} />
+                      Enviarme el código
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+
+            {/* Paso 2: código */}
+            {otpStep === "code" && (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 block">
+                    Código de 6 dígitos
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={otpCode}
+                    onChange={(e) =>
+                      setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="••••••"
+                    className="w-full px-4 py-3 bg-surface-container-high border border-outline-variant text-on-surface rounded-xl text-center text-2xl font-headline font-bold tracking-[0.4em] focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-on-surface-variant/30"
+                    onKeyDown={(e) => e.key === "Enter" && handleVerifyOtp()}
+                    autoFocus
+                  />
+                </div>
+
+                {error && (
+                  <p className="text-error text-sm text-center py-1">{error}</p>
+                )}
+
+                <button
+                  onClick={handleVerifyOtp}
+                  disabled={loading || otpCode.length !== 6}
+                  className="w-full bg-primary text-on-primary py-3.5 rounded-xl font-headline font-bold disabled:opacity-50 hover:brightness-110 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {loading ? <Loader2 size={18} className="animate-spin" /> : "Entrar"}
+                </button>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    onClick={() => {
+                      setOtpStep("phone");
+                      setOtpCode("");
+                      setError(null);
+                    }}
+                    className="flex items-center gap-1 text-xs text-on-surface-variant/70 hover:text-on-surface"
+                  >
+                    <ArrowLeft size={12} />
+                    Cambiar número
+                  </button>
+                  <button
+                    onClick={handleRequestOtp}
+                    disabled={loading}
+                    className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+                  >
+                    Reenviar código
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Paso 3: nombre (sólo clientes nuevos) */}
+            {otpStep === "name" && (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 block">
+                    Tu nombre
+                  </label>
+                  <div className="relative">
+                    <User
+                      size={16}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 pointer-events-none"
+                    />
+                    <input
+                      type="text"
+                      value={otpName}
+                      onChange={(e) => setOtpName(e.target.value)}
+                      placeholder="Juan Pérez"
+                      maxLength={60}
+                      className="w-full pl-10 pr-4 py-3 bg-surface-container-high border border-outline-variant text-on-surface rounded-xl text-base focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-on-surface-variant/40"
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveOtpName()}
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <p className="text-error text-sm text-center py-1">{error}</p>
+                )}
+
+                <button
+                  onClick={handleSaveOtpName}
+                  disabled={loading || otpName.trim().length < 2}
+                  className="w-full bg-primary text-on-primary py-3.5 rounded-xl font-headline font-bold disabled:opacity-50 hover:brightness-110 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    "Listo, seguir con mi pedido"
+                  )}
+                </button>
+              </>
+            )}
+
+            {otpStep === "phone" && (
+              <p className="text-center text-xs text-on-surface-variant/60 pt-1">
+                ¿Ya tienes cuenta con contraseña?{" "}
+                <button
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                  }}
+                  className="text-primary font-semibold hover:underline"
+                >
+                  Entrar con contraseña
+                </button>
+              </p>
+            )}
+          </div>
+        )}
 
         {/* ─── LOGIN ─── */}
         {mode === "login" && (
@@ -240,6 +518,18 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
                 className="text-primary font-semibold hover:underline"
               >
                 Regístrate aquí
+              </button>
+            </p>
+            <p className="text-center text-xs text-on-surface-variant/60 mt-2">
+              <button
+                onClick={() => {
+                  setMode("otp");
+                  setError(null);
+                }}
+                className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+              >
+                <MessageCircle size={11} />
+                Mejor mándame un código por WhatsApp
               </button>
             </p>
           </div>
@@ -359,6 +649,18 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
                 className="text-primary font-semibold hover:underline"
               >
                 Inicia sesión
+              </button>
+            </p>
+            <p className="text-center text-xs text-on-surface-variant/60 mt-2">
+              <button
+                onClick={() => {
+                  setMode("otp");
+                  setError(null);
+                }}
+                className="inline-flex items-center gap-1 text-primary font-semibold hover:underline"
+              >
+                <MessageCircle size={11} />
+                Sin contraseña: mándame un código por WhatsApp
               </button>
             </p>
           </div>

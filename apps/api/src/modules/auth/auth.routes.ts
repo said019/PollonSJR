@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { compare, hash } from "bcrypt";
-import { generateOTP, verifyOTP, AuthError } from "./otp.service";
+import { generateOTP, verifyOTP, refundOtpAttempt, AuthError } from "./otp.service";
 import {
   signCustomerToken,
   signRefreshToken,
@@ -10,10 +10,19 @@ import {
 } from "./jwt.service";
 import { authenticate } from "../../middlewares/authenticate";
 import { adminOnly } from "../../middlewares/admin-only";
-import { buildWALink } from "../notifications/whatsapp.service";
+import { buildWALink, sendWhatsApp } from "../notifications/whatsapp.service";
 
 const requestOtpSchema = z.object({ phone: z.string().regex(/^[0-9]{10}$/) });
-const verifyOtpSchema = z.object({ phone: z.string(), code: z.string().length(6) });
+// El teléfono se normaliza (quita espacios/guiones/lada) para que verificar no
+// falle sólo porque el número venga formateado.
+const verifyOtpSchema = z.object({
+  phone: z
+    .string()
+    .transform((s) => s.replace(/\D/g, "").slice(-10))
+    .refine((s) => s.length === 10, "Teléfono inválido"),
+  code: z.string().length(6),
+});
+const updateMeSchema = z.object({ name: z.string().min(2).max(60) });
 const adminLoginSchema = z.object({ email: z.string().email(), password: z.string().min(6) });
 
 // Password-based customer auth
@@ -49,12 +58,52 @@ export async function authRoutes(app: FastifyInstance) {
     try {
       const { code, customerId } = await generateOTP(app, parsed.data.phone);
 
-      const message = `Tu código de Pollón SJR es: *${code}*\n\nVálido por 5 minutos. No lo compartas con nadie.`;
-      const waLink = buildWALink(parsed.data.phone, message);
+      const isDev = process.env.NODE_ENV === "development";
+      const evolutionReady = !!(
+        process.env.EVOLUTION_API_URL &&
+        process.env.EVOLUTION_API_KEY &&
+        process.env.EVOLUTION_INSTANCE
+      );
+
+      // Enviar el código por WhatsApp. Antes se construía el mensaje pero NUNCA
+      // se enviaba: la ruta respondía "Código enviado" y el cliente se quedaba
+      // esperando un código que jamás llegaba. Se envía de forma síncrona (no
+      // por la cola) para poder avisarle al cliente si falla — el código sólo
+      // vive 5 minutos, no sirve reintentar en segundo plano.
+      if (evolutionReady) {
+        try {
+          await sendWhatsApp({
+            id: `otp-${customerId}-${Date.now()}`,
+            type: "whatsapp",
+            to: parsed.data.phone,
+            template: "otp_code",
+            params: { code },
+            attempts: 0,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (sendErr) {
+          // No filtrar el código en logs; sólo el motivo del fallo.
+          app.log.error({ err: sendErr }, "No se pudo enviar el OTP por WhatsApp");
+          // El fallo es nuestro: no le consumas un intento al cliente.
+          await refundOtpAttempt(app, parsed.data.phone);
+          return reply.status(502).send({
+            error:
+              "No pudimos enviar tu código por WhatsApp. Revisa tu número o entra con contraseña.",
+          });
+        }
+      } else if (!isDev) {
+        // Producción sin WhatsApp configurado: fallar claro en vez de dejar al
+        // cliente esperando (sendWhatsApp caería al modo log y además escribiría
+        // el código en la consola del servidor).
+        app.log.error("Se pidió un OTP pero Evolution API no está configurado");
+        return reply.status(503).send({
+          error: "El envío de códigos no está disponible en este momento.",
+        });
+      }
 
       // El código NUNCA debe loguearse en producción (cualquiera con acceso
       // a logs podría secuestrar la cuenta). Sólo en desarrollo.
-      if (process.env.NODE_ENV === "development") {
+      if (isDev) {
         app.log.info(`OTP for ${parsed.data.phone}: ${code}`);
       }
 
@@ -62,7 +111,13 @@ export async function authRoutes(app: FastifyInstance) {
         ok: true,
         message: "Código enviado por WhatsApp.",
         // Dev only — expose code for testing
-        ...(process.env.NODE_ENV === "development" && { debugCode: code, waLink }),
+        ...(isDev && {
+          debugCode: code,
+          waLink: buildWALink(
+            parsed.data.phone,
+            `Tu código de Pollón SJR es: *${code}*`
+          ),
+        }),
       };
     } catch (e) {
       if (e instanceof AuthError) {
@@ -153,13 +208,18 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ─── Client: Update name ─────────────────────────────────
 
-  app.put("/me", { preHandler: [authenticate] }, async (request) => {
+  app.put("/me", { preHandler: [authenticate] }, async (request, reply) => {
     const user = request.user as { id: string };
-    const { name } = request.body as { name: string };
+    // Validar: este endpoint lo usa el alta sin contraseña (paso "¿cómo te
+    // llamas?"). Antes, un body sin `name` reventaba con 500 en name.trim().
+    const parsed = updateMeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Escribe tu nombre (mínimo 2 letras)." });
+    }
 
     const customer = await app.prisma.customer.update({
       where: { id: user.id },
-      data: { name: name.trim() },
+      data: { name: parsed.data.name.trim() },
     });
 
     return { customer: { id: customer.id, phone: customer.phone, name: customer.name } };

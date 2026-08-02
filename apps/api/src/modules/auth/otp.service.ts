@@ -67,6 +67,24 @@ export async function generateOTP(
 }
 
 /**
+ * Devolver un intento del límite por teléfono cuando el código se generó pero
+ * NO se le pudo enviar al cliente (WhatsApp caído). Sin esto, un problema
+ * nuestro le consumía intentos y podía dejarlo sin poder pedir por una hora.
+ */
+export async function refundOtpAttempt(
+  app: FastifyInstance,
+  phone: string
+): Promise<void> {
+  try {
+    const key = `otp:rate:${phone}`;
+    const current = await app.redis.decr(key);
+    if (current <= 0) await app.redis.del(key);
+  } catch {
+    /* Redis no disponible — no bloquear la respuesta al cliente */
+  }
+}
+
+/**
  * Verify an OTP code entered by the customer.
  */
 export async function verifyOTP(
@@ -119,6 +137,11 @@ export async function verifyOTP(
 
   // Mark as used
   await app.prisma.oTP.update({ where: { id: otp.id }, data: { used: true } });
+
+  // Liberar el límite de solicitudes: ya demostró que el número es suyo.
+  // Sin esto, el contador de 3/hora seguía corriendo y un cliente que pidió
+  // reenviar un par de veces quedaba bloqueado una hora SIN PODER PEDIR.
+  await app.redis.del(`otp:rate:${phone}`).catch(() => {});
 
   // Create loyalty card if first time
   const existingCard = await app.prisma.loyaltyCard.findUnique({
