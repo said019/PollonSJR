@@ -166,17 +166,6 @@ export class LoyaltyService {
         },
       }).catch(() => {});
     }
-
-    // Devolvemos el avance ya actualizado para que el aviso de "entregado"
-    // pueda decir el número REAL de compras (antes mandaba "1 puntos" fijo).
-    return {
-      completedOrders: newCompletedOrders,
-      target: ORDERS_PER_REWARD,
-      pendingReward,
-      ordersToNext: pendingReward
-        ? 0
-        : (ORDERS_PER_REWARD - (newCompletedOrders % ORDERS_PER_REWARD)) % ORDERS_PER_REWARD,
-    };
   }
 
   /**
@@ -230,9 +219,21 @@ export class LoyaltyService {
   }
 
   /**
-   * Admin: adjust a customer's completed orders manually.
+   * Admin: corregir (restar) las compras de un cliente.
+   *
+   * Las compras SÓLO se acreditan al entregar un pedido hecho en la app —
+   * ése es el motivo por el que a un cliente le conviene dejar de pedir por
+   * WhatsApp. Si se pudieran regalar sellos a mano, el programa deja de
+   * migrar a nadie y la decisión recae en el mostrador caso por caso. Se
+   * permite restar para corregir errores reales (un pedido cancelado, etc.).
    */
   async adminAdjust(customerId: string, delta: number, reason: string) {
+    if (delta > 0) {
+      throw new Error(
+        "Las compras sólo se acumulan al entregar un pedido hecho en la app. Aquí sólo puedes corregir restando."
+      );
+    }
+
     const card = await this.app.prisma.loyaltyCard.findUnique({
       where: { customerId },
     });

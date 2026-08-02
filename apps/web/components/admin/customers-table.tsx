@@ -6,7 +6,7 @@ import { getAdminToken } from "@/lib/auth";
 import { formatCents } from "@pollon/utils";
 import {
   Search, Star, Phone, ShoppingBag, Gift, TrendingUp, X,
-  CheckCircle2, Minus, Plus, Award, Clock3, Loader2,
+  CheckCircle2, Minus, Award, Clock3, Loader2,
   Crown, Sparkles, AlertCircle, ShieldOff, Download, NotebookPen, ListChecks,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -565,11 +565,22 @@ function CustomerDetailModal({
                       </section>
                     )}
 
-                    {/* Quick adjust */}
+                    {/* Corregir compras — sólo restar.
+                        Ya no se pueden SUMAR compras a mano: los sellos se ganan
+                        únicamente pidiendo por la app. Ese es el motivo por el
+                        que a un cliente le conviene dejar WhatsApp; si se
+                        pudieran regalar sellos, el programa deja de migrar a
+                        nadie (y la decisión recaía en el mostrador, caso por
+                        caso, con el cliente presionando). Se conserva el "−1"
+                        para corregir errores reales. */}
                     <section className="rounded-2xl border border-outline-variant/10 bg-surface-container-high p-4">
-                      <h3 className="mb-3 font-headline text-sm font-bold text-tertiary">
-                        Ajustar compras manualmente
+                      <h3 className="mb-1 font-headline text-sm font-bold text-tertiary">
+                        Corregir compras
                       </h3>
+                      <p className="mb-3 text-[11px] text-on-surface-variant/70">
+                        Las compras se acumulan solas al entregar un pedido hecho
+                        en la app. Aquí sólo puedes restar para corregir un error.
+                      </p>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => adjustMut.mutate({ delta: -1, reason: "Ajuste admin: -1" })}
@@ -584,13 +595,7 @@ function CustomerDetailModal({
                           </p>
                           <p className="text-[10px] text-on-surface-variant/60">compras totales</p>
                         </div>
-                        <button
-                          onClick={() => adjustMut.mutate({ delta: 1, reason: "Ajuste admin: +1" })}
-                          disabled={adjustMut.isPending}
-                          className="flex h-10 w-10 items-center justify-center rounded-xl border border-outline-variant/30 text-on-surface-variant transition-colors hover:border-primary hover:text-primary disabled:opacity-30"
-                        >
-                          <Plus size={16} />
-                        </button>
+                        <div className="w-10" aria-hidden />
                       </div>
                     </section>
 
