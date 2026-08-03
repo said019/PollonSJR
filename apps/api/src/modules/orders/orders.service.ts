@@ -5,7 +5,7 @@ import { emitOrderStatus, emitOrderNew } from "./orders.events";
 import { isAcceptingOrders, getStoreConfig } from "../admin/store-config.service";
 import { validateCoupon } from "./coupon.service";
 import { enqueueNotification } from "../notifications/queue";
-import { mexicoStartOfTomorrow } from "../../utils/timezone";
+import { mexicoStartOfTomorrow, mexicoTodayISO } from "../../utils/timezone";
 import { DeliveryService } from "../delivery/delivery.service";
 
 export class OrdersService {
@@ -298,9 +298,26 @@ export class OrdersService {
       initialStatus = "PENDING_PAYMENT";
     }
 
+    // Número de pedido por fecha: DDMMNNN (día+mes+secuencia diaria).
+    // El INSERT ... ON CONFLICT DO UPDATE es atómico en Postgres: dos
+    // pedidos simultáneos del mismo día obtienen seq distintos, sin
+    // choques. Reinicia cada día (el día/mes van en el número, así que
+    // jamás se repite entre días del mismo año).
+    const todayKey = mexicoTodayISO(); // "YYYY-MM-DD" zona México
+    const counterRows = await this.app.prisma.$queryRaw<
+      { seq: number }[]
+    >`INSERT INTO "OrderCounter" ("dateKey", "seq") VALUES (${todayKey}, 1)
+      ON CONFLICT ("dateKey") DO UPDATE SET "seq" = "OrderCounter"."seq" + 1
+      RETURNING "seq"`;
+    const dailySeq = Number(counterRows[0]?.seq ?? 1);
+    const [, mmStr, ddStr] = todayKey.split("-");
+    const orderNumber =
+      Number(ddStr) * 100000 + Number(mmStr) * 1000 + dailySeq;
+
     const order = await this.app.prisma.order.create({
       data: {
         customerId,
+        orderNumber,
         status: initialStatus,
         type: data.type,
         paymentMethod,

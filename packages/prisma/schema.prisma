@@ -134,7 +134,11 @@ enum Category {
 
 model Order {
   id               String           @id @default(cuid())
-  orderNumber      Int              @unique @default(autoincrement())
+  // Número visible por fecha: DDMMNNN (día+mes+secuencia diaria de 3
+  // dígitos, reinicia cada día). Se genera en código vía OrderCounter.
+  // No es @unique ni autoincrement: nunca se busca por él (solo se
+  // muestra); las búsquedas son por id.
+  orderNumber      Int
   customer         Customer         @relation(fields: [customerId], references: [id])
   customerId       String
   status           OrderStatus      @default(PENDING_PAYMENT)
@@ -485,4 +489,12 @@ model AppleUpdate {
   updatedAt    DateTime @default(now())
 
   @@index([serialNumber])
+}
+
+// Contador atómico del número de pedido por día (zona México).
+// dateKey = "YYYY-MM-DD". El INSERT ... ON CONFLICT DO UPDATE seq+1
+// garantiza que dos pedidos simultáneos nunca reciban el mismo número.
+model OrderCounter {
+  dateKey String @id
+  seq     Int    @default(0)
 }
