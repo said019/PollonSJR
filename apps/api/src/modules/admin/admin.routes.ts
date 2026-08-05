@@ -218,8 +218,10 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // Customers
   app.get("/customers", async (request) => {
-    const { page, search } = request.query as { page?: string; search?: string };
-    return adminService.getCustomers(Number(page) || 1, 20, search);
+    const { page, search, segment, sort } = request.query as {
+      page?: string; search?: string; segment?: string; sort?: string;
+    };
+    return adminService.getCustomers(Number(page) || 1, 20, search, segment, sort);
   });
 
   app.get<{ Params: { id: string } }>("/customers/:id/orders", async (request) => {

@@ -59,46 +59,53 @@ export class AdminService {
     return updateHrs(this.app, data);
   }
 
-  async getCustomers(page: number = 1, limit: number = 20, search?: string) {
-    const skip = (page - 1) * limit;
-
+  async getCustomers(
+    page: number = 1,
+    limit: number = 20,
+    search?: string,
+    segment?: string,
+    sort?: string
+  ) {
     const where = search?.trim()
       ? {
           OR: [
             { name: { contains: search.trim(), mode: "insensitive" as const } },
             { phone: { contains: search.trim() } },
+            { email: { contains: search.trim(), mode: "insensitive" as const } },
           ],
         }
       : {};
 
-    const [customers, total] = await this.app.prisma.$transaction([
-      this.app.prisma.customer.findMany({
-        where,
-        include: {
-          loyalty: {
-            select: {
-              completedOrders: true,
-              pendingReward: true,
-              freeProductsEarned: true,
-              freeProductsUsed: true,
-            },
-          },
-          orders: {
-            select: {
-              total: true,
-              status: true,
-              rating: true,
-              createdAt: true,
-            },
-            orderBy: { createdAt: "desc" },
+    // Se traen TODOS los clientes que cumplen la búsqueda para poder segmentar,
+    // ordenar y contar sobre el total — antes el filtro por segmento se aplicaba
+    // en el navegador sobre la página visible, así que "VIP" sólo encontraba los
+    // VIP de esos 20 y parecía que no había ninguno.
+    const customers = await this.app.prisma.customer.findMany({
+      where,
+      include: {
+        loyalty: {
+          select: {
+            completedOrders: true,
+            pendingReward: true,
+            freeProductsEarned: true,
+            freeProductsUsed: true,
           },
         },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      this.app.prisma.customer.count({ where }),
-    ]);
+        _count: { select: { savedAddresses: true } },
+        orders: {
+          select: {
+            total: true,
+            status: true,
+            rating: true,
+            createdAt: true,
+            type: true,
+            paymentMethod: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
     const now = Date.now();
     const mapped = customers.map((c) => {
@@ -129,28 +136,109 @@ export class AdminService {
         segment = "REGULAR";
       }
 
+      // Métricas de negocio que antes no se calculaban
+      const cancelled = c.orders.filter((o) => o.status === "CANCELLED").length;
+      const avgTicket =
+        delivered.length > 0 ? Math.round(totalSpent / delivered.length) : 0;
+
+      // Cómo suele pedir: a domicilio o a recoger, y con qué paga
+      const cuenta = <T extends string>(vals: T[]) => {
+        const m = new Map<T, number>();
+        vals.forEach((v) => m.set(v, (m.get(v) ?? 0) + 1));
+        let top: T | null = null;
+        let max = 0;
+        m.forEach((n, v) => { if (n > max) { max = n; top = v; } });
+        return top;
+      };
+      const preferredType = delivered.length ? cuenta(delivered.map((o) => o.type as string)) : null;
+      const preferredPayment = delivered.length
+        ? cuenta(delivered.map((o) => o.paymentMethod as string))
+        : null;
+
       return {
         id: c.id,
         name: c.name,
         phone: c.phone,
+        email: c.email ?? null,
+        // Con el acceso sin contraseña importa saber quién todavía usa una
+        hasPassword: !!c.password,
         createdAt: c.createdAt.toISOString(),
         internalNote: c.internalNote ?? null,
         blocked: c.blocked,
         blockedReason: c.blockedReason ?? null,
         totalOrders: c.orders.length,
         deliveredOrders: delivered.length,
+        cancelledOrders: cancelled,
         totalSpent,
+        avgTicket,
         avgRating,
         ratingCount: rated.length,
         loyaltyProgress: c.loyalty?.completedOrders ?? 0,
         pendingReward: c.loyalty?.pendingReward ?? false,
         freeProductsEarned: c.loyalty?.freeProductsEarned ?? 0,
+        freeProductsUsed: c.loyalty?.freeProductsUsed ?? 0,
+        savedAddresses: c._count.savedAddresses,
+        preferredType,
+        preferredPayment,
         lastOrderAt: lastOrderAt?.toISOString() ?? null,
+        daysSinceLast,
         segment,
       };
     });
 
-    return { customers: mapped, total, page, pages: Math.ceil(total / limit) };
+    // Conteo por segmento sobre el TOTAL (para mostrarlo en los filtros)
+    const segmentCounts = mapped.reduce(
+      (acc, c) => {
+        acc[c.segment] = (acc[c.segment] ?? 0) + 1;
+        if (c.blocked) acc.BLOCKED += 1;
+        return acc;
+      },
+      { VIP: 0, REGULAR: 0, NEW: 0, AT_RISK: 0, INACTIVE: 0, BLOCKED: 0 } as Record<string, number>
+    );
+
+    // Filtro por segmento en el SERVIDOR (antes era sobre la página visible)
+    let lista = mapped;
+    if (segment && segment !== "ALL") {
+      lista = segment === "BLOCKED"
+        ? mapped.filter((c) => c.blocked)
+        : mapped.filter((c) => c.segment === segment);
+    }
+
+    // Orden configurable
+    const orden: Record<string, (a: typeof lista[0], b: typeof lista[0]) => number> = {
+      recientes: (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt),
+      gasto: (a, b) => b.totalSpent - a.totalSpent,
+      pedidos: (a, b) => b.deliveredOrders - a.deliveredOrders,
+      ultimo: (a, b) => (a.daysSinceLast ?? 9e9) - (b.daysSinceLast ?? 9e9),
+      lealtad: (a, b) => b.loyaltyProgress - a.loyaltyProgress,
+    };
+    lista = [...lista].sort(orden[sort ?? "recientes"] ?? orden.recientes);
+
+    // Resumen del negocio (sobre la lista filtrada)
+    const conCompra = lista.filter((c) => c.deliveredOrders > 0);
+    const resumen = {
+      clientes: lista.length,
+      conCompra: conCompra.length,
+      recurrentes: lista.filter((c) => c.deliveredOrders >= 2).length,
+      ingresos: lista.reduce((s, c) => s + c.totalSpent, 0),
+      ticketPromedio: conCompra.length
+        ? Math.round(conCompra.reduce((s, c) => s + c.totalSpent, 0) /
+            conCompra.reduce((s, c) => s + c.deliveredOrders, 0))
+        : 0,
+      premiosPendientes: lista.filter((c) => c.pendingReward).length,
+    };
+
+    const total = lista.length;
+    const skip = (page - 1) * limit;
+
+    return {
+      customers: lista.slice(skip, skip + limit),
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      segmentCounts,
+      resumen,
+    };
   }
 
   async getCustomerOrders(customerId: string, limit = 20) {

@@ -18,6 +18,8 @@ type Segment = "VIP" | "REGULAR" | "NEW" | "AT_RISK" | "INACTIVE";
 interface CustomerRow {
   id: string;
   phone: string;
+  email: string | null;
+  hasPassword: boolean;
   name: string | null;
   createdAt: string;
   internalNote: string | null;
@@ -25,15 +27,41 @@ interface CustomerRow {
   blockedReason: string | null;
   totalOrders: number;
   deliveredOrders: number;
+  cancelledOrders: number;
   totalSpent: number;
+  avgTicket: number;
   avgRating: number | null;
   ratingCount: number;
   loyaltyProgress: number;
   pendingReward: boolean;
   freeProductsEarned: number;
+  freeProductsUsed: number;
+  savedAddresses: number;
+  preferredType: string | null;
+  preferredPayment: string | null;
   lastOrderAt: string | null;
+  daysSinceLast: number | null;
   segment: Segment;
 }
+
+interface Resumen {
+  clientes: number;
+  conCompra: number;
+  recurrentes: number;
+  ingresos: number;
+  ticketPromedio: number;
+  premiosPendientes: number;
+}
+
+type Orden = "recientes" | "gasto" | "pedidos" | "ultimo" | "lealtad";
+
+const ORDEN_LABEL: Record<Orden, string> = {
+  recientes: "Más nuevos",
+  gasto: "Los que más gastan",
+  pedidos: "Los que más piden",
+  ultimo: "Pidieron más reciente",
+  lealtad: "Más cerca del premio",
+};
 
 interface CustomerOrder {
   id: string;
@@ -107,11 +135,24 @@ export function CustomersTable() {
   // mutations (e.g. blocking a customer).
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const [orden, setOrden] = useState<Orden>("recientes");
+
+  // El filtro y el orden se resuelven en el SERVIDOR sobre todos los clientes.
+  // Antes se filtraba en el navegador sobre los 20 de la página, así que
+  // "VIP" sólo encontraba los VIP de esa página y parecía que no había.
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-customers", page, search],
+    queryKey: ["admin-customers", page, search, segmentFilter, orden],
     queryFn: () =>
-      api.get<{ customers: CustomerRow[]; total: number; pages: number }>(
-        `/api/admin/customers?page=${page}&limit=20&search=${encodeURIComponent(search)}`,
+      api.get<{
+        customers: CustomerRow[];
+        total: number;
+        pages: number;
+        segmentCounts: Record<string, number>;
+        resumen: Resumen;
+      }>(
+        `/api/admin/customers?page=${page}&limit=20&search=${encodeURIComponent(
+          search
+        )}&segment=${segmentFilter}&sort=${orden}`,
         token || undefined
       ),
   });
@@ -123,11 +164,8 @@ export function CustomersTable() {
   const setSelectedCustomer = (c: CustomerRow | null) =>
     setSelectedId(c?.id ?? null);
 
-  const filteredCustomers = (data?.customers ?? []).filter((c) => {
-    if (segmentFilter === "ALL") return true;
-    if (segmentFilter === "BLOCKED") return c.blocked;
-    return c.segment === segmentFilter;
-  });
+  // Ya viene filtrada y ordenada del servidor.
+  const filteredCustomers = data?.customers ?? [];
 
   const handleExport = async () => {
     const t = getAdminTokenForExport();
@@ -181,8 +219,38 @@ export function CustomersTable() {
         </div>
       </div>
 
-      {/* Segment filter */}
-      <div className="mb-5 flex flex-wrap gap-2">
+      {/* Resumen del negocio — antes no había ninguna cifra global */}
+      {data?.resumen && (
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <Metrica etiqueta="Clientes" valor={String(data.resumen.clientes)} />
+          <Metrica
+            etiqueta="Ya compraron"
+            valor={String(data.resumen.conCompra)}
+            pie={
+              data.resumen.clientes
+                ? `${Math.round((data.resumen.conCompra / data.resumen.clientes) * 100)}% del total`
+                : undefined
+            }
+          />
+          <Metrica
+            etiqueta="Recurrentes"
+            valor={String(data.resumen.recurrentes)}
+            pie="2+ pedidos"
+            destacado={data.resumen.recurrentes > 0}
+          />
+          <Metrica etiqueta="Ingresos" valor={formatCents(data.resumen.ingresos)} />
+          <Metrica etiqueta="Ticket prom." valor={formatCents(data.resumen.ticketPromedio)} />
+          <Metrica
+            etiqueta="Premios listos"
+            valor={String(data.resumen.premiosPendientes)}
+            pie="por entregar"
+            destacado={data.resumen.premiosPendientes > 0}
+          />
+        </div>
+      )}
+
+      {/* Filtros por segmento (con cuántos hay) + orden */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         {(["ALL", "VIP", "REGULAR", "NEW", "AT_RISK", "INACTIVE", "BLOCKED"] as const).map(
           (s) => {
             const active = segmentFilter === s;
@@ -192,21 +260,50 @@ export function CustomersTable() {
                 : s === "BLOCKED"
                 ? "Bloqueados"
                 : SEGMENT_META[s as Segment].label;
+            const n =
+              s === "ALL"
+                ? Object.entries(data?.segmentCounts ?? {})
+                    .filter(([k]) => k !== "BLOCKED")
+                    .reduce((a, [, v]) => a + v, 0)
+                : data?.segmentCounts?.[s];
             return (
               <button
                 key={s}
-                onClick={() => setSegmentFilter(s)}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
+                onClick={() => {
+                  setSegmentFilter(s);
+                  setPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
                   active
                     ? "border-primary bg-primary text-on-primary"
                     : "border-outline-variant/40 bg-surface-container text-on-surface-variant hover:border-primary/40"
                 }`}
               >
                 {label}
+                {typeof n === "number" && (
+                  <span className={active ? "opacity-80" : "text-on-surface-variant/60"}>
+                    {n}
+                  </span>
+                )}
               </button>
             );
           }
         )}
+
+        <select
+          value={orden}
+          onChange={(e) => {
+            setOrden(e.target.value as Orden);
+            setPage(1);
+          }}
+          className="ml-auto rounded-lg border border-outline-variant/40 bg-surface-container px-3 py-1.5 text-xs font-semibold text-on-surface-variant"
+        >
+          {(Object.keys(ORDEN_LABEL) as Orden[]).map((o) => (
+            <option key={o} value={o}>
+              Ordenar: {ORDEN_LABEL[o]}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="space-y-3">
@@ -307,9 +404,30 @@ function CustomerCard({ customer: c, onClick }: { customer: CustomerRow; onClick
               </span>
             )}
           </div>
-          <span className="flex items-center gap-1 text-sm text-on-surface-variant">
-            <Phone size={12} /> {c.phone}
-          </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-on-surface-variant">
+            <span className="flex items-center gap-1">
+              <Phone size={12} /> {c.phone}
+            </span>
+            {c.email && (
+              <span className="truncate text-xs text-on-surface-variant/70">{c.email}</span>
+            )}
+            {c.preferredType && (
+              <span className="text-xs text-on-surface-variant/70">
+                {c.preferredType === "DELIVERY" ? "🛵 Domicilio" : "🏪 Recoge"}
+                {c.preferredPayment &&
+                  ` · ${
+                    { CASH: "efectivo", CARD: "tarjeta", TRANSFER: "transferencia" }[
+                      c.preferredPayment
+                    ] ?? c.preferredPayment
+                  }`}
+              </span>
+            )}
+            {c.savedAddresses > 0 && (
+              <span className="text-xs text-on-surface-variant/70">
+                📍 {c.savedAddresses} dir.
+              </span>
+            )}
+          </div>
         </div>
 
         {c.avgRating !== null && (
@@ -327,26 +445,60 @@ function CustomerCard({ customer: c, onClick }: { customer: CustomerRow; onClick
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-px border-t border-outline-variant/10 bg-outline-variant/10">
+      <div className="grid grid-cols-3 gap-px border-t border-outline-variant/10 bg-outline-variant/10 sm:grid-cols-6">
         <StatCell icon={<ShoppingBag size={13} />} label="Pedidos" value={String(c.deliveredOrders)} />
         <StatCell icon={<TrendingUp size={13} />} label="Gastado" value={formatCents(c.totalSpent)} />
+        <StatCell label="Ticket prom." value={c.avgTicket ? formatCents(c.avgTicket) : "—"} />
         <StatCell icon={<Star size={13} />} label="Lealtad" value={`${c.loyaltyProgress % 5}/5`} />
         <StatCell
-          label="Último pedido"
-          value={c.lastOrderAt ? new Date(c.lastOrderAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" }) : "—"}
+          label="Sin pedir"
+          value={c.daysSinceLast == null ? "nunca" : c.daysSinceLast === 0 ? "hoy" : `${c.daysSinceLast} d`}
+          alerta={c.daysSinceLast != null && c.daysSinceLast > 30}
+        />
+        <StatCell
+          label="Cancelados"
+          value={String(c.cancelledOrders)}
+          alerta={c.cancelledOrders > 0}
         />
       </div>
     </div>
   );
 }
 
-function StatCell({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
+function StatCell({
+  icon, label, value, alerta,
+}: { icon?: React.ReactNode; label: string; value: string; alerta?: boolean }) {
   return (
     <div className="bg-surface-container-high px-3 py-2.5 text-center">
       <p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/60">
         {icon}{label}
       </p>
-      <p className="mt-0.5 text-sm font-bold text-on-surface">{value}</p>
+      <p className={`mt-0.5 text-sm font-bold ${alerta ? "text-amber-500" : "text-on-surface"}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/** Tarjeta del resumen de negocio (arriba de la lista). */
+function Metrica({
+  etiqueta, valor, pie, destacado,
+}: { etiqueta: string; valor: string; pie?: string; destacado?: boolean }) {
+  return (
+    <div
+      className={`rounded-xl border p-3 ${
+        destacado
+          ? "border-primary/30 bg-primary/5"
+          : "border-outline-variant/20 bg-surface-container-high"
+      }`}
+    >
+      <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/60">
+        {etiqueta}
+      </p>
+      <p className={`mt-0.5 font-headline text-xl font-extrabold ${destacado ? "text-primary" : "text-on-surface"}`}>
+        {valor}
+      </p>
+      {pie && <p className="text-[10px] text-on-surface-variant/60">{pie}</p>}
     </div>
   );
 }
