@@ -7,6 +7,7 @@ import { validateCoupon } from "./coupon.service";
 import { enqueueNotification } from "../notifications/queue";
 import { mexicoStartOfTomorrow, mexicoTodayISO } from "../../utils/timezone";
 import { DeliveryService } from "../delivery/delivery.service";
+import { buildTransferProofDeliveryUrl } from "./transfer-proof.storage";
 
 export class OrdersService {
   constructor(private app: FastifyInstance) {}
@@ -555,7 +556,10 @@ export class OrdersService {
         order.paymentMethod === "TRANSFER"
           ? await buildTransferInfo(this.app, order.orderNumber, order.total)
           : null,
-      transferProofUrl: order.transferProofUrl ?? null,
+      transferProofUrl: buildTransferProofDeliveryUrl(
+        order.id,
+        order.transferProofUrl
+      ),
       transferProofUploadedAt: order.transferProofUploadedAt?.toISOString() ?? null,
       total: order.total,
       subtotal: order.subtotal,
@@ -803,7 +807,7 @@ export class OrdersService {
       customerPhone: o.customer.phone,
       itemCount: o._count.items,
       createdAt: o.createdAt.toISOString(),
-      transferProofUrl: o.transferProofUrl ?? null,
+      transferProofUrl: buildTransferProofDeliveryUrl(o.id, o.transferProofUrl),
       estimatedMinutes: o.estimatedMinutes ?? null,
       isScheduled: o.isScheduled,
       scheduledFor: o.scheduledFor ? o.scheduledFor.toISOString() : null,

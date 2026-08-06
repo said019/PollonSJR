@@ -25,5 +25,35 @@ export async function registerUploads(app: FastifyInstance) {
     decorateReply: false,
     cacheControl: true,
     maxAge: "7d",
+    // Los comprobantes sólo salen por la ruta HMAC de Orders. Esto protege
+    // también referencias legacy cuando se usa `local` como rollback. Se
+    // canonicaliza para que encoding, //, ./, ../ o backslashes no evadan el
+    // bloqueo. Una ruta malformada o con encoding excesivamente anidado se
+    // rechaza en vez de intentar adivinar a qué archivo apuntaba.
+    allowedPath: (pathName) => {
+      let decoded = pathName;
+      let stabilized = false;
+      for (let depth = 0; depth < 8; depth += 1) {
+        try {
+          const next = decodeURIComponent(decoded);
+          if (next === decoded) {
+            stabilized = true;
+            break;
+          }
+          decoded = next;
+        } catch {
+          return false;
+        }
+      }
+      if (!stabilized) return false;
+
+      const normalized = path.posix.normalize(
+        `/${decoded.replaceAll("\\", "/")}`
+      );
+      return (
+        normalized !== "/transfer-proofs" &&
+        !normalized.startsWith("/transfer-proofs/")
+      );
+    },
   });
 }
