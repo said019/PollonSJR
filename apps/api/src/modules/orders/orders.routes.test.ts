@@ -3,6 +3,7 @@ import test from "node:test";
 import Fastify from "fastify";
 import {
   associateTransferProofReference,
+  createImmediateConcurrencyLimiter,
   ordersRoutes,
 } from "./orders.routes";
 import {
@@ -22,6 +23,27 @@ const snapshot = {
 };
 
 type OrderDelegate = Parameters<typeof associateTransferProofReference>[0];
+
+test("proof limiter rejects bursts without queuing and releases idempotently", () => {
+  const limiter = createImmediateConcurrencyLimiter(2);
+  const releaseFirst = limiter.tryAcquire();
+  const releaseSecond = limiter.tryAcquire();
+  assert.ok(releaseFirst);
+  assert.ok(releaseSecond);
+  assert.equal(limiter.activeCount(), 2);
+  assert.equal(limiter.tryAcquire(), null);
+
+  releaseFirst();
+  releaseFirst();
+  assert.equal(limiter.activeCount(), 1);
+  const releaseThird = limiter.tryAcquire();
+  assert.ok(releaseThird);
+  assert.equal(limiter.activeCount(), 2);
+
+  releaseSecond();
+  releaseThird();
+  assert.equal(limiter.activeCount(), 0);
+});
 
 test("proof association uses an optimistic conditional update", async () => {
   let updateArgs: any;

@@ -166,6 +166,10 @@ Despliegue seguro:
 Los archivos reemplazados se conservan durante el canario. Su eliminación debe
 hacerse después mediante un proceso separado con período de gracia.
 
+Para acotar picos de RAM, cada réplica procesa como máximo una subida y dos
+descargas de comprobantes simultáneas. El exceso recibe `429` con
+`Retry-After: 2` y no se mantiene en una cola dentro del proceso.
+
 Las referencias legacy `/uploads/...` sólo son legibles si sus bytes todavía
 existen en el disco local. Cambiar a Drive no recupera archivos que un redeploy
 anterior ya hubiera eliminado; esas referencias deben conservarse y buscarse en

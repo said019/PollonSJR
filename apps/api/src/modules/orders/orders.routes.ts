@@ -109,6 +109,32 @@ type TransferProofAssociationResult =
   | { kind: "conflict" }
   | { kind: "unknown"; error: unknown };
 
+export function createImmediateConcurrencyLimiter(maxConcurrent: number) {
+  if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1) {
+    throw new Error("maxConcurrent must be a positive integer");
+  }
+  let active = 0;
+  return {
+    tryAcquire(): (() => void) | null {
+      if (active >= maxConcurrent) return null;
+      active += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        active -= 1;
+      };
+    },
+    activeCount: () => active,
+  };
+}
+
+// El volumen observado es ~1 comprobante/semana. Estos topes fail-fast
+// mantienen los picos por debajo del margen de RAM sin formar una cola que
+// retenga bodies o buffers en el proceso.
+const proofUploadLimiter = createImmediateConcurrencyLimiter(1);
+const proofDownloadLimiter = createImmediateConcurrencyLimiter(2);
+
 // El upload remoto sucede antes de tocar DB. Esta escritura optimista impide
 // que una subida lenta gane contra cancelación, confirmación u otro reemplazo.
 // Ante un commit ambiguo nunca borra el objeto: primero intenta reconciliarlo.
@@ -218,6 +244,28 @@ export async function ordersRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: "Enlace inválido o expirado" });
     }
 
+    const release = proofDownloadLimiter.tryAcquire();
+    if (!release) {
+      return reply
+        .header("Retry-After", "2")
+        .status(429)
+        .send({ error: "Hay demasiadas consultas de comprobantes. Reintenta." });
+    }
+    let operationComplete = false;
+    let responseComplete = false;
+    let released = false;
+    const releaseIfComplete = () => {
+      if (released || !operationComplete || !responseComplete) return;
+      released = true;
+      release();
+    };
+    const markResponseComplete = () => {
+      responseComplete = true;
+      releaseIfComplete();
+    };
+    reply.raw.once("finish", markResponseComplete);
+    reply.raw.once("close", markResponseComplete);
+
     try {
       const proof = await loadTransferProof(reference);
       return reply
@@ -242,6 +290,9 @@ export async function ordersRoutes(app: FastifyInstance) {
             ? "El comprobante no está disponible temporalmente"
             : "No se pudo leer el comprobante",
       });
+    } finally {
+      operationComplete = true;
+      releaseIfComplete();
     }
   });
 
@@ -426,6 +477,16 @@ export async function ordersRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: "Este pedido ya no admite comprobante" });
       }
 
+      const release = proofUploadLimiter.tryAcquire();
+      if (!release) {
+        return reply
+          .header("Retry-After", "2")
+          .status(429)
+          .send({ error: "Ya se está procesando otro comprobante. Reintenta." });
+      }
+
+      try {
+
       const file = await request.file().catch(() => null);
       if (!file) return reply.status(400).send({ error: "Archivo requerido" });
 
@@ -537,6 +598,9 @@ export async function ordersRoutes(app: FastifyInstance) {
       }
 
       return { ok: true, transferProofUrl: deliveryUrl };
+      } finally {
+        release();
+      }
     }
   );
 }
