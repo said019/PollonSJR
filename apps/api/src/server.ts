@@ -29,10 +29,15 @@ import { getStoreConfig, isAcceptingOrders } from "./modules/admin/store-config.
 import { startNotificationWorker } from "./modules/notifications/queue";
 import { sendWhatsApp } from "./modules/notifications/whatsapp.service";
 import { evolutionRoutes, evolutionWebhookRoutes } from "./modules/notifications/evolution.routes";
+import { validateTransferProofStorageConfiguration } from "./modules/orders/transfer-proof.storage";
 
 const PORT = Number(process.env.PORT) || 3001;
 
 async function bootstrap() {
+  // Evita arrancar producción apuntando por accidente al disco efímero o con
+  // URLs de comprobantes firmadas por un secreto débil/incompleto.
+  validateTransferProofStorageConfiguration();
+
   const httpServer = createServer();
 
   const app = Fastify({

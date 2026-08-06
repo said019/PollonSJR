@@ -26,6 +26,10 @@ jobs:
         run: npx tsc --noEmit
         working-directory: apps/api
 
+      - name: Tests (API)
+        run: npm run test
+        working-directory: apps/api
+
       - name: Build (Web)
         run: npx next build
         working-directory: apps/web

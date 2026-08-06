@@ -134,3 +134,39 @@ vercel --prod
 ```
 
 El CI/CD está configurado en `.github/workflows/ci.yml` para deploy automático al hacer push a `main`.
+
+### Comprobantes privados en Google Drive
+
+La API puede conservar los comprobantes de transferencia en una carpeta
+privada de Google Drive mediante OAuth del propietario. La cuenta de servicio
+de Google Wallet no se reutiliza para estas subidas.
+
+```env
+TRANSFER_PROOFS_STORAGE=local
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=
+GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN=
+GOOGLE_DRIVE_TRANSFER_PROOFS_FOLDER_ID=
+TRANSFER_PROOFS_URL_SIGNING_SECRET=
+```
+
+Despliegue seguro:
+
+1. Mantener `TRANSFER_PROOFS_STORAGE=local` mientras se cargan las variables.
+2. Confirmar que la carpeta sólo pertenece al propietario y a identidades
+   explícitamente autorizadas; nunca habilitar acceso público por enlace.
+3. Ejecutar un preflight: renovar OAuth, subir un archivo centinela, comprobar
+   carpeta, tamaño y MD5, descargarlo y eliminarlo.
+4. Cambiar a `TRANSFER_PROOFS_STORAGE=drive` y probar JPG/PDF en un pedido de
+   canario. Un fallo de Drive devuelve `503`; no cae al disco efímero.
+5. Para rollback, volver sólo a `local` conservando este código. Las referencias
+   Drive siguen siendo legibles y no se requiere migración de base de datos;
+   no se debe volver al código anterior después del primer `gdrive:`.
+
+Los archivos reemplazados se conservan durante el canario. Su eliminación debe
+hacerse después mediante un proceso separado con período de gracia.
+
+Las referencias legacy `/uploads/...` sólo son legibles si sus bytes todavía
+existen en el disco local. Cambiar a Drive no recupera archivos que un redeploy
+anterior ya hubiera eliminado; esas referencias deben conservarse y buscarse en
+respaldos externos o solicitarse nuevamente al cliente.

@@ -1,12 +1,18 @@
 import { FastifyInstance } from "fastify";
-import path from "path";
-import fs from "fs";
 import crypto from "crypto";
+import type { Order, Prisma, PrismaClient } from "@prisma/client";
 import { OrdersService } from "./orders.service";
 import { createOrderSchema } from "./orders.schema";
 import { authenticate } from "../../middlewares/authenticate";
 import { validateCoupon, CouponError } from "./coupon.service";
-import { uploadsDir } from "../../plugins/uploads";
+import {
+  buildTransferProofDeliveryUrl,
+  loadTransferProof,
+  storeTransferProof,
+  TransferProofNotFoundError,
+  TransferProofStorageUnavailableError,
+  verifyTransferProofDeliverySignature,
+} from "./transfer-proof.storage";
 
 // Validación del comprobante por el CONTENIDO real (magic bytes), no por el
 // `Content-Type` que declara el navegador. Esto hace la subida a la vez:
@@ -75,6 +81,90 @@ function sniffProofKind(buf: Buffer): ProofKind | null {
   return null;
 }
 
+const transferProofOrderInclude = {
+  customer: true,
+  _count: { select: { items: true } },
+} satisfies Prisma.OrderInclude;
+
+type TransferProofAssociatedOrder = Prisma.OrderGetPayload<{
+  include: typeof transferProofOrderInclude;
+}>;
+
+type TransferProofOrderSnapshot = Pick<
+  Order,
+  | "id"
+  | "customerId"
+  | "paymentMethod"
+  | "status"
+  | "transferProofUrl"
+  | "updatedAt"
+>;
+
+type TransferProofAssociationResult =
+  | {
+      kind: "associated";
+      order: TransferProofAssociatedOrder | null;
+      warning?: unknown;
+    }
+  | { kind: "conflict" }
+  | { kind: "unknown"; error: unknown };
+
+// El upload remoto sucede antes de tocar DB. Esta escritura optimista impide
+// que una subida lenta gane contra cancelación, confirmación u otro reemplazo.
+// Ante un commit ambiguo nunca borra el objeto: primero intenta reconciliarlo.
+export async function associateTransferProofReference(
+  orderDelegate: Pick<PrismaClient["order"], "updateMany" | "findUnique">,
+  snapshot: TransferProofOrderSnapshot,
+  storedReference: string,
+  uploadedAt = new Date()
+): Promise<TransferProofAssociationResult> {
+  try {
+    const result = await orderDelegate.updateMany({
+      where: {
+        id: snapshot.id,
+        customerId: snapshot.customerId,
+        paymentMethod: "TRANSFER",
+        status: "PENDING_PAYMENT",
+        transferProofUrl: snapshot.transferProofUrl,
+        updatedAt: snapshot.updatedAt,
+      },
+      data: {
+        transferProofUrl: storedReference,
+        transferProofUploadedAt: uploadedAt,
+      },
+    });
+    if (result.count !== 1) return { kind: "conflict" };
+
+    try {
+      const order = await orderDelegate.findUnique({
+        where: { id: snapshot.id },
+        include: transferProofOrderInclude,
+      });
+      return { kind: "associated", order };
+    } catch (warning) {
+      // updateMany ya confirmó exactamente una fila. La notificación puede
+      // recuperarse mediante polling aunque este read secundario falle.
+      return { kind: "associated", order: null, warning };
+    }
+  } catch (updateError) {
+    try {
+      const order = await orderDelegate.findUnique({
+        where: { id: snapshot.id },
+        include: transferProofOrderInclude,
+      });
+      if (order?.transferProofUrl === storedReference) {
+        return { kind: "associated", order, warning: updateError };
+      }
+      return { kind: "unknown", error: updateError };
+    } catch (probeError) {
+      return {
+        kind: "unknown",
+        error: { updateError, probeError },
+      };
+    }
+  }
+}
+
 export async function ordersRoutes(app: FastifyInstance) {
   const service = new OrdersService(app);
 
@@ -99,6 +189,59 @@ export async function ordersRoutes(app: FastifyInstance) {
         return reply.status(400).send({ valid: false, error: err.message });
       }
       throw err;
+    }
+  });
+
+  // Acceso privado compatible con <img>/<a>: la API entrega una URL HMAC
+  // corta y este endpoint valida la firma contra la referencia vigente en DB.
+  // El ID de Drive nunca se expone al navegador y el archivo sigue privado.
+  app.get<{
+    Params: { id: string; filename: string };
+    Querystring: { expires?: string; signature?: string };
+  }>("/:id/transfer-proof/:filename", async (request, reply) => {
+    const order = await app.prisma.order.findUnique({
+      where: { id: request.params.id },
+      select: { transferProofUrl: true },
+    });
+    const reference = order?.transferProofUrl;
+    if (!reference) {
+      return reply.status(404).send({ error: "Comprobante no encontrado" });
+    }
+
+    const signatureIsValid = verifyTransferProofDeliverySignature({
+      orderId: request.params.id,
+      reference,
+      expires: request.query.expires,
+      signature: request.query.signature,
+    });
+    if (!signatureIsValid) {
+      return reply.status(403).send({ error: "Enlace inválido o expirado" });
+    }
+
+    try {
+      const proof = await loadTransferProof(reference);
+      return reply
+        .header("Cache-Control", "private, no-store")
+        .header("X-Content-Type-Options", "nosniff")
+        .header(
+          "Content-Disposition",
+          `inline; filename="comprobante${proof.extension}"`
+        )
+        .type(proof.mimeType)
+        .send(proof.buffer);
+    } catch (error) {
+      if (error instanceof TransferProofNotFoundError) {
+        return reply.status(404).send({ error: "Comprobante no encontrado" });
+      }
+      request.log.error({ err: error }, "Error leyendo comprobante");
+      const status =
+        error instanceof TransferProofStorageUnavailableError ? 503 : 500;
+      return reply.status(status).send({
+        error:
+          status === 503
+            ? "El comprobante no está disponible temporalmente"
+            : "No se pudo leer el comprobante",
+      });
     }
   });
 
@@ -312,58 +455,88 @@ export async function ordersRoutes(app: FastifyInstance) {
 
       const ext = EXT_BY_KIND[kind];
       const fileName = `${orderId}-${crypto.randomBytes(6).toString("hex")}${ext}`;
-      const destDir = path.join(uploadsDir, "transfer-proofs");
-      const destPath = path.join(destDir, fileName);
-
+      let storedReference: string;
       try {
-        await fs.promises.writeFile(destPath, buffer);
-      } catch (err: any) {
+        storedReference = await storeTransferProof({ buffer, fileName, kind });
+      } catch (err) {
         request.log.error({ err }, "Error guardando comprobante");
+        const status =
+          err instanceof TransferProofStorageUnavailableError ? 503 : 500;
+        return reply.status(status).send({
+          error:
+            status === 503
+              ? "El almacenamiento de comprobantes no está disponible temporalmente"
+              : "No se pudo guardar el comprobante",
+        });
+      }
+
+      const association = await associateTransferProofReference(
+        app.prisma.order,
+        order,
+        storedReference
+      );
+      if (association.kind === "conflict") {
+        // Conservamos el objeto como huérfano recuperable durante el canario.
+        // Un barrido con período de gracia lo podrá retirar con certeza.
+        request.log.warn(
+          { orderId },
+          "El pedido cambió durante la subida del comprobante"
+        );
+        return reply.status(409).send({
+          error:
+            "El pedido cambió mientras se subía el archivo. Actualiza e intenta de nuevo.",
+        });
+      }
+      if (association.kind === "unknown") {
+        // Un error de commit puede significar que Postgres sí confirmó. Nunca
+        // eliminamos aquí: retener un posible huérfano es preferible a dejar
+        // una referencia confirmada apuntando a un objeto borrado.
+        request.log.error(
+          { err: association.error, orderId },
+          "Resultado ambiguo asociando comprobante al pedido"
+        );
         return reply.status(500).send({ error: "No se pudo guardar el comprobante" });
       }
-
-      // Remove previous proof file if any (avoid stale orphans on Railway volume)
-      if (order.transferProofUrl) {
-        const prev = path.basename(order.transferProofUrl);
-        const prevPath = path.join(destDir, prev);
-        if (prev && prevPath.startsWith(destDir)) {
-          fs.promises.unlink(prevPath).catch(() => undefined);
-        }
+      if (association.warning) {
+        request.log.warn(
+          { err: association.warning, orderId },
+          "Comprobante asociado; la reconciliación secundaria tuvo un error"
+        );
       }
 
-      const publicUrl = `/uploads/transfer-proofs/${fileName}`;
-      const updated = await app.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          transferProofUrl: publicUrl,
-          transferProofUploadedAt: new Date(),
-        },
-        include: {
-          customer: true,
-          _count: { select: { items: true } },
-        },
-      });
+      // No retiramos automáticamente el comprobante reemplazado. Durante el
+      // canario se prioriza retención/recuperación sobre unos pocos MB de Drive;
+      // una limpieza con período de gracia se habilitará por separado.
+
+      const updated = association.order;
+      const activeReference = updated?.transferProofUrl ?? storedReference;
+      const deliveryUrl = buildTransferProofDeliveryUrl(
+        orderId,
+        activeReference
+      );
 
       // Notify admin (re-uses order:new toast/sound and refreshes the kanban).
-      const { emitOrderNew, emitOrderStatus } = await import("./orders.events");
-      emitOrderNew(app, {
-        id: updated.id,
-        orderNumber: updated.orderNumber,
-        status: updated.status,
-        type: updated.type,
-        total: updated.total,
-        customerName: updated.customer.name,
-        customerPhone: updated.customer.phone,
-        itemCount: updated._count.items,
-        createdAt: updated.createdAt.toISOString(),
-        paymentMethod: updated.paymentMethod,
-      } as any);
-      // Also reach the customer's tab — useful if they have it open in another window.
-      emitOrderStatus(app, updated.customerId, updated.id, updated.status, {
-        orderNumber: updated.orderNumber,
-      });
+      if (updated) {
+        const { emitOrderNew, emitOrderStatus } = await import("./orders.events");
+        emitOrderNew(app, {
+          id: updated.id,
+          orderNumber: updated.orderNumber,
+          status: updated.status,
+          type: updated.type,
+          total: updated.total,
+          customerName: updated.customer.name,
+          customerPhone: updated.customer.phone,
+          itemCount: updated._count.items,
+          createdAt: updated.createdAt.toISOString(),
+          paymentMethod: updated.paymentMethod,
+        } as any);
+        // También alcanza la pestaña del cliente si está abierta en otro lado.
+        emitOrderStatus(app, updated.customerId, updated.id, updated.status, {
+          orderNumber: updated.orderNumber,
+        });
+      }
 
-      return { ok: true, transferProofUrl: publicUrl };
+      return { ok: true, transferProofUrl: deliveryUrl };
     }
   );
 }
