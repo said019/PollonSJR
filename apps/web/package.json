@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "postbuild": "node scripts/prepare-standalone.mjs",
+    "start": "node .next/standalone/apps/web/server.js",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },

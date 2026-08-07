@@ -28,6 +28,7 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  output: "standalone",
   transpilePackages: ["@pollon/types", "@pollon/utils"],
   images: {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
