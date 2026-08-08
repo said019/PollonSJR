@@ -4,6 +4,7 @@ import { PromotionsService } from "./promotions.service";
 import { RecommendationsService } from "./recommendations.service";
 import { categoryEnum } from "./menu.schema";
 import { verifyCustomerToken } from "../auth/jwt.service";
+import { APP_COMBO_PROMOTION_KEY } from "../orders/app-exclusive-promotion";
 
 export async function menuRoutes(app: FastifyInstance) {
   const service = new MenuService(app);
@@ -13,6 +14,35 @@ export async function menuRoutes(app: FastifyInstance) {
   app.get("/", async () => service.getAll());
 
   app.get("/promotions/today", async () => promotions.getToday());
+
+  app.get("/promotions/app-combo-familiar/status", async (request) => {
+    const authHeader = request.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return { authenticated: false, eligible: true, redeemedAt: null };
+    }
+
+    try {
+      const payload = verifyCustomerToken(authHeader.slice(7));
+      const customerId = payload.sub as string;
+      const redemption =
+        await app.prisma.customerPromotionRedemption.findUnique({
+          where: {
+            customerId_promotionKey: {
+              customerId,
+              promotionKey: APP_COMBO_PROMOTION_KEY,
+            },
+          },
+          select: { redeemedAt: true },
+        });
+      return {
+        authenticated: true,
+        eligible: !redemption,
+        redeemedAt: redemption?.redeemedAt.toISOString() ?? null,
+      };
+    } catch {
+      return { authenticated: false, eligible: true, redeemedAt: null };
+    }
+  });
 
   /**
    * Recomendaciones. Auth opcional:

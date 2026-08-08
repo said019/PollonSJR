@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { MercadoPagoConfig, Preference, Payment as MpPayment } from "mercadopago";
 import type { CardPaymentPayload, CreateCardPaymentResponse } from "@pollon/types";
 import { getRejectMessage } from "../../utils/payment-messages";
+import { APP_COMBO_PROMOTION_KEY } from "../orders/app-exclusive-promotion";
 // getRejectMessage is used for frontend-facing reject codes (exported from utils)
 
 export class PaymentsService {
@@ -704,6 +705,12 @@ export class PaymentsService {
           note: `Pago rechazado: ${paymentData.status_detail}`,
         },
       }),
+      this.app.prisma.customerPromotionRedemption.deleteMany({
+        where: {
+          orderId: order.id,
+          promotionKey: APP_COMBO_PROMOTION_KEY,
+        },
+      }),
     ]);
 
     const { emitOrderStatus, emitOrderRejected } = await import(
@@ -780,6 +787,12 @@ export class PaymentsService {
           from: order.status,
           to: "CANCELLED",
           note: "Reembolso total procesado por admin",
+        },
+      }),
+      this.app.prisma.customerPromotionRedemption.deleteMany({
+        where: {
+          orderId: order.id,
+          promotionKey: APP_COMBO_PROMOTION_KEY,
         },
       }),
     ]);

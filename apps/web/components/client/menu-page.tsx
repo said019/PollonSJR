@@ -20,6 +20,7 @@ import { MenuFilters, type MenuFilterTag } from "./menu-filters";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useModalState } from "@/store/modal-state";
 import { useCartFeedback } from "@/store/cart-feedback";
+import { useProductModal } from "@/store/product-modal";
 import { CartAddToast } from "./cart-add-toast";
 import { GlobalProductModal } from "./global-product-modal";
 import { useRouter } from "next/navigation";
@@ -99,6 +100,16 @@ interface TodayPromotion {
   dayOfWeek: number | null;
   price: number;
 }
+
+interface AppComboPromotionStatus {
+  authenticated: boolean;
+  eligible: boolean;
+  redeemedAt: string | null;
+}
+
+const APP_COMBO_PROMOTION_MODIFIER = "Promo app: dedos de pollo GRATIS";
+const APP_COMBO_PROMOTION_DESCRIPTION =
+  " Exclusivo en la app: orden de dedos de pollo GRATIS con salsa BBQ Hot, Mango o Tamarindo. Una promoción por cliente.";
 
 const PROMO_DAY_BADGE: Record<number, string> = {
   0: "DOM",
@@ -306,12 +317,19 @@ function PromotionsSection({ onAdded }: { onAdded: () => void }) {
 /*  Featured hero — shows the top product of the menu             */
 /* ────────────────────────────────────────────────────────────── */
 function FeaturedHero({ product }: { product: ProductPublic }) {
+  const openProductModal = useProductModal((s) => s.open);
+  const imageUrl = resolveProductImage(product.name, product.imageUrl);
+  const hasAppExclusivePromo = product.modifiers?.some(
+    (modifier) =>
+      modifier.name.toLowerCase() === "promo app: dedos de pollo gratis"
+  );
+
   return (
     <section className="relative mb-10 overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-surface-container-high to-surface-container">
       <div className="grid gap-0 md:grid-cols-2">
         <div className="relative aspect-[16/10] overflow-hidden md:aspect-auto md:min-h-[340px]">
           <Image
-            src={resolveProductImage(product.name, product.imageUrl) ?? "/menu/hero-spread.jpeg"}
+            src={imageUrl ?? "/menu/hero-spread.jpeg"}
             alt={product.name}
             fill
             sizes="(max-width: 768px) 100vw, 50vw"
@@ -320,7 +338,7 @@ function FeaturedHero({ product }: { product: ProductPublic }) {
           />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface/80 via-surface/10 to-transparent md:bg-gradient-to-r" />
           <span className="absolute left-4 top-4 rounded-full bg-secondary px-3 py-1 font-headline text-[10px] font-extrabold uppercase tracking-[0.18em] text-on-secondary shadow-lg">
-            ★ Favorito del chef
+            {hasAppExclusivePromo ? "Exclusiva en la app" : "★ Favorito del chef"}
           </span>
         </div>
 
@@ -336,6 +354,16 @@ function FeaturedHero({ product }: { product: ProductPublic }) {
               {product.description}
             </p>
           )}
+          {hasAppExclusivePromo && (
+            <div className="mt-5 rounded-2xl border border-secondary/35 bg-secondary/10 px-4 py-3">
+              <p className="font-headline text-lg font-extrabold uppercase leading-tight text-secondary">
+                Dedos de pollo GRATIS
+              </p>
+              <p className="mt-1 text-xs font-semibold text-on-surface-variant">
+                1 vez por cliente · Elige BBQ Hot, Mango o Tamarindo.
+              </p>
+            </div>
+          )}
           <div className="mt-6 flex items-baseline gap-3">
             <span className="font-headline text-3xl font-extrabold tracking-tight text-primary md:text-4xl">
               {formatCents(product.price)}
@@ -344,6 +372,22 @@ function FeaturedHero({ product }: { product: ProductPublic }) {
               MXN
             </span>
           </div>
+          {hasAppExclusivePromo && (
+            <button
+              type="button"
+              onClick={() =>
+                openProductModal({
+                  product,
+                  imageUrl,
+                })
+              }
+              disabled={product.soldOut}
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-headline text-xs font-extrabold uppercase tracking-wider text-on-primary shadow-lg shadow-primary/25 transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            >
+              <Plus size={16} />
+              Elegir salsa y agregar
+            </button>
+          )}
         </div>
       </div>
     </section>
@@ -591,7 +635,7 @@ export function MenuPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<MenuFilterTag[]>([]);
-  const { itemCount, total } = useCart();
+  const { items, addItem, removeItem, itemCount, total } = useCart();
   const { favoriteIds } = useFavorites();
   const productModalOpen = useModalState((s) => s.productModalCount > 0);
   const sectionRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -607,13 +651,74 @@ export function MenuPage() {
     queryFn: () => api.get<MenuByCategory[]>("/api/menu"),
   });
 
+  const { data: appPromoStatus } = useQuery({
+    queryKey: ["app-combo-familiar-promo-status", authToken],
+    queryFn: () =>
+      api.get<AppComboPromotionStatus>(
+        "/api/menu/promotions/app-combo-familiar/status",
+        authToken || undefined
+      ),
+    enabled: !!authToken,
+    staleTime: 30_000,
+  });
+
+  // Quien ya redimió la promo sigue pudiendo pedir el Combo Familiar, pero
+  // ya no ve ni puede seleccionar el regalo en el menú autenticado.
+  const customerMenu = useMemo(() => {
+    if (!menu || appPromoStatus?.eligible !== false) return menu;
+    return menu.map((category) => ({
+      ...category,
+      products: category.products.map((product) =>
+        product.name === "Combo Familiar"
+          ? {
+              ...product,
+              description:
+                product.description?.replace(
+                  APP_COMBO_PROMOTION_DESCRIPTION,
+                  ""
+                ) ?? null,
+              modifiers: product.modifiers?.filter(
+                (modifier) =>
+                  modifier.name !== APP_COMBO_PROMOTION_MODIFIER
+              ),
+            }
+          : product
+      ),
+    }));
+  }, [menu, appPromoStatus?.eligible]);
+
+  // Si inició sesión después de armar el carrito y ya había usado la promo,
+  // conserva el combo pero retira el regalo antes de llegar al checkout.
+  useEffect(() => {
+    if (appPromoStatus?.eligible !== false) return;
+    const promoItems = items.filter((item) =>
+      item.modifiers?.some(
+        (modifier) => modifier.name === APP_COMBO_PROMOTION_MODIFIER
+      )
+    );
+    if (promoItems.length === 0) return;
+
+    for (const item of promoItems) {
+      removeItem(item.productId, item.variant, item.modifiers);
+      addItem({
+        ...item,
+        modifiers: item.modifiers?.filter(
+          (modifier) => modifier.name !== APP_COMBO_PROMOTION_MODIFIER
+        ),
+      });
+    }
+    useCartFeedback
+      .getState()
+      .notify("Promo ya utilizada · conservamos tu combo sin el regalo");
+  }, [appPromoStatus?.eligible, items, addItem, removeItem]);
+
   // Filtered menu based on search query and tag filters
   const filteredMenu = useMemo(() => {
-    if (!menu) return [];
+    if (!customerMenu) return [];
     const q = searchQuery.trim().toLowerCase();
     const hasFilters = activeFilters.length > 0;
-    if (!q && !hasFilters) return menu;
-    return menu
+    if (!q && !hasFilters) return customerMenu;
+    return customerMenu
       .map((cat) => ({
         ...cat,
         products: cat.products.filter((p) => {
@@ -632,39 +737,39 @@ export function MenuPage() {
         }),
       }))
       .filter((cat) => cat.products.length > 0);
-  }, [menu, searchQuery, activeFilters]);
+  }, [customerMenu, searchQuery, activeFilters]);
 
   // Available tags across the entire menu — for filter chips
   const availableTags = useMemo(() => {
-    if (!menu) return [] as MenuFilterTag[];
+    if (!customerMenu) return [] as MenuFilterTag[];
     const set = new Set<string>();
-    for (const cat of menu) {
+    for (const cat of customerMenu) {
       for (const p of cat.products) {
         const tags = (p as any).tags as string[] | undefined;
         tags?.forEach((t) => set.add(t));
       }
     }
     return Array.from(set) as MenuFilterTag[];
-  }, [menu]);
+  }, [customerMenu]);
 
   // Favorite products — flat list for the section
   const favoriteProducts = useMemo(() => {
-    if (!menu || favoriteIds.length === 0) return [];
-    const all = menu.flatMap((c) => c.products);
+    if (!customerMenu || favoriteIds.length === 0) return [];
+    const all = customerMenu.flatMap((c) => c.products);
     return favoriteIds
       .map((id) => all.find((p) => p.id === id))
       .filter((p): p is NonNullable<typeof p> => !!p && !p.soldOut);
-  }, [menu, favoriteIds]);
+  }, [customerMenu, favoriteIds]);
 
   // Pick a featured product — first combo, fallback first product
   const featured = useMemo(() => {
-    if (!menu) return null;
-    const combos = menu.find((c) => c.category === "COMBOS");
+    if (!customerMenu) return null;
+    const combos = customerMenu.find((c) => c.category === "COMBOS");
     const pick = combos?.products.find((p) => p.name === "Combo Familiar")
       ?? combos?.products[0]
-      ?? menu[0]?.products[0];
+      ?? customerMenu[0]?.products[0];
     return pick ?? null;
-  }, [menu]);
+  }, [customerMenu]);
 
   // Scroll-spy: update active category as user scrolls
   useEffect(() => {
@@ -778,9 +883,9 @@ export function MenuPage() {
           <div className="px-4 pt-0">
             <SearchBar value={searchQuery} onChange={setSearchQuery} />
           </div>
-          {menu && menu.length > 0 && (
+          {customerMenu && customerMenu.length > 0 && (
             <CategoryChips
-              categories={menu}
+              categories={customerMenu}
               active={activeCategory}
               onJump={handleJumpToCategory}
             />
@@ -802,7 +907,7 @@ export function MenuPage() {
         ) : (
           <div className="flex gap-8">
             <CategorySidebar
-              categories={menu ?? []}
+              categories={customerMenu ?? []}
               active={activeCategory}
               onJump={handleJumpToCategory}
             />
@@ -937,6 +1042,7 @@ export function MenuPage() {
         }}
         onSuccess={() => {
           setAuthed(true);
+          setAuthToken(getToken());
           setAuthOpen(false);
           // Reanuda el flujo de pago donde lo dejó.
           if (pendingCheckout) setCartOpen(true);

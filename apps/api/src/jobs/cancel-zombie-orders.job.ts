@@ -1,4 +1,5 @@
 import { FastifyInstance } from "fastify";
+import { APP_COMBO_PROMOTION_KEY } from "../modules/orders/app-exclusive-promotion";
 
 /**
  * Cancela pedidos en PENDING_PAYMENT por más de 90 minutos.
@@ -29,6 +30,12 @@ export async function cancelZombieOrders(app: FastifyInstance) {
           from: "PENDING_PAYMENT",
           to: "CANCELLED",
           note: "Cancelado automáticamente: pago no completado en 90 min",
+        },
+      }),
+      app.prisma.customerPromotionRedemption.deleteMany({
+        where: {
+          orderId: order.id,
+          promotionKey: APP_COMBO_PROMOTION_KEY,
         },
       }),
     ]);

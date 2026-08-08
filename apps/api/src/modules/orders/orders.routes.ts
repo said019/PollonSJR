@@ -13,6 +13,7 @@ import {
   TransferProofStorageUnavailableError,
   verifyTransferProofDeliverySignature,
 } from "./transfer-proof.storage";
+import { releaseAppComboPromotion } from "./app-exclusive-promotion";
 
 // Validación del comprobante por el CONTENIDO real (magic bytes), no por el
 // `Content-Type` que declara el navegador. Esto hace la subida a la vez:
@@ -427,6 +428,8 @@ export async function ordersRoutes(app: FastifyInstance) {
           error: "El pedido ya cambió de estado. Recarga la página.",
         });
       }
+
+      await releaseAppComboPromotion(app, orderId);
 
       await app.prisma.orderStatusLog.create({
         data: {

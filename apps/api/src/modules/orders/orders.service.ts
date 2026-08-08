@@ -8,6 +8,14 @@ import { enqueueNotification } from "../notifications/queue";
 import { mexicoStartOfTomorrow, mexicoTodayISO } from "../../utils/timezone";
 import { DeliveryService } from "../delivery/delivery.service";
 import { buildTransferProofDeliveryUrl } from "./transfer-proof.storage";
+import {
+  APP_COMBO_PROMOTION_KEY,
+  releaseAppComboPromotion,
+  validateAppComboPromotion,
+} from "./app-exclusive-promotion";
+
+const APP_COMBO_PROMOTION_USED_MESSAGE =
+  "Esta promoción ya fue utilizada por tu cuenta. Puedes pedir el Combo Familiar sin el regalo.";
 
 export class OrdersService {
   constructor(private app: FastifyInstance) {}
@@ -148,6 +156,26 @@ export class OrdersService {
     const soldOut = products.filter((p) => p.soldOut);
     if (soldOut.length > 0) {
       throw new Error(`Productos agotados: ${soldOut.map((p) => p.name).join(", ")}`);
+    }
+
+    const usesAppComboPromotion = validateAppComboPromotion(
+      data.items,
+      products
+    );
+    if (usesAppComboPromotion) {
+      const existingRedemption =
+        await this.app.prisma.customerPromotionRedemption.findUnique({
+          where: {
+            customerId_promotionKey: {
+              customerId,
+              promotionKey: APP_COMBO_PROMOTION_KEY,
+            },
+          },
+          select: { id: true },
+        });
+      if (existingRedemption) {
+        throw new Error(APP_COMBO_PROMOTION_USED_MESSAGE);
+      }
     }
 
     // 3. Calculate regular items + subtotal (including modifiers)
@@ -340,6 +368,14 @@ export class OrdersService {
         scheduledFor: isScheduled && data.scheduledFor ? new Date(data.scheduledFor) : null,
         depositAmount,
         remainingAmount,
+        promotionRedemptions: usesAppComboPromotion
+          ? {
+              create: {
+                customerId,
+                promotionKey: APP_COMBO_PROMOTION_KEY,
+              },
+            }
+          : undefined,
         items: {
           create: orderItems.map((item: any) => ({
             productId: item.productId as string,
@@ -364,6 +400,19 @@ export class OrdersService {
         },
       },
       include: { customer: true, _count: { select: { items: true } } },
+    }).catch((error: unknown) => {
+      // La verificación previa da un mensaje amable; el índice único sigue
+      // siendo la autoridad ante dos pedidos simultáneos del mismo cliente.
+      if (
+        usesAppComboPromotion &&
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        throw new Error(APP_COMBO_PROMOTION_USED_MESSAGE);
+      }
+      throw error;
     });
 
     // 7. Atomically increment coupon usage (check limit inside transaction)
@@ -648,6 +697,10 @@ export class OrdersService {
 
     if (updated.count === 0) {
       throw new Error("El pedido fue modificado por otro usuario. Recarga e intenta de nuevo.");
+    }
+
+    if (newStatus === "CANCELLED") {
+      await releaseAppComboPromotion(this.app, orderId);
     }
 
     await this.app.prisma.orderStatusLog.create({

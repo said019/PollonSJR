@@ -418,6 +418,11 @@ function MenuHighlights({
   comboFamiliar: ProductPublic | null;
   todaysPromo: PublicPromotion | null;
 }) {
+  const hasAppExclusivePromo = comboFamiliar?.modifiers?.some(
+    (modifier) =>
+      modifier.name.toLowerCase() === "promo app: dedos de pollo gratis"
+  );
+
   return (
     <section className="py-24 px-6 lg:px-12 max-w-7xl mx-auto relative">
       {/* Section header */}
@@ -466,7 +471,7 @@ function MenuHighlights({
           )}
           <div className="absolute bottom-0 left-0 p-7 md:p-9">
             <span className="bg-primary/20 text-primary border border-primary/30 backdrop-blur-sm px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full mb-3 inline-block">
-              Mejor Precio
+              {hasAppExclusivePromo ? "Exclusiva en la app" : "Mejor Precio"}
             </span>
             <h3 className="text-3xl md:text-4xl font-headline font-extrabold text-white uppercase tracking-tighter leading-none mb-2">
               {comboFamiliar?.name ?? "El Combo Familiar"}
@@ -475,6 +480,11 @@ function MenuHighlights({
               {comboFamiliar?.description ??
                 "Pollo frito con bisquets y complementos para toda la familia."}
             </p>
+            {hasAppExclusivePromo && (
+              <p className="mt-3 inline-flex rounded-xl bg-secondary px-3 py-2 font-headline text-sm font-extrabold uppercase text-on-secondary shadow-lg">
+                + Dedos de pollo GRATIS · 1 por cliente
+              </p>
+            )}
           </div>
         </Link>
 
