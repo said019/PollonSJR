@@ -10,7 +10,11 @@ import {
 } from "./jwt.service";
 import { authenticate } from "../../middlewares/authenticate";
 import { adminOnly } from "../../middlewares/admin-only";
-import { buildWALink, sendWhatsApp } from "../notifications/whatsapp.service";
+import {
+  buildWALink,
+  sendWhatsApp,
+  evolutionEstaConectado,
+} from "../notifications/whatsapp.service";
 
 const requestOtpSchema = z.object({ phone: z.string().regex(/^[0-9]{10}$/) });
 // El teléfono se normaliza (quita espacios/guiones/lada) para que verificar no
@@ -71,6 +75,23 @@ export async function authRoutes(app: FastifyInstance) {
       // por la cola) para poder avisarle al cliente si falla — el código sólo
       // vive 5 minutos, no sirve reintentar en segundo plano.
       if (evolutionReady) {
+        // Evolution responde 2xx aunque el teléfono esté desvinculado: el
+        // mensaje se queda en su cola y nunca llega. Se comprueba la conexión
+        // ANTES de prometerle al cliente que le mandamos el código.
+        const wa = await evolutionEstaConectado();
+        if (!wa.conectado) {
+          app.log.error(
+            { estado: wa.estado },
+            "OTP no enviado: la sesión de WhatsApp no está conectada"
+          );
+          await refundOtpAttempt(app, parsed.data.phone);
+          return reply.status(503).send({
+            error:
+              "Ahorita no podemos enviarte el código por WhatsApp. Escríbenos y te tomamos el pedido, o entra con tu contraseña si ya tienes cuenta.",
+            code: "whatsapp_desconectado",
+          });
+        }
+
         try {
           await sendWhatsApp({
             id: `otp-${customerId}-${Date.now()}`,

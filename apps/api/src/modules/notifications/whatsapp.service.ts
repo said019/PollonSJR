@@ -28,6 +28,48 @@ export async function sendWhatsAppMVP(job: NotificationJob): Promise<void> {
 }
 
 /**
+ * ¿La sesión de WhatsApp está realmente conectada?
+ *
+ * Hace falta porque Evolution acepta un envío (responde 2xx) aunque el
+ * teléfono esté desvinculado: el mensaje se queda en su cola y NUNCA se
+ * entrega. Sin esta comprobación le decíamos al cliente "te mandamos el
+ * código" y se quedaba esperando para siempre.
+ *
+ * Devuelve el estado ("open" = conectado) o null si no se pudo consultar.
+ */
+export async function evolutionEstaConectado(): Promise<{
+  configurado: boolean;
+  conectado: boolean;
+  estado: string;
+}> {
+  const apiUrl = process.env.EVOLUTION_API_URL;
+  const apiKey = process.env.EVOLUTION_API_KEY;
+  const instance = process.env.EVOLUTION_INSTANCE;
+
+  if (!apiUrl || !apiKey || !instance) {
+    return { configurado: false, conectado: false, estado: "not_configured" };
+  }
+
+  try {
+    const res = await fetch(`${apiUrl.replace(/\/$/, "")}/instance/fetchInstances`, {
+      headers: { apikey: apiKey },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { configurado: true, conectado: false, estado: `http_${res.status}` };
+
+    const data = (await res.json()) as any;
+    const lista = Array.isArray(data) ? data : [];
+    const inst = lista.find((i: any) => i.name === instance || i.instance?.instanceName === instance);
+    if (!inst) return { configurado: true, conectado: false, estado: "not_created" };
+
+    const estado = inst.connectionStatus ?? inst.instance?.state ?? "unknown";
+    return { configurado: true, conectado: estado === "open", estado };
+  } catch {
+    return { configurado: true, conectado: false, estado: "error" };
+  }
+}
+
+/**
  * Evolution API sender.
  * Env vars required:
  *   EVOLUTION_API_URL     → base URL (e.g. https://evolution.yourdomain.com)

@@ -31,6 +31,9 @@ interface AuthModalProps {
 type Mode = "otp" | "login" | "register";
 type OtpStep = "phone" | "code" | "name";
 
+// Número del negocio, para que un cliente atorado pueda escribirnos.
+const STORE_WA = (process.env.NEXT_PUBLIC_STORE_PHONE || "").replace(/\D/g, "");
+
 export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<Mode>("otp");
   const [loading, setLoading] = useState(false);
@@ -381,6 +384,38 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
                   >
                     Reenviar código
                   </button>
+                </div>
+
+                {/* Salida de emergencia: si el código no llega, el cliente no
+                    se queda atrapado — puede escribirnos o usar contraseña. */}
+                <div className="mt-3 rounded-xl border border-outline-variant/25 bg-surface-container-high p-3 text-center">
+                  <p className="text-[11px] text-on-surface-variant">
+                    ¿No te llegó el código?
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                    {STORE_WA && (
+                      <a
+                        href={`https://wa.me/52${STORE_WA}?text=${encodeURIComponent(
+                          "Hola, no me llegó el código para entrar a la app 🙏"
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs font-bold text-green-500 hover:underline"
+                      >
+                        <MessageCircle size={12} />
+                        Escríbenos por WhatsApp
+                      </a>
+                    )}
+                    <button
+                      onClick={() => {
+                        setMode("login");
+                        setError(null);
+                      }}
+                      className="text-xs font-semibold text-primary hover:underline"
+                    >
+                      Entrar con contraseña
+                    </button>
+                  </div>
                 </div>
               </>
             )}
