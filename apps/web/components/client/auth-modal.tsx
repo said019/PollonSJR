@@ -34,12 +34,25 @@ type OtpStep = "phone" | "code" | "name";
 // Número del negocio, para que un cliente atorado pueda escribirnos.
 const STORE_WA = (process.env.NEXT_PUBLIC_STORE_PHONE || "").replace(/\D/g, "");
 
-// Muchos clientes de San Juan del Río usan WhatsApp de EE. UU.; sin esto
-// quedaban fuera de la app porque sólo se aceptaban 10 dígitos mexicanos.
+// Muchos clientes de San Juan del Río usan WhatsApp de otro país (sobre todo
+// de EE. UU.); sin esto quedaban fuera de la app porque sólo se aceptaban 10
+// dígitos mexicanos. La opción "Otro país" cubre cualquier caso que falte.
 const PAISES = [
-  { cc: "52", bandera: "🇲🇽", nombre: "México", largo: 10, ejemplo: "4421234567" },
-  { cc: "1", bandera: "🇺🇸", nombre: "EE. UU.", largo: 10, ejemplo: "6165946000" },
+  { cc: "52", bandera: "🇲🇽", nombre: "México", ejemplo: "4421234567" },
+  { cc: "1", bandera: "🇺🇸", nombre: "EE. UU. / Canadá", ejemplo: "6165946000" },
+  { cc: "34", bandera: "🇪🇸", nombre: "España", ejemplo: "612345678" },
+  { cc: "57", bandera: "🇨🇴", nombre: "Colombia", ejemplo: "3001234567" },
+  { cc: "502", bandera: "🇬🇹", nombre: "Guatemala", ejemplo: "51234567" },
+  { cc: "503", bandera: "🇸🇻", nombre: "El Salvador", ejemplo: "71234567" },
+  { cc: "504", bandera: "🇭🇳", nombre: "Honduras", ejemplo: "91234567" },
+  { cc: "54", bandera: "🇦🇷", nombre: "Argentina", ejemplo: "1123456789" },
+  { cc: "56", bandera: "🇨🇱", nombre: "Chile", ejemplo: "912345678" },
+  { cc: "51", bandera: "🇵🇪", nombre: "Perú", ejemplo: "912345678" },
+  { cc: "58", bandera: "🇻🇪", nombre: "Venezuela", ejemplo: "4121234567" },
 ];
+
+const OTRO = "otro"; // el cliente escribe su clave a mano
+const MX_LARGO = 10; // México: sabemos que son exactamente 10
 
 export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<Mode>("otp");
@@ -51,6 +64,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
   const { requestOTP, verifyOTP, saveName } = useAuth();
   const [otpStep, setOtpStep] = useState<OtpStep>("phone");
   const [otpCc, setOtpCc] = useState("52");
+  const [otpCcOtro, setOtpCcOtro] = useState(""); // clave escrita a mano
   const [otpPhone, setOtpPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpName, setOtpName] = useState("");
@@ -74,6 +88,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setRegPassword("");
     setOtpStep("phone");
     setOtpCc("52");
+    setOtpCcOtro("");
     setOtpPhone("");
     setOtpCode("");
     setOtpName("");
@@ -83,17 +98,33 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
 
   /* ── Flujo sin contraseña: teléfono → código por WhatsApp → nombre ── */
 
-  const pais = PAISES.find((p) => p.cc === otpCc) ?? PAISES[0];
+  const esOtro = otpCc === OTRO;
+  const pais = PAISES.find((p) => p.cc === otpCc);
+  // Clave real que se manda al servidor.
+  const ccReal = esOtro ? otpCcOtro.replace(/\D/g, "") : otpCc;
+  const esMx = ccReal === "52";
+  // México lo conocemos (10 exactos); del resto sólo pedimos que sea razonable.
+  const telefonoOk = esMx
+    ? otpPhone.length === MX_LARGO
+    : otpPhone.length >= 6 && otpPhone.length <= 14 && ccReal.length >= 1;
 
   const handleRequestOtp = async () => {
-    if (otpPhone.length !== pais.largo) {
-      setError(`Escribe tu WhatsApp a ${pais.largo} dígitos`);
+    if (esOtro && !ccReal) {
+      setError("Escribe la clave de tu país (ejemplo: 1, 34, 57)");
+      return;
+    }
+    if (!telefonoOk) {
+      setError(
+        esMx
+          ? "Escribe tu WhatsApp a 10 dígitos"
+          : "Escribe tu número de WhatsApp sin la clave del país"
+      );
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      await requestOTP(otpPhone, otpCc);
+      await requestOTP(otpPhone, ccReal);
       setOtpStep("code");
     } catch (err: any) {
       setError(err.message || "No pudimos enviar el código. Intenta de nuevo.");
@@ -110,7 +141,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
     setLoading(true);
     setError(null);
     try {
-      const { isNewCustomer } = await verifyOTP(otpPhone, otpCode, otpCc);
+      const { isNewCustomer } = await verifyOTP(otpPhone, otpCode, ccReal);
       if (isNewCustomer) {
         // Cliente nuevo: sólo falta su nombre (para el pedido y el saludo).
         setOtpStep("name");
@@ -243,7 +274,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
               {otpStep === "phone"
                 ? "Sin contraseñas: te mandamos un código por WhatsApp."
                 : otpStep === "code"
-                  ? `Te lo enviamos por WhatsApp al +${otpCc} ${otpPhone}`
+                  ? `Te lo enviamos por WhatsApp al +${ccReal} ${otpPhone}`
                   : "Es lo último que necesitamos para tu pedido."}
             </p>
           )}
@@ -298,27 +329,51 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
               <>
                 <div>
                   <label className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-1.5 block">
-                    Tu WhatsApp ({pais.largo} dígitos)
+                    Tu WhatsApp
                   </label>
+
+                  {/* Selector de país: sin esto, quien tiene WhatsApp de otro
+                      país no recibía su código y quedaba fuera de la app.
+                      "Otro país" cubre cualquiera que no esté en la lista. */}
+                  <select
+                    value={otpCc}
+                    onChange={(e) => {
+                      setOtpCc(e.target.value);
+                      setOtpPhone("");
+                      setError(null);
+                    }}
+                    aria-label="País de tu WhatsApp"
+                    className="mb-2 w-full rounded-xl border border-outline-variant bg-surface-container-high px-3 py-2.5 text-sm text-on-surface focus:ring-2 focus:ring-primary"
+                  >
+                    {PAISES.map((p) => (
+                      <option key={p.cc} value={p.cc}>
+                        {p.bandera} {p.nombre} (+{p.cc})
+                      </option>
+                    ))}
+                    <option value={OTRO}>🌎 Otro país…</option>
+                  </select>
+
                   <div className="flex gap-2">
-                    {/* Clave de país: sin esto, quien tiene WhatsApp de EE. UU.
-                        no podía recibir su código y quedaba fuera de la app. */}
-                    <select
-                      value={otpCc}
-                      onChange={(e) => {
-                        setOtpCc(e.target.value);
-                        setOtpPhone("");
-                        setError(null);
-                      }}
-                      aria-label="País de tu WhatsApp"
-                      className="flex-shrink-0 rounded-xl border border-outline-variant bg-surface-container-high px-2 py-3 text-base text-on-surface focus:ring-2 focus:ring-primary"
-                    >
-                      {PAISES.map((p) => (
-                        <option key={p.cc} value={p.cc}>
-                          {p.bandera} +{p.cc}
-                        </option>
-                      ))}
-                    </select>
+                    {esOtro ? (
+                      <div className="flex flex-shrink-0 items-center rounded-xl border border-outline-variant bg-surface-container-high pl-3">
+                        <span className="text-base text-on-surface-variant">+</span>
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          value={otpCcOtro}
+                          onChange={(e) =>
+                            setOtpCcOtro(e.target.value.replace(/\D/g, "").slice(0, 4))
+                          }
+                          placeholder="clave"
+                          aria-label="Clave de tu país"
+                          className="w-16 bg-transparent py-3 pl-1 pr-2 text-base text-on-surface outline-none placeholder:text-on-surface-variant/40"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-shrink-0 items-center rounded-xl border border-outline-variant bg-surface-container-high px-3 text-base text-on-surface-variant">
+                        +{otpCc}
+                      </div>
+                    )}
                     <div className="relative flex-1">
                       <Phone
                         size={16}
@@ -330,9 +385,11 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
                         autoComplete="tel"
                         value={otpPhone}
                         onChange={(e) =>
-                          setOtpPhone(e.target.value.replace(/\D/g, "").slice(0, pais.largo))
+                          setOtpPhone(
+                            e.target.value.replace(/\D/g, "").slice(0, esMx ? MX_LARGO : 14)
+                          )
                         }
-                        placeholder={pais.ejemplo}
+                        placeholder={pais?.ejemplo ?? "número"}
                         className="w-full pl-10 pr-4 py-3 bg-surface-container-high border border-outline-variant text-on-surface rounded-xl text-base tracking-wider focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-on-surface-variant/40"
                         onKeyDown={(e) => e.key === "Enter" && handleRequestOtp()}
                         autoFocus
@@ -340,7 +397,8 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
                     </div>
                   </div>
                   <p className="mt-1.5 text-[11px] text-on-surface-variant/60">
-                    ¿Tu WhatsApp es de Estados Unidos? Elige 🇺🇸 +1
+                    ¿Tu WhatsApp es de otro país? Elígelo arriba y escribe tu
+                    número <strong>sin</strong> la clave.
                   </p>
                 </div>
 
@@ -350,7 +408,7 @@ export function AuthModal({ open, onClose, onSuccess }: AuthModalProps) {
 
                 <button
                   onClick={handleRequestOtp}
-                  disabled={loading || otpPhone.length !== pais.largo}
+                  disabled={loading || !telefonoOk}
                   className="w-full bg-primary text-on-primary py-3.5 rounded-xl font-headline font-bold disabled:opacity-50 hover:brightness-110 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                 >
                   {loading ? (
