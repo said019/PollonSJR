@@ -14,17 +14,20 @@ export function useAuth() {
     setLoading(false);
   }, []);
 
-  async function requestOTP(phone: string) {
+  /** `cc` = clave de país ("52" México, "1" EE. UU.). Permite que un cliente
+   *  con WhatsApp extranjero también reciba su código. */
+  async function requestOTP(phone: string, cc: string = "52") {
     const res = await api.post<{ ok: boolean; debugCode?: string }>(
       "/api/auth/request-otp",
-      { phone }
+      { phone, cc }
     );
     return res;
   }
 
   async function verifyOTP(
     phone: string,
-    code: string
+    code: string,
+    cc: string = "52"
   ): Promise<{ isNewCustomer: boolean }> {
     const res = await api.post<{
       ok: boolean;
@@ -32,7 +35,7 @@ export function useAuth() {
       refreshToken: string;
       isNewCustomer: boolean;
       customerId: string;
-    }>("/api/auth/verify-otp", { phone, code });
+    }>("/api/auth/verify-otp", { phone, code, cc });
 
     saveTokens(res.accessToken, res.refreshToken);
     setAuthenticated(true);

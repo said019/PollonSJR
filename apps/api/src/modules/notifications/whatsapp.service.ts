@@ -1,4 +1,5 @@
 import { renderTemplate } from "./templates";
+import { aInternacional, esMexicano } from "../../utils/phone";
 
 export interface NotificationJob {
   id: string;
@@ -14,7 +15,8 @@ export interface NotificationJob {
  * Build a wa.me link with a pre-filled message (fallback / MVP).
  */
 export function buildWALink(phone: string, message: string): string {
-  const international = `52${phone}`;
+  // Respeta números extranjeros (ya guardados con su clave de país).
+  const international = aInternacional(phone);
   return `https://wa.me/${international}?text=${encodeURIComponent(message)}`;
 }
 
@@ -70,6 +72,55 @@ export async function evolutionEstaConectado(): Promise<{
 }
 
 /**
+ * ¿Ese número tiene WhatsApp?
+ *
+ * Evolution acepta enviar a cualquier número y responde 2xx aunque el destino
+ * no exista en WhatsApp: el mensaje simplemente se pierde. Comprobarlo antes
+ * evita decirle a un cliente "te mandamos el código" cuando su número no tiene
+ * WhatsApp (o escribió otro por error).
+ *
+ * En México conviven dos formatos de JID (52… y 521…), así que se prueban los
+ * dos y basta con que uno exista.
+ *
+ * Devuelve `null` si no se pudo comprobar (ahí no bloqueamos: mejor intentar).
+ */
+export async function numeroTieneWhatsApp(
+  telefonoGuardado: string
+): Promise<boolean | null> {
+  const apiUrl = process.env.EVOLUTION_API_URL;
+  const apiKey = process.env.EVOLUTION_API_KEY;
+  const instance = process.env.EVOLUTION_INSTANCE;
+  if (!apiUrl || !apiKey || !instance) return null;
+
+  // En México conviven dos formatos de JID (52… y 521…); se prueban ambos.
+  // Los extranjeros ya vienen completos.
+  const candidatos = esMexicano(telefonoGuardado)
+    ? [`52${telefonoGuardado}`, `521${telefonoGuardado}`]
+    : [aInternacional(telefonoGuardado)];
+
+  try {
+    const res = await fetch(
+      `${apiUrl.replace(/\/$/, "")}/chat/whatsappNumbers/${instance}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: apiKey },
+        body: JSON.stringify({ numbers: candidatos }),
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as any;
+    const lista = Array.isArray(data) ? data : data?.numbers ?? [];
+    if (!Array.isArray(lista) || lista.length === 0) return null;
+
+    return lista.some((n: any) => n?.exists === true || n?.numberExists === true);
+  } catch {
+    return null; // no se pudo comprobar → no bloquear al cliente
+  }
+}
+
+/**
  * Evolution API sender.
  * Env vars required:
  *   EVOLUTION_API_URL     → base URL (e.g. https://evolution.yourdomain.com)
@@ -89,7 +140,9 @@ export async function sendWhatsAppEvolution(job: NotificationJob): Promise<void>
   }
 
   const body = renderTemplate(job.template, job.params);
-  const number = `${countryCode}${job.to}`;
+  // México se guarda con 10 dígitos (se le antepone la clave); los extranjeros
+  // ya la traen, así que NO se les vuelve a poner.
+  const number = esMexicano(job.to) ? `${countryCode}${job.to}` : job.to;
 
   const res = await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendText/${instance}`, {
     method: "POST",

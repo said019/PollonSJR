@@ -14,16 +14,19 @@ import {
   buildWALink,
   sendWhatsApp,
   evolutionEstaConectado,
+  numeroTieneWhatsApp,
 } from "../notifications/whatsapp.service";
+import { normalizarTelefono } from "../../utils/phone";
 
-const requestOtpSchema = z.object({ phone: z.string().regex(/^[0-9]{10}$/) });
-// El teléfono se normaliza (quita espacios/guiones/lada) para que verificar no
-// falle sólo porque el número venga formateado.
+// `cc` = clave de país elegida en la app ("52" México, "1" EE. UU., …).
+// Se acepta que falte para no romper a clientes con la versión anterior.
+const requestOtpSchema = z.object({
+  phone: z.string().min(6).max(20),
+  cc: z.string().max(4).optional(),
+});
 const verifyOtpSchema = z.object({
-  phone: z
-    .string()
-    .transform((s) => s.replace(/\D/g, "").slice(-10))
-    .refine((s) => s.length === 10, "Teléfono inválido"),
+  phone: z.string().min(6).max(20),
+  cc: z.string().max(4).optional(),
   code: z.string().length(6),
 });
 const updateMeSchema = z.object({ name: z.string().min(2).max(60) });
@@ -55,12 +58,21 @@ export async function authRoutes(app: FastifyInstance) {
     const parsed = requestOtpSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.status(400).send({
-        error: "Ingresa tu número de WhatsApp sin código de país (10 dígitos).",
+        error: "Ingresa tu número de WhatsApp.",
+      });
+    }
+
+    // Se normaliza a la forma que guardamos: México 10 dígitos, extranjero
+    // con su clave de país. Así un WhatsApp de EE. UU. sí recibe su código.
+    const telefono = normalizarTelefono(parsed.data.phone, parsed.data.cc);
+    if (!telefono) {
+      return reply.status(400).send({
+        error: "Ese número no parece válido. Revísalo por favor.",
       });
     }
 
     try {
-      const { code, customerId } = await generateOTP(app, parsed.data.phone);
+      const { code, customerId } = await generateOTP(app, telefono);
 
       const isDev = process.env.NODE_ENV === "development";
       const evolutionReady = !!(
@@ -84,7 +96,7 @@ export async function authRoutes(app: FastifyInstance) {
             { estado: wa.estado },
             "OTP no enviado: la sesión de WhatsApp no está conectada"
           );
-          await refundOtpAttempt(app, parsed.data.phone);
+          await refundOtpAttempt(app, telefono);
           return reply.status(503).send({
             error:
               "Ahorita no podemos enviarte el código por WhatsApp. Escríbenos y te tomamos el pedido, o entra con tu contraseña si ya tienes cuenta.",
@@ -92,11 +104,24 @@ export async function authRoutes(app: FastifyInstance) {
           });
         }
 
+        // ¿Ese número tiene WhatsApp? Si no, el mensaje se pierde en silencio.
+        // Pasa seguido con clientes cuyo WhatsApp es de otro país (por ejemplo
+        // de EE. UU.) y aquí escriben un número mexicano que no usan.
+        const tieneWA = await numeroTieneWhatsApp(telefono);
+        if (tieneWA === false) {
+          await refundOtpAttempt(app, telefono);
+          return reply.status(400).send({
+            error:
+              "Ese número no tiene WhatsApp. Revísalo, o escríbenos y te tomamos el pedido.",
+            code: "sin_whatsapp",
+          });
+        }
+
         try {
           await sendWhatsApp({
             id: `otp-${customerId}-${Date.now()}`,
             type: "whatsapp",
-            to: parsed.data.phone,
+            to: telefono,
             template: "otp_code",
             params: { code },
             attempts: 0,
@@ -106,7 +131,7 @@ export async function authRoutes(app: FastifyInstance) {
           // No filtrar el código en logs; sólo el motivo del fallo.
           app.log.error({ err: sendErr }, "No se pudo enviar el OTP por WhatsApp");
           // El fallo es nuestro: no le consumas un intento al cliente.
-          await refundOtpAttempt(app, parsed.data.phone);
+          await refundOtpAttempt(app, telefono);
           return reply.status(502).send({
             error:
               "No pudimos enviar tu código por WhatsApp. Revisa tu número o entra con contraseña.",
@@ -125,7 +150,7 @@ export async function authRoutes(app: FastifyInstance) {
       // El código NUNCA debe loguearse en producción (cualquiera con acceso
       // a logs podría secuestrar la cuenta). Sólo en desarrollo.
       if (isDev) {
-        app.log.info(`OTP for ${parsed.data.phone}: ${code}`);
+        app.log.info(`OTP for ${telefono}: ${code}`);
       }
 
       return {
@@ -135,7 +160,7 @@ export async function authRoutes(app: FastifyInstance) {
         ...(isDev && {
           debugCode: code,
           waLink: buildWALink(
-            parsed.data.phone,
+            telefono,
             `Tu código de Pollón SJR es: *${code}*`
           ),
         }),
@@ -163,9 +188,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     try {
+      const telefono = normalizarTelefono(parsed.data.phone, parsed.data.cc);
+      if (!telefono) {
+        return reply.status(400).send({ error: "Ese número no parece válido." });
+      }
+
       const { customerId, isNewCustomer } = await verifyOTP(
         app,
-        parsed.data.phone,
+        telefono,
         parsed.data.code
       );
 
