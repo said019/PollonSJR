@@ -14,6 +14,7 @@ import {
   verifyTransferProofDeliverySignature,
 } from "./transfer-proof.storage";
 import { releaseAppComboPromotion } from "./app-exclusive-promotion";
+import { restoreLoyaltyReward } from "./loyalty-reward-release";
 
 // Validación del comprobante por el CONTENIDO real (magic bytes), no por el
 // `Content-Type` que declara el navegador. Esto hace la subida a la vez:
@@ -430,6 +431,7 @@ export async function ordersRoutes(app: FastifyInstance) {
       }
 
       await releaseAppComboPromotion(app, orderId);
+      await restoreLoyaltyReward(app, orderId);
 
       await app.prisma.orderStatusLog.create({
         data: {

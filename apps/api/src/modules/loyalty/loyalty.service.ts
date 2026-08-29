@@ -5,6 +5,13 @@ import { GoogleWalletService } from "./google-wallet.service";
 const ORDERS_PER_REWARD = 5;
 const REWARD_TTL_MONTHS = 6;
 
+/** Línea de pedido candidata a recibir el producto gratis del premio. */
+export interface RewardEligibleLine {
+  productId: string;
+  qty: number;
+  unitPrice: number;
+}
+
 export class LoyaltyService {
   constructor(private app: FastifyInstance) {}
 
@@ -26,6 +33,9 @@ export class LoyaltyService {
       ordersToNext,
       target: ORDERS_PER_REWARD,
       pendingReward: card.pendingReward,
+      // El premio existe pero no se puede usar hasta que el negocio lo
+      // apruebe: el cliente ve "en revisión" en vez de "listo".
+      rewardApproved: card.rewardApprovedAt !== null,
       pendingProduct: card.pendingProduct
         ? {
             id: card.pendingProduct.id,
@@ -101,6 +111,10 @@ export class LoyaltyService {
           rewardEarnedAt,
           rewardExpiresAt,
           freeProductsEarned,
+          // Nace SIN aprobar: el negocio decide desde el panel.
+          ...(earnedReward && pendingReward && !card.pendingReward
+            ? { rewardApprovedAt: null }
+            : {}),
         },
       }),
       this.app.prisma.loyaltyEvent.create({
@@ -116,9 +130,11 @@ export class LoyaltyService {
       ? ORDERS_PER_REWARD
       : newCompletedOrders % ORDERS_PER_REWARD;
 
+    // Ojo: al ganarlo NO se le promete nada al cliente todavía, porque el
+    // premio aún puede no aprobarse. El "¡ganaste!" sale al aprobarlo.
     const walletMessage =
       earnedReward && pendingReward
-        ? "¡Felicidades! Ganaste un producto gratis"
+        ? "¡Completaste tu tarjeta! Tu premio está en revisión"
         : `Compra registrada — ${newProgress}/${ORDERS_PER_REWARD}`;
 
     this.notifyWalletPasses(
@@ -142,29 +158,16 @@ export class LoyaltyService {
       pointsEarned: 1,
     });
 
-    // If earned reward, notify
+    // Antes aquí se le anunciaba al cliente "¡Ganaste X gratis! Se aplica en
+    // tu próximo pedido". Ya no: el premio todavía tiene que aprobarse, y
+    // prometerlo antes sería quedarle mal si no se aprueba. El anuncio vive
+    // ahora en approveReward().
     if (earnedReward && pendingReward && pendingProductId) {
-      const product = await this.app.prisma.product.findUnique({
-        where: { id: pendingProductId },
-      });
       this.app.io.to(`customer:${order.customerId}`).emit("loyalty:tier_up", {
         newTier: "VIP_POLLON",
         previousTier: "POLLITO",
-        message: `¡Ganaste ${product?.name ?? "un producto"} gratis! Se aplica en tu próximo pedido.`,
+        message: "¡Completaste tu tarjeta! Te avisamos en cuanto tu premio esté listo.",
       });
-
-      // Enqueue WhatsApp notification
-      const { enqueueNotification } = await import("../notifications/queue");
-      const name = order.customer.name ?? "Cliente";
-      enqueueNotification(this.app.redis, {
-        type: "whatsapp",
-        to: order.customer.phone,
-        template: "loyalty_reward_earned" as any,
-        params: {
-          name,
-          productName: product?.name ?? "producto",
-        },
-      }).catch(() => {});
     }
 
     // Devolvemos el avance ya actualizado para que el aviso de "entregado"
@@ -181,29 +184,69 @@ export class LoyaltyService {
 
   /**
    * Apply a pending loyalty reward when creating a new order.
-   * Returns the discount (full product price) if applicable.
+   *
+   * El premio es UN producto concreto gratis (el que más pide el cliente),
+   * no un saldo. Por eso sólo se canjea si ESE producto viene en el pedido
+   * y el descuento se topa al precio de esa línea:
+   *
+   *   - Antes el tope era el subtotal COMPLETO del pedido, así que un premio
+   *     de "12 Piezas" ($220) le regalaba $220 de cualquier otra cosa. Un
+   *     pedido de $210 de productos distintos salía gratis.
+   *   - Antes tampoco se revisaba el carrito, así que el premio se quemaba
+   *     en el siguiente pedido fuera lo que fuera. Si el producto premiado
+   *     no viene, ahora el premio se queda pendiente para después.
+   *
+   * "lines" son las líneas normales del pedido (sin las de combos, que ya
+   * traen su propio descuento — apilar el premio encima sería doble regalo).
    */
-  async applyPendingReward(customerId: string, subtotal: number) {
+  async applyPendingReward(customerId: string, lines: RewardEligibleLine[]) {
+    const notApplied = {
+      discountAmount: 0,
+      rewardApplied: false,
+      productName: null as string | null,
+      productId: null as string | null,
+      rewardExpiresAt: null as Date | null,
+    };
+
     const card = await this.app.prisma.loyaltyCard.findUnique({
       where: { customerId },
       include: { pendingProduct: true },
     });
 
     if (!card?.pendingReward || !card.pendingProduct) {
-      return { discountAmount: 0, rewardApplied: false, productName: null as string | null };
+      return notApplied;
+    }
+
+    // Sin el visto bueno del negocio el premio no se descuenta. Se queda
+    // pendiente, no se pierde.
+    if (!card.rewardApprovedAt) {
+      return notApplied;
     }
 
     // Check expiry
     if (card.rewardExpiresAt && new Date() > card.rewardExpiresAt) {
       await this.app.prisma.loyaltyCard.update({
         where: { id: card.id },
-        data: { pendingReward: false, pendingProductId: null, rewardEarnedAt: null, rewardExpiresAt: null },
+        data: { pendingReward: false, pendingProductId: null, rewardEarnedAt: null, rewardExpiresAt: null, rewardApprovedAt: null },
       });
-      return { discountAmount: 0, rewardApplied: false, productName: null };
+      return notApplied;
     }
 
-    // Discount = price of the free product (capped at subtotal)
-    const discountAmount = Math.min(card.pendingProduct.price, subtotal);
+    // El producto premiado tiene que venir en el pedido. Si no, el premio
+    // NO se quema: sigue pendiente para cuando el cliente sí lo pida.
+    const rewardedLine = lines.find(
+      (line) => line.productId === card.pendingProduct!.id && line.qty > 0
+    );
+    if (!rewardedLine) return notApplied;
+
+    // Es UNA pieza gratis, al precio realmente cobrado en esa línea (la
+    // variante puede costar menos que el precio base del producto).
+    const discountAmount = Math.min(card.pendingProduct.price, rewardedLine.unitPrice);
+    if (discountAmount <= 0) return notApplied;
+
+    const rewardExpiresAt = card.rewardExpiresAt;
+    const rewardedProductId = card.pendingProduct.id;
+    const rewardedProductName = card.pendingProduct.name;
 
     // Atomically clear pending reward (conditional on pendingReward still being true)
     const updated = await this.app.prisma.loyaltyCard.updateMany({
@@ -213,20 +256,167 @@ export class LoyaltyService {
         pendingProductId: null,
         rewardEarnedAt: null,
         rewardExpiresAt: null,
+        rewardApprovedAt: null,
         freeProductsUsed: card.freeProductsUsed + 1,
       },
     });
 
     // If another request already redeemed the reward, don't apply discount
     if (updated.count === 0) {
-      return { discountAmount: 0, rewardApplied: false, productName: null };
+      return notApplied;
     }
 
     return {
       discountAmount,
       rewardApplied: true,
-      productName: card.pendingProduct.name,
+      productName: rewardedProductName,
+      productId: rewardedProductId,
+      rewardExpiresAt,
     };
+  }
+
+  /**
+   * Devolver el premio que consumió un pedido que terminó cancelado.
+   *
+   * El premio se quema al CREAR el pedido (hay que descontarlo para cobrar
+   * el total correcto), pero nadie lo devolvía: un pedido con tarjeta que
+   * nunca se pagaba, o cancelado por el negocio, se llevaba el premio del
+   * cliente para siempre. Es idempotente: borra la marca del pedido dentro
+   * de la misma transacción, así que dos rutas de cancelación no lo
+   * devuelven dos veces.
+   */
+  async restorePendingReward(orderId: string): Promise<boolean> {
+    const order = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        customerId: true,
+        loyaltyRewardProductId: true,
+        loyaltyRewardExpiresAt: true,
+      },
+    });
+    if (!order?.loyaltyRewardProductId) return false;
+
+    const card = await this.app.prisma.loyaltyCard.findUnique({
+      where: { customerId: order.customerId },
+    });
+    if (!card) return false;
+
+    const clearOrderMark = {
+      where: { id: orderId },
+      data: { loyaltyRewardProductId: null, loyaltyRewardExpiresAt: null },
+    };
+
+    // Si el cliente ya ganó OTRO premio mientras tanto, no lo pisamos:
+    // sólo soltamos la marca del pedido.
+    if (card.pendingReward) {
+      await this.app.prisma.order.update(clearOrderMark);
+      return false;
+    }
+
+    await this.app.prisma.$transaction([
+      this.app.prisma.loyaltyCard.update({
+        where: { id: card.id },
+        data: {
+          pendingReward: true,
+          pendingProductId: order.loyaltyRewardProductId,
+          rewardEarnedAt: new Date(),
+          // Se conserva el vencimiento ORIGINAL: cancelar un pedido no
+          // alarga la vigencia del premio.
+          rewardExpiresAt: order.loyaltyRewardExpiresAt,
+          // Vuelve aprobado: ya lo estaba cuando el pedido lo consumió.
+          rewardApprovedAt: new Date(),
+          freeProductsUsed: Math.max(0, card.freeProductsUsed - 1),
+        },
+      }),
+      this.app.prisma.loyaltyEvent.create({
+        data: {
+          cardId: card.id,
+          orderDelta: 0,
+          reason: `reward-restored:pedido-cancelado`,
+        },
+      }),
+      this.app.prisma.order.update(clearOrderMark),
+    ]);
+
+    return true;
+  }
+
+  /**
+   * Admin: dar el visto bueno a un premio para que pueda canjearse.
+   *
+   * El premio se gana solo, pero no se descuenta de ningún pedido hasta
+   * aquí. Recién aprobado es cuando se le avisa al cliente: antes se le
+   * anunciaba al ganarlo y el negocio se enteraba cuando ya estaba cobrado.
+   */
+  async approveReward(customerId: string) {
+    const card = await this.app.prisma.loyaltyCard.findUnique({
+      where: { customerId },
+      include: { pendingProduct: true, customer: true },
+    });
+
+    if (!card) throw new Error("Cliente sin tarjeta de lealtad");
+    if (!card.pendingReward || !card.pendingProduct) {
+      throw new Error("Este cliente no tiene un premio esperando aprobación");
+    }
+    if (card.rewardApprovedAt) {
+      throw new Error("Este premio ya estaba aprobado");
+    }
+    if (card.rewardExpiresAt && new Date() > card.rewardExpiresAt) {
+      await this.app.prisma.loyaltyCard.update({
+        where: { id: card.id },
+        data: {
+          pendingReward: false,
+          pendingProductId: null,
+          rewardEarnedAt: null,
+          rewardExpiresAt: null,
+          rewardApprovedAt: null,
+        },
+      });
+      throw new Error("El premio ya venció. Se limpió del registro.");
+    }
+
+    const productName = card.pendingProduct.name;
+
+    await this.app.prisma.$transaction([
+      this.app.prisma.loyaltyCard.update({
+        where: { id: card.id },
+        data: { rewardApprovedAt: new Date() },
+      }),
+      this.app.prisma.loyaltyEvent.create({
+        data: {
+          cardId: card.id,
+          orderDelta: 0,
+          reason: `admin:premio aprobado — ${productName}`,
+        },
+      }),
+    ]);
+
+    // Ahora sí se le promete al cliente, porque ya es seguro.
+    this.app.io.to(`customer:${customerId}`).emit("loyalty:tier_up", {
+      newTier: "VIP_POLLON",
+      previousTier: "POLLITO",
+      message: `¡Ganaste ${productName} gratis! Se aplica cuando lo agregues a tu pedido.`,
+    });
+
+    const { enqueueNotification } = await import("../notifications/queue");
+    enqueueNotification(this.app.redis, {
+      type: "whatsapp",
+      to: card.customer.phone,
+      template: "loyalty_reward_earned" as any,
+      params: {
+        name: card.customer.name ?? "Cliente",
+        productName,
+      },
+    }).catch(() => {});
+
+    this.notifyWalletPasses(
+      customerId,
+      card.customer.name ?? "",
+      ORDERS_PER_REWARD,
+      `¡Tu ${productName} gratis está listo!`
+    );
+
+    return { ok: true, productName };
   }
 
   /**

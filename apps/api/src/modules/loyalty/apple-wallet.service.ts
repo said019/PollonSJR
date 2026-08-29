@@ -128,10 +128,14 @@ export class AppleWalletService {
     const customerPhone = customer?.phone ?? "";
     const completedOrders = customer?.loyalty?.completedOrders ?? 0;
     const pendingReward = customer?.loyalty?.pendingReward ?? false;
+    // El premio no se promete en el pase hasta que el negocio lo aprueba.
+    const rewardReady = pendingReward && customer?.loyalty?.rewardApprovedAt != null;
     const stamps = pendingReward ? 5 : completedOrders % 5;
-    let lastUpdateMessage = pendingReward
+    let lastUpdateMessage = rewardReady
       ? "¡Felicidades! Ganaste un producto gratis"
-      : `Compra registrada — ${stamps}/5`;
+      : pendingReward
+        ? "¡Completaste tu tarjeta! Tu premio está en revisión"
+        : `Compra registrada — ${stamps}/5`;
 
     try {
       const storedMessage = await this.app.redis.get(
@@ -191,7 +195,7 @@ export class AppleWalletService {
       {
         key: "progress",
         label: "AVANCE",
-        value: pendingReward ? "¡Premio!" : `${stamps} de 5`,
+        value: rewardReady ? "¡Premio!" : pendingReward ? "5 de 5" : `${stamps} de 5`,
       },
       {
         key: "type",

@@ -154,6 +154,14 @@ model Order {
   subtotal                Int
   deliveryFee             Int                           @default(0)
   discountAmount          Int                           @default(0)
+  // Origen legible del descuento ("Cupón X · Alitas gratis (lealtad)"). Sin
+  // esto el panel sólo mostraba "Descuento" y era imposible explicar de
+  // dónde salió el monto.
+  discountReason          String?
+  // Premio de lealtad consumido por este pedido. Se guarda para poder
+  // devolvérselo al cliente si el pedido termina cancelado.
+  loyaltyRewardProductId  String?
+  loyaltyRewardExpiresAt  DateTime?
   tipAmount               Int                           @default(0)
   appFeeAmount            Int                           @default(0)
   total                   Int
@@ -335,6 +343,11 @@ model LoyaltyCard {
   pendingProduct     Product?       @relation("PendingProduct", fields: [pendingProductId], references: [id])
   rewardEarnedAt     DateTime?
   rewardExpiresAt    DateTime?
+  // El premio se gana solo, pero NO se descuenta hasta que el negocio lo
+  // aprueba desde el panel. Sin esta fecha el premio existe pero no se
+  // puede canjear. Antes se aplicaba solo en el siguiente pedido y el
+  // negocio se enteraba cuando ya estaba cobrado.
+  rewardApprovedAt   DateTime?
   // Wallet passes
   appleSerial        String?
   googleToken        String?

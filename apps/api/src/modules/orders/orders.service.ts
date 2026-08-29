@@ -8,6 +8,7 @@ import { enqueueNotification } from "../notifications/queue";
 import { mexicoStartOfTomorrow, mexicoTodayISO } from "../../utils/timezone";
 import { DeliveryService } from "../delivery/delivery.service";
 import { buildTransferProofDeliveryUrl } from "./transfer-proof.storage";
+import { restoreLoyaltyReward } from "./loyalty-reward-release";
 import {
   APP_COMBO_PROMOTION_KEY,
   releaseAppComboPromotion,
@@ -208,6 +209,15 @@ export class OrdersService {
       };
     });
 
+    // Líneas candidatas al premio de lealtad: SÓLO las normales. Se toma la
+    // foto aquí, antes de expandir los combos, porque un combo ya trae su
+    // propio descuento y regalar encima el premio sería doble descuento.
+    const rewardEligibleLines = orderItems.map((item) => ({
+      productId: item.productId,
+      qty: item.qty,
+      unitPrice: item.unitPrice,
+    }));
+
     // 3b. Expand promo bundles into real OrderItems at the product's REAL price.
     //     The bundle price is honored via a discount applied to discountAmount.
     let promoDiscount = 0;
@@ -274,26 +284,48 @@ export class OrdersService {
     }
 
     // 5. Apply coupon if provided
+    // El pedido guarda de dónde salió cada peso de descuento: sin esto el
+    // panel mostraba "Descuento −$220.00" sin poder explicar el motivo.
+    const discountParts: string[] = [];
     let discountAmount = promoDiscount; // start with promo bundle discounts
+    if (promoDiscount > 0) {
+      const promoNames = loadedPromos.map(({ promo }) => promo.name).join(", ");
+      discountParts.push(`Promo ${promoNames}`);
+    }
     let couponId: string | null = null;
     if (data.couponCode) {
+      // El mínimo del cupón se mide contra el subtotal (igual que antes),
+      // pero el descuento se calcula sobre lo que queda por pagar tras los
+      // combos, y se SUMA. Antes era una asignación, así que usar un cupón
+      // borraba el descuento del combo.
       const coupon = await validateCoupon(
         this.app,
         data.couponCode,
         customerId,
-        subtotal
+        subtotal,
+        subtotal - discountAmount
       );
-      discountAmount = coupon.discountAmount;
+      discountAmount += coupon.discountAmount;
       couponId = coupon.id;
+      discountParts.push(`Cupón ${data.couponCode.toUpperCase().trim()}`);
     }
 
     // 5b. Apply pending loyalty reward (free product)
     const { LoyaltyService: LS } = await import("../loyalty/loyalty.service");
     const loyaltyService = new LS(this.app);
-    const reward = await loyaltyService.applyPendingReward(customerId, subtotal - discountAmount);
+    const reward = await loyaltyService.applyPendingReward(
+      customerId,
+      rewardEligibleLines
+    );
     if (reward.rewardApplied) {
       discountAmount += reward.discountAmount;
+      discountParts.push(`${reward.productName ?? "Producto"} gratis (lealtad)`);
     }
+
+    // Nunca se descuenta más de lo que cuestan los productos: el envío se
+    // cobra siempre.
+    discountAmount = Math.min(discountAmount, subtotal);
+    const discountReason = discountParts.length > 0 ? discountParts.join(" · ") : null;
 
     const rewardMessage = reward.rewardApplied
       ? `Se aplicó tu ${reward.productName ?? "producto"} gratis (-${formatCents(reward.discountAmount)})`
@@ -359,6 +391,9 @@ export class OrdersService {
         subtotal,
         deliveryFee,
         discountAmount,
+        discountReason,
+        loyaltyRewardProductId: reward.rewardApplied ? reward.productId : null,
+        loyaltyRewardExpiresAt: reward.rewardApplied ? reward.rewardExpiresAt : null,
         tipAmount,
         appFeeAmount,
         total,
@@ -614,6 +649,7 @@ export class OrdersService {
       subtotal: order.subtotal,
       deliveryFee: order.deliveryFee,
       discountAmount: order.discountAmount,
+      discountReason: order.discountReason,
       tipAmount: order.tipAmount,
       appFeeAmount: order.appFeeAmount,
       estimatedMinutes: order.estimatedMinutes ?? null,
@@ -665,6 +701,113 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Cambiar (o quitar) el descuento de un pedido ya creado y recalcular su
+   * total, desde el panel.
+   *
+   * No existía forma de hacerlo: el panel sólo podía cambiar estado, ETA y
+   * confirmar pago, así que un descuento que no debía aplicarse se quedaba
+   * cobrado a medias hasta que alguien entrara a la base de datos a mano.
+   *
+   * Si el descuento venía de un premio de lealtad y se le quita, el premio
+   * se le DEVUELVE al cliente: si no, pierde las dos cosas.
+   */
+  async adjustDiscount(orderId: string, newDiscountAmount: number) {
+    const order = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payment: true },
+    });
+    if (!order) throw new Error("Pedido no encontrado");
+
+    if (order.status === "DELIVERED" || order.status === "CANCELLED") {
+      throw new Error(
+        "El pedido ya está cerrado. El descuento sólo se puede cambiar mientras sigue en curso."
+      );
+    }
+
+    // Con tarjeta ya cobrada el dinero ya se movió en MercadoPago: cambiar
+    // el total aquí no le cobra ni le devuelve nada al cliente y descuadra
+    // los reportes. Eso se corrige con un reembolso.
+    if (order.paymentMethod === "CARD" && order.payment?.status === "APPROVED") {
+      throw new Error(
+        "Este pedido ya se cobró con tarjeta. Para cambiar el monto usa el reembolso, no el descuento."
+      );
+    }
+
+    const discountAmount = Math.round(newDiscountAmount);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      throw new Error("El descuento no puede ser negativo.");
+    }
+    if (discountAmount > order.subtotal) {
+      throw new Error(
+        `El descuento no puede pasar de ${formatCents(order.subtotal)} (el valor de los productos).`
+      );
+    }
+    if (discountAmount === order.discountAmount) {
+      throw new Error("El pedido ya tiene ese descuento.");
+    }
+
+    // Mismo cálculo que al crear el pedido.
+    const APP_FEE_RATE = 0.04;
+    const preFeeTotal = Math.max(
+      0,
+      order.subtotal - discountAmount + order.deliveryFee + order.tipAmount
+    );
+    const appFeeAmount =
+      order.paymentMethod === "CARD" ? Math.round(preFeeTotal * APP_FEE_RATE) : 0;
+    const total = preFeeTotal + appFeeAmount;
+
+    const depositAmount = order.isScheduled
+      ? Math.round(total * 0.5)
+      : order.depositAmount;
+    const remainingAmount = order.isScheduled
+      ? total - (depositAmount ?? 0)
+      : order.remainingAmount;
+
+    const previousReason = order.discountReason;
+    const reduced = discountAmount < order.discountAmount;
+
+    await this.app.prisma.$transaction([
+      this.app.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          discountAmount,
+          discountReason: discountAmount === 0 ? null : previousReason,
+          appFeeAmount,
+          total,
+          depositAmount,
+          remainingAmount,
+        },
+      }),
+      this.app.prisma.orderStatusLog.create({
+        data: {
+          orderId,
+          from: order.status,
+          to: order.status,
+          note:
+            `Descuento ${formatCents(order.discountAmount)} → ${formatCents(discountAmount)}` +
+            (previousReason ? ` (era: ${previousReason})` : "") +
+            `. Total ${formatCents(order.total)} → ${formatCents(total)}.`,
+        },
+      }),
+    ]);
+
+    // Al quitarle el premio al pedido, se lo devolvemos al cliente.
+    const rewardReturned = reduced
+      ? await new (await import("../loyalty/loyalty.service")).LoyaltyService(
+          this.app
+        ).restorePendingReward(orderId)
+      : false;
+
+    return {
+      ok: true,
+      discountAmount,
+      total,
+      previousTotal: order.total,
+      rewardReturned,
+    };
+  }
+
   async updateStatus(orderId: string, newStatus: OrderStatusType, cancelReason?: string) {
     const order = await this.app.prisma.order.findUnique({
       where: { id: orderId },
@@ -701,6 +844,7 @@ export class OrdersService {
 
     if (newStatus === "CANCELLED") {
       await releaseAppComboPromotion(this.app, orderId);
+      await restoreLoyaltyReward(this.app, orderId);
     }
 
     await this.app.prisma.orderStatusLog.create({
