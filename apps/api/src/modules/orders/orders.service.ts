@@ -701,6 +701,113 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Cambiar (o quitar) el descuento de un pedido ya creado y recalcular su
+   * total, desde el panel.
+   *
+   * No existía forma de hacerlo: el panel sólo podía cambiar estado, ETA y
+   * confirmar pago, así que un descuento que no debía aplicarse se quedaba
+   * cobrado a medias hasta que alguien entrara a la base de datos a mano.
+   *
+   * Si el descuento venía de un premio de lealtad y se le quita, el premio
+   * se le DEVUELVE al cliente: si no, pierde las dos cosas.
+   */
+  async adjustDiscount(orderId: string, newDiscountAmount: number) {
+    const order = await this.app.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payment: true },
+    });
+    if (!order) throw new Error("Pedido no encontrado");
+
+    if (order.status === "DELIVERED" || order.status === "CANCELLED") {
+      throw new Error(
+        "El pedido ya está cerrado. El descuento sólo se puede cambiar mientras sigue en curso."
+      );
+    }
+
+    // Con tarjeta ya cobrada el dinero ya se movió en MercadoPago: cambiar
+    // el total aquí no le cobra ni le devuelve nada al cliente y descuadra
+    // los reportes. Eso se corrige con un reembolso.
+    if (order.paymentMethod === "CARD" && order.payment?.status === "APPROVED") {
+      throw new Error(
+        "Este pedido ya se cobró con tarjeta. Para cambiar el monto usa el reembolso, no el descuento."
+      );
+    }
+
+    const discountAmount = Math.round(newDiscountAmount);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      throw new Error("El descuento no puede ser negativo.");
+    }
+    if (discountAmount > order.subtotal) {
+      throw new Error(
+        `El descuento no puede pasar de ${formatCents(order.subtotal)} (el valor de los productos).`
+      );
+    }
+    if (discountAmount === order.discountAmount) {
+      throw new Error("El pedido ya tiene ese descuento.");
+    }
+
+    // Mismo cálculo que al crear el pedido.
+    const APP_FEE_RATE = 0.04;
+    const preFeeTotal = Math.max(
+      0,
+      order.subtotal - discountAmount + order.deliveryFee + order.tipAmount
+    );
+    const appFeeAmount =
+      order.paymentMethod === "CARD" ? Math.round(preFeeTotal * APP_FEE_RATE) : 0;
+    const total = preFeeTotal + appFeeAmount;
+
+    const depositAmount = order.isScheduled
+      ? Math.round(total * 0.5)
+      : order.depositAmount;
+    const remainingAmount = order.isScheduled
+      ? total - (depositAmount ?? 0)
+      : order.remainingAmount;
+
+    const previousReason = order.discountReason;
+    const reduced = discountAmount < order.discountAmount;
+
+    await this.app.prisma.$transaction([
+      this.app.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          discountAmount,
+          discountReason: discountAmount === 0 ? null : previousReason,
+          appFeeAmount,
+          total,
+          depositAmount,
+          remainingAmount,
+        },
+      }),
+      this.app.prisma.orderStatusLog.create({
+        data: {
+          orderId,
+          from: order.status,
+          to: order.status,
+          note:
+            `Descuento ${formatCents(order.discountAmount)} → ${formatCents(discountAmount)}` +
+            (previousReason ? ` (era: ${previousReason})` : "") +
+            `. Total ${formatCents(order.total)} → ${formatCents(total)}.`,
+        },
+      }),
+    ]);
+
+    // Al quitarle el premio al pedido, se lo devolvemos al cliente.
+    const rewardReturned = reduced
+      ? await new (await import("../loyalty/loyalty.service")).LoyaltyService(
+          this.app
+        ).restorePendingReward(orderId)
+      : false;
+
+    return {
+      ok: true,
+      discountAmount,
+      total,
+      previousTotal: order.total,
+      rewardReturned,
+    };
+  }
+
   async updateStatus(orderId: string, newStatus: OrderStatusType, cancelReason?: string) {
     const order = await this.app.prisma.order.findUnique({
       where: { id: orderId },

@@ -18,6 +18,11 @@ import { AppleWalletService } from "../loyalty/apple-wallet.service";
 import { GoogleWalletService } from "../loyalty/google-wallet.service";
 import { PromotionsService } from "../menu/promotions.service";
 
+// El monto va en centavos, igual que el resto de los totales. 0 = quitarlo.
+const adjustDiscountSchema = z.object({
+  discountAmount: z.number().int().min(0),
+});
+
 const storeConfigSchema = z.object({
   isOpen: z.boolean().optional(),
   deliveryActive: z.boolean().optional(),
@@ -104,6 +109,25 @@ export async function adminRoutes(app: FastifyInstance) {
 
     try {
       return await ordersService.updateStatus(request.params.id, parsed.data.status, parsed.data.cancelReason);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // Quitar o corregir el descuento de un pedido en curso. Nace de un pedido
+  // real que salió con el producto gratis del premio de lealtad y no había
+  // manera de corregirlo desde el panel.
+  app.patch<{ Params: { id: string } }>("/orders/:id/discount", async (request, reply) => {
+    const parsed = adjustDiscountSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Monto de descuento inválido" });
+    }
+
+    try {
+      return await ordersService.adjustDiscount(
+        request.params.id,
+        parsed.data.discountAmount
+      );
     } catch (err: any) {
       return reply.status(400).send({ error: err.message });
     }

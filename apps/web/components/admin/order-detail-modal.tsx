@@ -225,6 +225,22 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
     },
   });
 
+  // Quitar un descuento que no debía aplicarse (típicamente el premio de
+  // lealtad). El servidor recalcula el total y le devuelve el premio al
+  // cliente para que no pierda las dos cosas.
+  const removeDiscountMut = useMutation({
+    mutationFn: (id: string) =>
+      api.patch<{ total: number; rewardReturned: boolean }>(
+        `/api/admin/orders/${id}/discount`,
+        { discountAmount: 0 },
+        adminToken || undefined
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-active-orders"] });
+      qc.invalidateQueries({ queryKey: ["admin-order-detail", orderId] });
+    },
+  });
+
   const confirmPaymentMut = useMutation({
     mutationFn: (id: string) =>
       api.patch(`/api/admin/orders/${id}/confirm-payment`, {}, adminToken || undefined),
@@ -657,6 +673,37 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                               {order.discountReason && (
                                 <span className="mt-0.5 block text-[11px] leading-tight text-on-surface-variant">
                                   {order.discountReason}
+                                </span>
+                              )}
+                              {order.status !== "DELIVERED" &&
+                                order.status !== "CANCELLED" && (
+                                  <button
+                                    type="button"
+                                    disabled={removeDiscountMut.isPending}
+                                    onClick={() => {
+                                      const nuevoTotal =
+                                        order.total + order.discountAmount;
+                                      if (
+                                        confirm(
+                                          `¿Quitar el descuento de ${formatCents(order.discountAmount)}?\n\n` +
+                                            `El total del pedido pasa de ${formatCents(order.total)} a ${formatCents(nuevoTotal)}, ` +
+                                            `así que hay que cobrarle esa diferencia al cliente.\n\n` +
+                                            `Si el descuento era un premio de lealtad, se le devuelve para otro pedido.`
+                                        )
+                                      ) {
+                                        removeDiscountMut.mutate(order.id);
+                                      }
+                                    }}
+                                    className="mt-1 block text-[11px] font-semibold text-red-400 underline underline-offset-2 disabled:opacity-50"
+                                  >
+                                    {removeDiscountMut.isPending
+                                      ? "Quitando…"
+                                      : "Quitar descuento"}
+                                  </button>
+                                )}
+                              {removeDiscountMut.isError && (
+                                <span className="mt-1 block text-[11px] leading-tight text-red-400">
+                                  {(removeDiscountMut.error as Error).message}
                                 </span>
                               )}
                             </span>
