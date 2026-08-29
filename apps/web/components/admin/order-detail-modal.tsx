@@ -649,9 +649,18 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                           <span>{formatCents(order.subtotal)}</span>
                         </div>
                         {order.discountAmount > 0 && (
-                          <div className="flex justify-between text-sm text-emerald-500">
-                            <span>Descuento</span>
-                            <span>− {formatCents(order.discountAmount)}</span>
+                          <div className="flex justify-between gap-3 text-sm text-emerald-500">
+                            <span>
+                              Descuento
+                              {/* El motivo evita el "¿de dónde salió este
+                                  descuento?": cupón, combo o premio de lealtad. */}
+                              {order.discountReason && (
+                                <span className="mt-0.5 block text-[11px] leading-tight text-on-surface-variant">
+                                  {order.discountReason}
+                                </span>
+                              )}
+                            </span>
+                            <span className="flex-shrink-0">− {formatCents(order.discountAmount)}</span>
                           </div>
                         )}
                         {order.deliveryFee > 0 && (

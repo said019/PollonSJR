@@ -10,12 +10,19 @@ export class CouponError extends Error {
 /**
  * Validate a coupon code and return the discount amount.
  * Throws CouponError if invalid.
+ *
+ * "subtotal" es el valor del pedido y gobierna el mínimo del cupón.
+ * "discountBase" es sobre cuánto se calcula el descuento: cuando el pedido
+ * ya trae un combo con precio especial, el cupón sólo puede morder lo que
+ * queda por pagar, si no se estaría descontando dos veces lo mismo. Por
+ * omisión son lo mismo (pedido sin combos).
  */
 export async function validateCoupon(
   app: FastifyInstance,
   code: string,
   customerId: string,
-  subtotal: number
+  subtotal: number,
+  discountBase: number = subtotal
 ): Promise<{ id: string; discountAmount: number; message: string }> {
   const coupon = await app.prisma.coupon.findUnique({
     where: { code: code.toUpperCase().trim() },
@@ -50,11 +57,12 @@ export async function validateCoupon(
     }
   }
 
+  const base = Math.max(0, discountBase);
   let discountAmount: number;
   if (coupon.type === "PERCENT") {
-    discountAmount = Math.round((subtotal * coupon.value) / 100);
+    discountAmount = Math.round((base * coupon.value) / 100);
   } else {
-    discountAmount = Math.min(coupon.value, subtotal);
+    discountAmount = Math.min(coupon.value, base);
   }
 
   const descStr =

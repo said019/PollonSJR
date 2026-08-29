@@ -154,6 +154,14 @@ model Order {
   subtotal                Int
   deliveryFee             Int                           @default(0)
   discountAmount          Int                           @default(0)
+  // Origen legible del descuento ("Cupón X · Alitas gratis (lealtad)"). Sin
+  // esto el panel sólo mostraba "Descuento" y era imposible explicar de
+  // dónde salió el monto.
+  discountReason          String?
+  // Premio de lealtad consumido por este pedido. Se guarda para poder
+  // devolvérselo al cliente si el pedido termina cancelado.
+  loyaltyRewardProductId  String?
+  loyaltyRewardExpiresAt  DateTime?
   tipAmount               Int                           @default(0)
   appFeeAmount            Int                           @default(0)
   total                   Int

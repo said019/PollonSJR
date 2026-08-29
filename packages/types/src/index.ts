@@ -170,6 +170,8 @@ export interface OrderDetail extends OrderSummary {
   subtotal: number;
   deliveryFee: number;
   discountAmount: number;
+  /** De dónde salió el descuento: cupón, promo y/o premio de lealtad. */
+  discountReason?: string | null;
   tipAmount?: number;
   appFeeAmount?: number;
   estimatedMinutes?: number | null;

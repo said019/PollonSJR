@@ -207,6 +207,14 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
     return Math.round((total * tipPercent) / 100);
   }, [tipPercent, tipCustom, total]);
 
+  // El premio de lealtad sólo se canjea si su producto viene en el pedido.
+  const rewardProductInCart = useMemo(
+    () =>
+      !!loyaltyInfo?.pendingProduct &&
+      items.some((item) => item.productId === loyaltyInfo.pendingProduct!.id),
+    [items, loyaltyInfo]
+  );
+
   const couponDiscount = appliedCoupon?.discountAmount ?? 0;
   // 4% "Uso de aplicación" — only on CARD payments. Base = post-discount,
   // post-delivery, post-tip total (everything the customer effectively pays).
@@ -479,7 +487,10 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
       </div>
 
       {/* Loyalty reward banner — al canjear SÍ se revela el producto (es un
-          descuento real en su cuenta), pero se enmarca como "tu sorpresa". */}
+          descuento real en su cuenta), pero se enmarca como "tu sorpresa".
+          El premio es ESE producto gratis, así que el aviso dice si ya está
+          en el carrito o si hay que agregarlo; si no viene, el premio se
+          queda guardado para otro pedido. */}
       {loyaltyInfo?.pendingReward ? (
         <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/5 p-3">
           <div className="flex items-center gap-2">
@@ -489,7 +500,9 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
                 🎁 Tu sorpresa: {loyaltyInfo.pendingProduct?.name ?? "un producto"} gratis
               </p>
               <p className="text-xs text-on-surface-variant">
-                Se descuenta automáticamente de tu pedido
+                {rewardProductInCart
+                  ? "Ya está en tu pedido — se descuenta automáticamente"
+                  : `Agrega ${loyaltyInfo.pendingProduct?.name ?? "el producto"} a tu pedido para canjearlo. Si no, tu premio se guarda para después.`}
               </p>
             </div>
           </div>

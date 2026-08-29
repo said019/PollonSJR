@@ -713,6 +713,11 @@ export class PaymentsService {
       }),
     ]);
 
+    const { restoreLoyaltyReward } = await import(
+      "../orders/loyalty-reward-release"
+    );
+    await restoreLoyaltyReward(this.app, order.id);
+
     const { emitOrderStatus, emitOrderRejected } = await import(
       "../orders/orders.events"
     );
@@ -796,6 +801,11 @@ export class PaymentsService {
         },
       }),
     ]);
+
+    const { restoreLoyaltyReward } = await import(
+      "../orders/loyalty-reward-release"
+    );
+    await restoreLoyaltyReward(this.app, order.id);
 
     // Notificar al cliente
     const { emitOrderStatus } = await import("../orders/orders.events");

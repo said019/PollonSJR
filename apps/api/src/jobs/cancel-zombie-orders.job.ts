@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { APP_COMBO_PROMOTION_KEY } from "../modules/orders/app-exclusive-promotion";
+import { restoreLoyaltyReward } from "../modules/orders/loyalty-reward-release";
 
 /**
  * Cancela pedidos en PENDING_PAYMENT por más de 90 minutos.
@@ -39,6 +40,10 @@ export async function cancelZombieOrders(app: FastifyInstance) {
         },
       }),
     ]);
+
+    // El pedido nunca se pagó: el premio de lealtad que consumió vuelve a
+    // quedar disponible para el cliente.
+    await restoreLoyaltyReward(app, order.id);
   }
 
   app.log.info(`${zombies.length} pedido(s) zombie cancelado(s)`);
