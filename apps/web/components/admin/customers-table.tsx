@@ -34,6 +34,7 @@ interface CustomerRow {
   ratingCount: number;
   loyaltyProgress: number;
   pendingReward: boolean;
+  rewardApproved: boolean;
   freeProductsEarned: number;
   freeProductsUsed: number;
   savedAddresses: number;
@@ -51,6 +52,7 @@ interface Resumen {
   ingresos: number;
   ticketPromedio: number;
   premiosPendientes: number;
+  premiosPorAprobar: number;
 }
 
 type Orden = "recientes" | "gasto" | "pedidos" | "ultimo" | "lealtad";
@@ -113,6 +115,7 @@ interface LoyaltyDetail {
     ordersToNext: number;
     target: number;
     pendingReward: boolean;
+    rewardApproved: boolean;
     pendingProduct: { id: string; name: string; emoji: string | null } | null;
     rewardEarnedAt: string | null;
     rewardExpiresAt: string | null;
@@ -241,8 +244,12 @@ export function CustomersTable() {
           <Metrica etiqueta="Ingresos" valor={formatCents(data.resumen.ingresos)} />
           <Metrica etiqueta="Ticket prom." valor={formatCents(data.resumen.ticketPromedio)} />
           <Metrica
-            etiqueta="Premios listos"
-            valor={String(data.resumen.premiosPendientes)}
+            etiqueta={data.resumen.premiosPorAprobar > 0 ? "Premios por aprobar" : "Premios listos"}
+            valor={String(
+              data.resumen.premiosPorAprobar > 0
+                ? data.resumen.premiosPorAprobar
+                : data.resumen.premiosPendientes
+            )}
             pie="por entregar"
             destacado={data.resumen.premiosPendientes > 0}
           />
@@ -439,8 +446,14 @@ function CustomerCard({ customer: c, onClick }: { customer: CustomerRow; onClick
         )}
 
         {c.pendingReward && (
-          <span className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-xs font-bold text-green-400">
-            <Gift size={12} /> Premio
+          <span
+            className={`flex flex-shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold ${
+              c.rewardApproved
+                ? "border-green-500/30 bg-green-500/10 text-green-400"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-400"
+            }`}
+          >
+            <Gift size={12} /> {c.rewardApproved ? "Premio" : "Por aprobar"}
           </span>
         )}
       </div>
@@ -529,6 +542,16 @@ function CustomerDetailModal({
   const redeemMut = useMutation({
     mutationFn: () =>
       api.post(`/api/admin/loyalty/customers/${customer!.id}/redeem`, {}, token || undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-customer-loyalty", customer?.id] });
+      qc.invalidateQueries({ queryKey: ["admin-customers"] });
+    },
+  });
+
+  // El premio se gana solo pero no descuenta nada hasta este visto bueno.
+  const approveMut = useMutation({
+    mutationFn: () =>
+      api.post(`/api/admin/loyalty/customers/${customer!.id}/approve`, {}, token || undefined),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-customer-loyalty", customer?.id] });
       qc.invalidateQueries({ queryKey: ["admin-customers"] });
@@ -676,14 +699,26 @@ function CustomerDetailModal({
                       </div>
                     </section>
 
-                    {/* Pending reward */}
+                    {/* Pending reward — sin aprobar no descuenta nada todavía */}
                     {info.pendingReward && (
-                      <section className="rounded-2xl border border-green-500/30 bg-green-500/5 p-4">
+                      <section
+                        className={`rounded-2xl border p-4 ${
+                          info.rewardApproved
+                            ? "border-green-500/30 bg-green-500/5"
+                            : "border-amber-500/40 bg-amber-500/5"
+                        }`}
+                      >
                         <div className="mb-3 flex items-center justify-between">
                           <div>
-                            <h3 className="flex items-center gap-2 font-headline text-sm font-bold text-green-400">
+                            <h3
+                              className={`flex items-center gap-2 font-headline text-sm font-bold ${
+                                info.rewardApproved ? "text-green-400" : "text-amber-400"
+                              }`}
+                            >
                               <Gift size={16} />
-                              Recompensa lista
+                              {info.rewardApproved
+                                ? "Recompensa lista"
+                                : "Premio esperando tu aprobación"}
                             </h3>
                             <p className="mt-0.5 text-xs text-on-surface-variant">
                               {info.pendingProduct
@@ -697,6 +732,35 @@ function CustomerDetailModal({
                             )}
                           </div>
                         </div>
+
+                        {!info.rewardApproved && (
+                          <p className="mb-3 text-xs leading-relaxed text-on-surface-variant">
+                            Mientras no lo apruebes no se descuenta de ningún pedido, y el
+                            cliente no sabe qué se ganó. Al aprobarlo se le avisa por
+                            WhatsApp y se aplica cuando agregue ese producto a su pedido.
+                          </p>
+                        )}
+
+                        {!info.rewardApproved && (
+                          <button
+                            onClick={() => approveMut.mutate()}
+                            disabled={approveMut.isPending}
+                            className="mb-2 w-full flex items-center justify-center gap-2 rounded-xl bg-amber-600 py-2.5 text-sm font-bold text-white transition-all hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50"
+                          >
+                            {approveMut.isPending ? (
+                              <Loader2 size={15} className="animate-spin" />
+                            ) : (
+                              <Gift size={15} />
+                            )}
+                            Aprobar premio
+                          </button>
+                        )}
+                        {approveMut.isError && (
+                          <p className="mb-2 text-center text-xs font-semibold text-red-400">
+                            {(approveMut.error as Error).message}
+                          </p>
+                        )}
+
                         <button
                           onClick={() => redeemMut.mutate()}
                           disabled={redeemMut.isPending}
@@ -707,7 +771,9 @@ function CustomerDetailModal({
                           ) : (
                             <Gift size={15} />
                           )}
-                          Canjear recompensa ahora
+                          {info.rewardApproved
+                            ? "Canjear recompensa ahora"
+                            : "Entregarlo en el local (sin aprobar)"}
                         </button>
                         {redeemMut.isSuccess && (
                           <p className="mt-2 text-center text-xs font-semibold text-green-400">

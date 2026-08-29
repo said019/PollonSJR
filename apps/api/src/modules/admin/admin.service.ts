@@ -87,6 +87,7 @@ export class AdminService {
           select: {
             completedOrders: true,
             pendingReward: true,
+            rewardApprovedAt: true,
             freeProductsEarned: true,
             freeProductsUsed: true,
           },
@@ -175,6 +176,7 @@ export class AdminService {
         ratingCount: rated.length,
         loyaltyProgress: c.loyalty?.completedOrders ?? 0,
         pendingReward: c.loyalty?.pendingReward ?? false,
+        rewardApproved: c.loyalty?.rewardApprovedAt != null,
         freeProductsEarned: c.loyalty?.freeProductsEarned ?? 0,
         freeProductsUsed: c.loyalty?.freeProductsUsed ?? 0,
         savedAddresses: c._count.savedAddresses,
@@ -226,6 +228,7 @@ export class AdminService {
             conCompra.reduce((s, c) => s + c.deliveredOrders, 0))
         : 0,
       premiosPendientes: lista.filter((c) => c.pendingReward).length,
+      premiosPorAprobar: lista.filter((c) => c.pendingReward && !c.rewardApproved).length,
     };
 
     const total = lista.length;

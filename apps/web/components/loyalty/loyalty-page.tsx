@@ -52,6 +52,9 @@ function getHistoryLabel(reason: string) {
 
 function getRewardTitle(info: LoyaltyInfo) {
   if (!info.pendingReward) return "Producto gratis";
+  // Sin la aprobación del negocio el premio todavía no es seguro, así que
+  // no se revela cuál es ni se dice que está listo.
+  if (!info.rewardApproved) return "Premio en camino";
   if (!info.pendingProduct) return "Producto gratis listo";
   return `${info.pendingProduct.emoji ?? ""} ${info.pendingProduct.name} gratis`.trim();
 }
@@ -377,7 +380,7 @@ export function LoyaltyPage() {
                   </div>
 
                   <div className={`rounded-lg border px-3 py-1.5 text-right shrink-0 ${
-                    info.pendingReward
+                    info.pendingReward && info.rewardApproved
                       ? "border-secondary/40 bg-secondary/15"
                       : "border-primary/30 bg-primary/10"
                   }`}>
@@ -385,9 +388,13 @@ export function LoyaltyPage() {
                       Estado
                     </p>
                     <p className={`text-xs font-extrabold ${
-                      info.pendingReward ? "text-secondary" : "text-primary"
+                      info.pendingReward && info.rewardApproved ? "text-secondary" : "text-primary"
                     }`}>
-                      {info.pendingReward ? "¡Premio listo! 🎉" : "Activa"}
+                      {info.pendingReward
+                        ? info.rewardApproved
+                          ? "¡Premio listo! 🎉"
+                          : "Tarjeta llena"
+                        : "Activa"}
                     </p>
                   </div>
                 </div>
@@ -413,7 +420,9 @@ export function LoyaltyPage() {
                   </h2>
                   <p className="mt-3 max-w-md text-sm leading-relaxed text-on-surface-variant">
                     {info.pendingReward
-                      ? "Se descuenta automáticamente en tu próximo pedido."
+                      ? info.rewardApproved
+                        ? "Agrégalo a tu pedido y se descuenta solo."
+                        : "Ya completaste tu tarjeta. Te avisamos en cuanto tu premio esté listo."
                       : `Faltan ${info.ordersToNext} compra${info.ordersToNext === 1 ? "" : "s"} para desbloquearlo.`}
                   </p>
                 </div>
@@ -509,7 +518,11 @@ export function LoyaltyPage() {
             </p>
             <p className="flex items-center gap-3">
               <Gift size={18} className="shrink-0 text-secondary" />
-              {info.pendingReward ? "Tienes recompensa lista." : "Producto gratis cada 5 compras."}
+              {info.pendingReward
+                ? info.rewardApproved
+                  ? "Tienes recompensa lista."
+                  : "Tu premio está en revisión."
+                : "Producto gratis cada 5 compras."}
             </p>
             <p className="flex items-center gap-3">
               <Smartphone size={18} className="shrink-0 text-primary" />

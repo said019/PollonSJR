@@ -491,7 +491,7 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
           El premio es ESE producto gratis, así que el aviso dice si ya está
           en el carrito o si hay que agregarlo; si no viene, el premio se
           queda guardado para otro pedido. */}
-      {loyaltyInfo?.pendingReward ? (
+      {loyaltyInfo?.pendingReward && loyaltyInfo.rewardApproved ? (
         <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/5 p-3">
           <div className="flex items-center gap-2">
             <Gift size={16} className="text-green-400" />
@@ -505,6 +505,17 @@ export function CheckoutForm({ onBack, onSuccess }: CheckoutFormProps) {
                   : `Agrega ${loyaltyInfo.pendingProduct?.name ?? "el producto"} a tu pedido para canjearlo. Si no, tu premio se guarda para después.`}
               </p>
             </div>
+          </div>
+        </div>
+      ) : loyaltyInfo?.pendingReward ? (
+        // Ya completó la tarjeta pero el negocio no ha aprobado el premio:
+        // no se le promete un producto que todavía puede no darse.
+        <div className="mb-4 rounded-xl border border-secondary/30 bg-secondary/5 p-3">
+          <div className="flex items-center gap-2">
+            <Gift size={16} className="text-secondary" />
+            <p className="text-sm font-bold text-secondary">
+              ¡Completaste tu tarjeta! Te avisamos en cuanto tu premio esté listo 🎁
+            </p>
           </div>
         </div>
       ) : (

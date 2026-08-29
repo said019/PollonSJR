@@ -343,6 +343,11 @@ model LoyaltyCard {
   pendingProduct     Product?       @relation("PendingProduct", fields: [pendingProductId], references: [id])
   rewardEarnedAt     DateTime?
   rewardExpiresAt    DateTime?
+  // El premio se gana solo, pero NO se descuenta hasta que el negocio lo
+  // aprueba desde el panel. Sin esta fecha el premio existe pero no se
+  // puede canjear. Antes se aplicaba solo en el siguiente pedido y el
+  // negocio se enteraba cuando ya estaba cobrado.
+  rewardApprovedAt   DateTime?
   // Wallet passes
   appleSerial        String?
   googleToken        String?

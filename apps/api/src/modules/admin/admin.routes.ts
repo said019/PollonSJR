@@ -595,6 +595,16 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
+  // Admin: aprobar el premio de un cliente para que pueda canjearlo.
+  // Hasta que alguien toca esto, el premio existe pero no descuenta nada.
+  app.post<{ Params: { id: string } }>("/loyalty/customers/:id/approve", async (request, reply) => {
+    try {
+      return await new LoyaltyService(app).approveReward(request.params.id);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
   // Admin: canjear recompensa de lealtad manualmente
   app.post<{ Params: { id: string } }>("/loyalty/customers/:id/redeem", async (request, reply) => {
     const customerId = request.params.id;
@@ -610,7 +620,7 @@ export async function adminRoutes(app: FastifyInstance) {
     if (card.rewardExpiresAt && new Date() > card.rewardExpiresAt) {
       await app.prisma.loyaltyCard.update({
         where: { id: card.id },
-        data: { pendingReward: false, pendingProductId: null, rewardEarnedAt: null, rewardExpiresAt: null },
+        data: { pendingReward: false, pendingProductId: null, rewardEarnedAt: null, rewardExpiresAt: null, rewardApprovedAt: null },
       });
       return reply.status(400).send({ error: "La recompensa expiró. Se ha limpiado del registro." });
     }
@@ -625,6 +635,7 @@ export async function adminRoutes(app: FastifyInstance) {
           pendingProductId: null,
           rewardEarnedAt: null,
           rewardExpiresAt: null,
+          rewardApprovedAt: null,
           freeProductsUsed: card.freeProductsUsed + 1,
         },
       }),

@@ -467,6 +467,8 @@ export interface LoyaltyInfo {
   ordersToNext: number;
   target: number;
   pendingReward: boolean;
+  /** El premio no se descuenta hasta que el negocio lo aprueba. */
+  rewardApproved: boolean;
   pendingProduct: LoyaltyRewardProduct | null;
   rewardEarnedAt: string | null;
   rewardExpiresAt: string | null;

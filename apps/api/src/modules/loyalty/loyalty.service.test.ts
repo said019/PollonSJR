@@ -11,6 +11,7 @@ interface CardState {
   pendingReward: boolean;
   pendingProduct: typeof PIEZAS | null;
   rewardExpiresAt: Date | null;
+  rewardApprovedAt: Date | null;
   freeProductsUsed: number;
 }
 
@@ -74,6 +75,7 @@ function pendingCard(overrides: Partial<CardState> = {}): CardState {
     pendingReward: true,
     pendingProduct: PIEZAS,
     rewardExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    rewardApprovedAt: new Date("2026-08-01T00:00:00.000Z"),
     freeProductsUsed: 2,
     ...overrides,
   };
@@ -89,6 +91,19 @@ test("el premio sólo se aplica si el producto premiado viene en el pedido", asy
   assert.equal(result.rewardApplied, false);
   assert.equal(result.discountAmount, 0);
   // Y sobre todo: el premio NO se quema, sigue disponible para después.
+  assert.deepEqual(writes.cardUpdates, []);
+});
+
+test("un premio sin aprobar no se canjea ni se quema", async () => {
+  const { app, writes } = buildApp({ card: pendingCard({ rewardApprovedAt: null }) });
+
+  const result = await new LoyaltyService(app).applyPendingReward("cliente-1", [
+    { productId: PIEZAS.id, qty: 1, unitPrice: PIEZAS.price },
+  ]);
+
+  assert.equal(result.rewardApplied, false);
+  assert.equal(result.discountAmount, 0);
+  // Sigue esperando el visto bueno del negocio, no se pierde.
   assert.deepEqual(writes.cardUpdates, []);
 });
 
@@ -138,7 +153,12 @@ test("cancelar un pedido devuelve el premio con su vencimiento original", async 
       loyaltyRewardProductId: PIEZAS.id,
       loyaltyRewardExpiresAt: expiresAt,
     },
-    card: pendingCard({ pendingReward: false, pendingProduct: null, freeProductsUsed: 3 }),
+    card: pendingCard({
+      pendingReward: false,
+      pendingProduct: null,
+      rewardApprovedAt: null,
+      freeProductsUsed: 3,
+    }),
   });
 
   const restored = await new LoyaltyService(app).restorePendingReward("pedido-1");
@@ -150,7 +170,10 @@ test("cancelar un pedido devuelve el premio con su vencimiento original", async 
     rewardExpiresAt: expiresAt,
     freeProductsUsed: 2,
     rewardEarnedAt: writes.cardUpdates[0].data.rewardEarnedAt,
+    // Vuelve aprobado: no tiene que pasar otra vez por el visto bueno.
+    rewardApprovedAt: writes.cardUpdates[0].data.rewardApprovedAt,
   });
+  assert.ok(writes.cardUpdates[0].data.rewardApprovedAt instanceof Date);
   // La marca del pedido se borra: cancelar dos veces no duplica el premio.
   assert.deepEqual(writes.orderUpdates[0].data, {
     loyaltyRewardProductId: null,

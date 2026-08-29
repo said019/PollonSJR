@@ -18,6 +18,7 @@ export async function runExpirePoints(app: FastifyInstance) {
         where: { id: card.id },
         data: {
           pendingReward: false,
+          rewardApprovedAt: null,
           pendingProductId: null,
           rewardEarnedAt: null,
           rewardExpiresAt: null,
