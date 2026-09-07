@@ -1,0 +1,24 @@
+name: API production runtime
+on:
+  pull_request:
+    paths: ['apps/api/**', 'packages/**', 'scripts/**', 'package*.json', 'railway-api.json', '.github/workflows/api-runtime.yml']
+  push:
+    branches: [main]
+    paths: ['apps/api/**', 'packages/**', 'scripts/**', 'package*.json', 'railway-api.json', '.github/workflows/api-runtime.yml']
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+          cache: npm
+      - run: npm ci
+      - run: npm run build:api:production
+      - run: npm run typecheck --workspace=apps/api
+      - run: npm run test:api:compiled
+      - run: npm run test:api:runtime
