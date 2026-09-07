@@ -1,0 +1,15 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "npm run build:api:production"
+  },
+  "deploy": {
+    "startCommand": "node node_modules/prisma/build/index.js migrate deploy --schema=packages/prisma/schema.prisma && exec node apps/api/dist/server.cjs",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 90,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+    "sleepApplication": false
+  }
+}
