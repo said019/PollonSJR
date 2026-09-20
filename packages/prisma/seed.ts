@@ -73,7 +73,7 @@ async function main() {
     // COMBOS
     { name: "Combo Personal", description: "2 piezas + complemento chico + bebida.", category: "COMBOS" as const, price: 7500, emoji: "🥡", sortOrder: 1 },
     { name: "Combo Pareja", description: "4 piezas + 2 complementos chicos + 2 bebidas.", category: "COMBOS" as const, price: 13500, emoji: "🥡", sortOrder: 2 },
-    { name: "Combo Familiar", description: "8 piezas + 3 complementos grandes + 5 bisquets. Exclusivo en la app: orden de dedos de pollo GRATIS con salsa BBQ Hot, Mango o Tamarindo. Una promoción por cliente.", category: "COMBOS" as const, price: 28000, emoji: "👨‍👩‍👧", sortOrder: 3 },
+    { name: "Combo Familiar", description: "8 piezas + 3 complementos grandes + 5 bisquets.", category: "COMBOS" as const, price: 28000, emoji: "👨‍👩‍👧", sortOrder: 3 },
     { name: "Combo Extra", description: "12 piezas + 4 complementos + 6 bisquets.", category: "COMBOS" as const, price: 34000, emoji: "🥡", sortOrder: 4 },
     { name: "Combo Jumbo", description: "16 piezas + 6 complementos + 10 bisquets.", category: "COMBOS" as const, price: 51800, emoji: "🥡", sortOrder: 5 },
     // HAMBURGUESAS
@@ -157,27 +157,6 @@ async function main() {
         maxSelect: 3,
         minSelect: 0,
         sortOrder: 0,
-      },
-    });
-  }
-
-  // Promo exclusiva de la app: el modificador opcional registra la
-  // orden gratis y su salsa lleguen explícitamente a cocina con el combo.
-  const comboFamiliar = createdProducts.find((p) => p.name === "Combo Familiar");
-  if (comboFamiliar) {
-    await prisma.productModifier.create({
-      data: {
-        productId: comboFamiliar.id,
-        name: "Promo app: dedos de pollo GRATIS",
-        options: [
-          { label: "BBQ Hot", price: 0 },
-          { label: "Mango", price: 0 },
-          { label: "Tamarindo", price: 0 },
-        ],
-        required: false,
-        maxSelect: 1,
-        minSelect: 0,
-        sortOrder: 10,
       },
     });
   }

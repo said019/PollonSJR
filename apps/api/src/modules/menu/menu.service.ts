@@ -2,11 +2,16 @@ import { FastifyInstance } from "fastify";
 import { CATEGORY_LABELS } from "@pollon/utils";
 import type { CategoryType, MenuByCategory } from "@pollon/types";
 
+// Versioned so a deployment never serves the removed promotion from a cache
+// entry created before its database modifier was deleted.
+const MENU_CACHE_KEY = "menu:all:v2";
+const LEGACY_MENU_CACHE_KEY = "menu:all";
+
 export class MenuService {
   constructor(private app: FastifyInstance) {}
 
   async getAll(): Promise<MenuByCategory[]> {
-    const cached = await this.app.redis.get("menu:all");
+    const cached = await this.app.redis.get(MENU_CACHE_KEY);
     if (cached) return JSON.parse(cached);
 
     const products = await this.app.prisma.product.findMany({
@@ -53,7 +58,7 @@ export class MenuService {
     }
 
     const result = Array.from(grouped.values());
-    await this.app.redis.set("menu:all", JSON.stringify(result), { EX: 300 });
+    await this.app.redis.set(MENU_CACHE_KEY, JSON.stringify(result), { EX: 300 });
     return result;
   }
 
@@ -65,6 +70,6 @@ export class MenuService {
   }
 
   async invalidateCache() {
-    await this.app.redis.del("menu:all");
+    await this.app.redis.del([MENU_CACHE_KEY, LEGACY_MENU_CACHE_KEY]);
   }
 }

@@ -11,12 +11,15 @@ import { buildTransferProofDeliveryUrl } from "./transfer-proof.storage";
 import { restoreLoyaltyReward } from "./loyalty-reward-release";
 import {
   APP_COMBO_PROMOTION_KEY,
+  isAppComboPromotionEnabled,
   releaseAppComboPromotion,
   validateAppComboPromotion,
 } from "./app-exclusive-promotion";
 
 const APP_COMBO_PROMOTION_USED_MESSAGE =
   "Esta promoción ya fue utilizada por tu cuenta. Puedes pedir el Combo Familiar sin el regalo.";
+const APP_COMBO_PROMOTION_UNAVAILABLE_MESSAGE =
+  "La promoción de dedos de pollo gratis ya no está disponible. Conservamos tu Combo Familiar sin el regalo.";
 
 export class OrdersService {
   constructor(private app: FastifyInstance) {}
@@ -148,6 +151,7 @@ export class OrdersService {
 
     const products = await this.app.prisma.product.findMany({
       where: { id: { in: allProductIds }, active: true },
+      include: { modifiers: { select: { name: true } } },
     });
 
     if (products.length !== allProductIds.length) {
@@ -164,6 +168,9 @@ export class OrdersService {
       products
     );
     if (usesAppComboPromotion) {
+      if (!isAppComboPromotionEnabled(products)) {
+        throw new Error(APP_COMBO_PROMOTION_UNAVAILABLE_MESSAGE);
+      }
       const existingRedemption =
         await this.app.prisma.customerPromotionRedemption.findUnique({
           where: {

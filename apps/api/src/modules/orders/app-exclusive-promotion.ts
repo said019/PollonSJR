@@ -28,6 +28,22 @@ interface ProductNameLookup {
   name: string;
 }
 
+interface ProductPromotionAvailability extends ProductNameLookup {
+  modifiers?: Array<{ name: string }>;
+}
+
+export function isAppComboPromotionEnabled(
+  products: ProductPromotionAvailability[]
+): boolean {
+  return products.some(
+    (product) =>
+      product.name === APP_COMBO_PROMOTION_PRODUCT &&
+      product.modifiers?.some(
+        (modifier) => modifier.name === APP_COMBO_PROMOTION_MODIFIER
+      )
+  );
+}
+
 /**
  * Valida la promo especial enviada en un pedido y devuelve si se está usando.
  * El servidor no confía en el nombre, salsa, precio o cantidad del cliente.

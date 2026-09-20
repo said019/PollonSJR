@@ -2,10 +2,47 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   APP_COMBO_PROMOTION_MODIFIER,
+  isAppComboPromotionEnabled,
   validateAppComboPromotion,
 } from "./app-exclusive-promotion";
 
 const products = [{ id: "combo", name: "Combo Familiar" }];
+
+test("disables the promotion when its database modifier is removed", () => {
+  assert.equal(
+    isAppComboPromotionEnabled([
+      {
+        id: "combo",
+        name: "Combo Familiar",
+        modifiers: [{ name: "Salsa extra" }],
+      },
+    ]),
+    false
+  );
+});
+
+test("enables the promotion only on Combo Familiar", () => {
+  assert.equal(
+    isAppComboPromotionEnabled([
+      {
+        id: "combo",
+        name: "Combo Familiar",
+        modifiers: [{ name: APP_COMBO_PROMOTION_MODIFIER }],
+      },
+    ]),
+    true
+  );
+  assert.equal(
+    isAppComboPromotionEnabled([
+      {
+        id: "other",
+        name: "Combo Personal",
+        modifiers: [{ name: APP_COMBO_PROMOTION_MODIFIER }],
+      },
+    ]),
+    false
+  );
+});
 
 test("accepts one free sauce selection on one Combo Familiar", () => {
   assert.equal(
