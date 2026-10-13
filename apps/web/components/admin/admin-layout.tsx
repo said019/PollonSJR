@@ -21,6 +21,7 @@ import {
 import { getAdminToken, removeAdminToken, parseJwt } from "@/lib/auth";
 import { useEffect, useState } from "react";
 import { AdminNewOrderNotifier } from "./new-order-notifier";
+import { PaymentNotice } from "./payment-notice";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -223,6 +224,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
       {/* Global new-order toast + sound — works on every admin page */}
       <AdminNewOrderNotifier />
+      <PaymentNotice />
     </div>
   );
 }

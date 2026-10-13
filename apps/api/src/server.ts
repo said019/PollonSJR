@@ -15,6 +15,7 @@ import { customersRoutes } from "./modules/customers/customers.routes";
 import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes";
 import { notificationsRoutes } from "./modules/notifications/notifications.routes";
 import { adminRoutes } from "./modules/admin/admin.routes";
+import { paymentNoticeRoutes } from "./modules/admin/payment-notice";
 import { reportsRoutes } from "./modules/admin/reports.routes";
 import { deliveryRoutes, adminDeliveryRoutes } from "./modules/delivery/delivery.routes";
 import {
@@ -77,6 +78,7 @@ async function bootstrap() {
   app.register(loyaltyRoutes, { prefix: "/api/loyalty" });
   app.register(notificationsRoutes, { prefix: "/api/notifications" });
   app.register(adminRoutes, { prefix: "/api/admin" });
+  app.register(paymentNoticeRoutes, { prefix: "/api/admin" });
   app.register(reportsRoutes, { prefix: "/api/admin" });
   app.register(evolutionRoutes, { prefix: "/api/evolution" });
   app.register(evolutionWebhookRoutes, { prefix: "/api/webhook/evolution" });
