@@ -1,4 +1,6 @@
 "use client";
+import { usePaymentNoticeFrequency } from './usePaymentNoticeFrequency';
+
 
 import { useEffect, useRef, useState } from 'react';
 import { getAdminToken } from '@/lib/auth';
@@ -9,6 +11,7 @@ export function PaymentNotice() {
   const dialog = useRef<HTMLDialogElement>(null);
   const dismissed = useRef('');
   const [notice, setNotice] = useState<Notice | null>(null);
+  const frequencyKey = usePaymentNoticeFrequency(notice, true);
   useEffect(() => {
     let stopped = false;
     let controller: AbortController | undefined;
@@ -34,11 +37,11 @@ export function PaymentNotice() {
     return () => { stopped = true; controller?.abort(); clearInterval(interval); window.removeEventListener('focus', refresh); };
   }, []);
   useEffect(() => {
-    if (notice && dismissed.current !== `${notice.fecha}:${notice.texto}`) dialog.current?.showModal();
+    if (notice && frequencyKey && dismissed.current !== frequencyKey) dialog.current?.showModal();
     else dialog.current?.close();
-  }, [notice]);
+  }, [notice, frequencyKey]);
   function close() {
-    if (notice) dismissed.current = `${notice.fecha}:${notice.texto}`;
+    if (notice) dismissed.current = frequencyKey;
     dialog.current?.close();
   }
   return <dialog ref={dialog} aria-labelledby="payment-notice-title" aria-describedby="payment-notice-text" onCancel={close}
