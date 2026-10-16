@@ -123,6 +123,29 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 ## Deploy
 
+### Reportes del negocio
+
+En `/admin/reports` se pueden consultar períodos de 1 a 366 días, filtrar por
+envío/sucursal y efectivo/tarjeta/transferencia, y exportar el desglose diario
+del mismo período en CSV. Todos los cortes de fecha y horarios se calculan en
+`America/Mexico_City`, independientemente de la zona horaria del servidor.
+
+Las ventas confirmadas excluyen pedidos cancelados y pendientes de pago. Los
+importes incluyen los conceptos del pedido y no representan utilidad ni pagos
+liquidados. La comparación usa un período anterior de igual duración y los
+mismos filtros. “Primera compra” usa el historial completo de pedidos
+confirmados; los clientes del período se cuentan sin duplicados.
+
+Para probar las consultas SQL con datos temporales, además de la suite normal:
+
+```bash
+REPORTS_TEST_DATABASE_URL=postgresql://usuario@localhost:5432/postgres npm test --workspace=@pollon/api
+```
+
+La prueba requiere una base local y usa únicamente tablas temporales dentro de
+una transacción. No modifica registros de la aplicación. Esta ampliación no
+requiere migraciones de base de datos.
+
 **API → Railway**
 ```bash
 railway up

@@ -1,375 +1,310 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useState, type ReactNode } from "react";
+import type { BusinessReports } from "@pollon/types";
+import { formatCents } from "@pollon/utils";
 import { api } from "@/lib/api";
 import { getAdminToken } from "@/lib/auth";
-import { formatCents } from "@pollon/utils";
 import {
-  TrendingUp, TrendingDown, ShoppingBag, DollarSign, Clock, Truck, Store,
-  Star, Download, BarChart3, Flame, Users, XCircle, ArrowUpRight,
+  ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, CheckCircle2,
+  Clock, Download, RefreshCw, ShoppingBag, Truck, Users, Wallet, XCircle,
 } from "lucide-react";
-import { useState } from "react";
 
-/* ─── Types ─────────────────────────────────────────────── */
+const DAY = 86_400_000;
+const statusNames: Record<string, string> = {
+  PENDING_PAYMENT: "Pendiente de pago", SCHEDULED: "Programado", RECEIVED: "Recibido",
+  PREPARING: "En preparación", READY: "Listo", ON_THE_WAY: "En camino",
+  DELIVERED: "Entregado", CANCELLED: "Cancelado",
+};
+const paymentNames: Record<string, string> = { CASH: "Efectivo", CARD: "Tarjeta", TRANSFER: "Transferencia" };
+const panel = "rounded-xl border border-outline-variant/20 bg-surface-container-high";
+const input = "min-w-0 w-full rounded-lg border border-outline-variant/30 bg-surface-container px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
+const button = "inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant/30 px-3 py-2.5 text-sm font-semibold transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50";
 
-interface DailyReport {
-  date: string;
-  totalOrders: number;
-  totalRevenue: number;
-  avgTicket: number;
-  deliveryOrders: number;
-  pickupOrders: number;
-  cancelledOrders: number;
-  newCustomers: number;
+function shift(date: string, offset: number) {
+  return new Date(Date.parse(date + "T12:00:00Z") + offset * DAY).toISOString().slice(0, 10);
 }
-
-interface ReportsData {
-  reports: DailyReport[];
-  summary: {
-    periodRevenue: number;
-    periodOrders: number;
-    periodAvgTicket: number;
-    revenueChange: number;
-    ordersChange: number;
-  };
+function mexicoToday() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
 }
-
-interface DashboardStats {
-  orders: { total: number; active: number };
-  revenue: { subtotal: number; deliveryFees: number; total: number; avgTicket: number };
-  breakdown: Array<{ type: string; count: number }>;
-  byHour: Array<{ hour: number; orders: number }>;
-  topProducts: Array<{ name: string; units: number }>;
-  avgPrepMinutes: number | null;
+function dateLabel(date: string) {
+  return new Date(date + "T12:00:00Z").toLocaleDateString("es-MX", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  });
 }
-
-/* ─── Main Component ────────────────────────────────────── */
+function presetRange(preset: string) {
+  const today = mexicoToday();
+  const monthStart = today.slice(0, 7) + "-01";
+  if (preset === "yesterday") return { dateFrom: shift(today, -1), dateTo: shift(today, -1) };
+  if (preset === "month") return { dateFrom: monthStart, dateTo: today };
+  if (preset === "lastMonth") {
+    const end = shift(monthStart, -1);
+    return { dateFrom: end.slice(0, 7) + "-01", dateTo: end };
+  }
+  return { dateFrom: shift(today, 1 - Number(preset)), dateTo: today };
+}
 
 export function ReportsView() {
   const token = getAdminToken();
-  const [period, setPeriod] = useState<"0" | "7" | "14" | "30">("7");
-  const [typeFilter, setTypeFilter] = useState<"" | "DELIVERY" | "PICKUP">("");
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-reports", period, typeFilter],
-    queryFn: () =>
-      api.get<ReportsData>(
-        `/api/admin/reports?days=${period}${
-          typeFilter ? `&type=${typeFilter}` : ""
-        }`,
-        token || undefined
-      ),
+  const [range, setRange] = useState(() => presetRange("7"));
+  const [draft, setDraft] = useState(range);
+  const [preset, setPreset] = useState("7");
+  const [type, setType] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [formError, setFormError] = useState("");
+  const [exportError, setExportError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const params = new URLSearchParams(range);
+  if (type) params.set("type", type);
+  if (paymentMethod) params.set("paymentMethod", paymentMethod);
+  const query = params.toString();
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ["admin-reports", query],
+    queryFn: () => api.get<BusinessReports>("/api/admin/reports?" + query, token || undefined),
+    refetchInterval: 60_000,
   });
 
-  const { data: dashboard } = useQuery({
-    queryKey: ["admin-dashboard-stats"],
-    queryFn: () => api.get<DashboardStats>("/api/admin/dashboard", token || undefined),
-    refetchInterval: 30_000,
-  });
-
-  const handleCsvExport = async () => {
-    const today = new Date().toISOString().split("T")[0];
+  function choosePreset(value: string) {
+    const next = presetRange(value);
+    setPreset(value); setRange(next); setDraft(next); setFormError("");
+  }
+  function applyDates(event: React.FormEvent) {
+    event.preventDefault();
+    const days = (Date.parse(draft.dateTo) - Date.parse(draft.dateFrom)) / DAY + 1;
+    if (!draft.dateFrom || !draft.dateTo || !Number.isFinite(days) || days < 1 || days > 366) {
+      setFormError("Elige un período válido de 1 a 366 días."); return;
+    }
+    setFormError(""); setPreset("custom"); setRange({ ...draft });
+  }
+  async function exportCsv() {
+    setExporting(true); setExportError("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/admin/reports/daily/csv?date=${today}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const response = await fetch(
+        (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001") + "/api/admin/reports/csv?" + query,
+        { headers: { Authorization: "Bearer " + token } }
       );
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `pollon-sjr-${today}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
-  };
-
-  const deliveryToday = dashboard?.breakdown.find((b) => b.type === "DELIVERY")?.count ?? 0;
-  const pickupToday = dashboard?.breakdown.find((b) => b.type === "PICKUP")?.count ?? 0;
+      if (!response.ok) throw new Error("No se pudo exportar. Revisa tu sesión e inténtalo otra vez.");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = "pollon-" + range.dateFrom + "-" + range.dateTo + ".csv";
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Error al exportar el reporte.");
+    } finally { setExporting(false); }
+  }
+  const summary = data?.summary;
+  const peak = data?.byHour.reduce<{ hour: number; orders: number } | null>(
+    (best, row) => !best || row.orders > best.orders ? row : best, null
+  );
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">Reportes</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 rounded-lg bg-surface-container p-0.5">
-            {(
-              [
-                { v: "", l: "Todo" },
-                { v: "DELIVERY", l: "Envío" },
-                { v: "PICKUP", l: "Sucursal" },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.v}
-                onClick={() => setTypeFilter(opt.v as typeof typeFilter)}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                  typeFilter === opt.v
-                    ? "bg-primary text-on-primary shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
-                }`}
-              >
-                {opt.l}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={handleCsvExport}
-            className="flex items-center gap-1.5 rounded-lg border border-outline-variant/30 px-3 py-1.5 text-xs font-semibold text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
-          >
-            <Download size={13} />
-            Exportar CSV
+    <div className="mx-auto max-w-[1500px] space-y-5 p-4 sm:p-6">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-primary">Control del negocio</p>
+          <h1 className="font-headline text-2xl font-black sm:text-3xl">Reportes y ventas</h1>
+          <p className="mt-1 text-sm text-on-surface-variant">Consulta el movimiento de tu negocio, período por período.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={button} onClick={() => refetch()} disabled={isFetching} aria-label="Actualizar reporte">
+            <RefreshCw size={16} className={isFetching ? "animate-spin" : ""} /> Actualizar
           </button>
-          <div className="flex gap-1 rounded-lg bg-surface-container p-0.5">
-            {(["0", "7", "14", "30"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
-                  period === p
-                    ? "bg-primary text-on-primary shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
-                }`}
-              >
-                {p === "0" ? "Hoy" : `${p}d`}
-              </button>
-            ))}
+          <button type="button" className={button} onClick={exportCsv} disabled={!data || exporting || isFetching}>
+            <Download size={16} /> {exporting ? "Exportando…" : "Exportar período CSV"}
+          </button>
+        </div>
+      </header>
+
+      <section className={panel + " p-4 sm:p-5"} aria-label="Filtros del reporte">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {[["1", "Hoy"], ["yesterday", "Ayer"], ["7", "7 días"], ["30", "30 días"], ["month", "Este mes"], ["lastMonth", "Mes anterior"]].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => choosePreset(value)} aria-pressed={preset === value}
+              className={"rounded-lg px-3 py-2 text-xs font-bold transition-colors " + (preset === value ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant hover:text-primary")}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <form onSubmit={applyDates} className="grid items-end gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto_1fr_1fr]">
+          <label className="space-y-1.5 text-xs font-semibold text-on-surface-variant">Desde
+            <input type="date" required value={draft.dateFrom} onChange={(e) => setDraft({ ...draft, dateFrom: e.target.value })} className={input} />
+          </label>
+          <label className="space-y-1.5 text-xs font-semibold text-on-surface-variant">Hasta
+            <input type="date" required value={draft.dateTo} onChange={(e) => setDraft({ ...draft, dateTo: e.target.value })} className={input} />
+          </label>
+          <button type="submit" className="rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-on-primary hover:brightness-110">Aplicar fechas</button>
+          <label className="space-y-1.5 text-xs font-semibold text-on-surface-variant">Tipo de pedido
+            <select aria-label="Tipo de pedido" value={type} onChange={(e) => setType(e.target.value)} className={input}>
+              <option value="">Todos los pedidos</option><option value="DELIVERY">Envío a domicilio</option><option value="PICKUP">Recoger en sucursal</option>
+            </select>
+          </label>
+          <label className="space-y-1.5 text-xs font-semibold text-on-surface-variant">Método de pago
+            <select aria-label="Método de pago" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={input}>
+              <option value="">Todos los métodos</option><option value="CASH">Efectivo</option><option value="CARD">Tarjeta</option><option value="TRANSFER">Transferencia</option>
+            </select>
+          </label>
+        </form>
+        {formError && <p role="alert" className="mt-3 text-sm text-error">{formError}</p>}
+        <p className="mt-4 flex items-center gap-2 text-xs text-on-surface-variant">
+          <CalendarDays size={14} className="shrink-0 text-primary" />
+          {dateLabel(range.dateFrom)} — {dateLabel(range.dateTo)} · Horario de México · Hasta 366 días por consulta
+        </p>
+      </section>
+
+      {exportError && <p role="alert" className="text-sm text-error">{exportError}</p>}
+      {error ? (
+        <div role="alert" className={panel + " p-6"}>
+          <p className="text-error">No se pudo cargar el reporte: {error.message}</p>
+          <button type="button" onClick={() => refetch()} className={button + " mt-3"}>Reintentar</button>
+        </div>
+      ) : isLoading ? (
+        <div role="status" aria-label="Cargando reporte" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 8 }, (_, i) => <div key={i} className="h-28 animate-pulse rounded-xl bg-surface-container" />)}
+        </div>
+      ) : data && summary && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-on-surface-variant">
+            <span>Comparado con {dateLabel(data.period.previousFrom)} — {dateLabel(data.period.previousTo)}</span>
+            <span>{isFetching ? "Actualizando…" : "Actualización automática cada minuto"}</span>
           </div>
-        </div>
-      </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Metric label="Ventas confirmadas" value={formatCents(summary.periodRevenue)} icon={<Wallet size={18} />} change={summary.revenueChange} />
+            <Metric label="Pedidos confirmados" value={String(summary.periodOrders)} icon={<ShoppingBag size={18} />} change={summary.ordersChange} />
+            <Metric label="Ticket promedio" value={formatCents(summary.periodAvgTicket)} icon={<BarChart3 size={18} />} />
+            <Metric label="Clientes compradores" value={String(summary.customers)} icon={<Users size={18} />} detail={summary.newCustomers + " primera compra · " + summary.returningCustomers + " recurrentes"} />
+            <Metric label="Envíos / sucursal" value={summary.deliveryOrders + " / " + summary.pickupOrders} icon={<Truck size={18} />} />
+            <Metric label="Entregados" value={String(summary.deliveredOrders)} icon={<CheckCircle2 size={18} />} />
+            <Metric label="Pendientes de pago" value={String(summary.pendingOrders)} icon={<Clock size={18} />} detail="Fuera de ventas confirmadas" />
+            <Metric label="Cancelados" value={String(summary.cancelledOrders)} icon={<XCircle size={18} />} detail={summary.cancellationRate.toFixed(1) + "% de confirmados + cancelados"} />
+          </div>
 
-      {/* ── Summary Cards ── */}
-      {data?.summary && (
-        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <SummaryCard
-            icon={<DollarSign size={18} />}
-            iconColor="text-green-400 bg-green-400/10"
-            label="Ingresos"
-            value={formatCents(data.summary.periodRevenue)}
-            change={data.summary.revenueChange}
-          />
-          <SummaryCard
-            icon={<ShoppingBag size={18} />}
-            iconColor="text-blue-400 bg-blue-400/10"
-            label="Pedidos"
-            value={String(data.summary.periodOrders)}
-            change={data.summary.ordersChange}
-          />
-          <SummaryCard
-            icon={<ArrowUpRight size={18} />}
-            iconColor="text-purple-400 bg-purple-400/10"
-            label="Ticket promedio"
-            value={formatCents(data.summary.periodAvgTicket)}
-          />
-          <SummaryCard
-            icon={<Clock size={18} />}
-            iconColor="text-orange-400 bg-orange-400/10"
-            label="Tiempo promedio"
-            value={dashboard?.avgPrepMinutes ? `${dashboard.avgPrepMinutes} min` : "—"}
-            sub="entrega hoy"
-          />
-        </div>
-      )}
+          {summary.periodOrders === 0 && <p role="status" className={panel + " p-4 text-sm text-on-surface-variant"}>No hay ventas confirmadas con estos filtros. Puedes consultar pendientes y cancelaciones abajo o ampliar las fechas.</p>}
 
-      {/* ── Today's Live Stats ── */}
-      {dashboard && (
-        <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <MiniStat icon={<Flame size={14} />} label="Hoy" value={`${dashboard.orders.total} pedidos`} color="text-primary" />
-          <MiniStat icon={<BarChart3 size={14} />} label="Activos" value={String(dashboard.orders.active)} color="text-blue-400" />
-          <MiniStat icon={<Truck size={14} />} label="Envíos" value={String(deliveryToday)} color="text-violet-400" />
-          <MiniStat icon={<Store size={14} />} label="Sucursal" value={String(pickupToday)} color="text-emerald-400" />
-          <MiniStat icon={<DollarSign size={14} />} label="Venta hoy" value={formatCents(dashboard.revenue.total)} color="text-secondary" />
-        </div>
-      )}
+          <section className={panel + " p-4 sm:p-5"} aria-label="Evolución de ventas">
+            <SectionTitle icon={<BarChart3 size={17} />} title="Evolución de ventas" note={data.period.days + " días · MXN"} />
+            <RevenueChart reports={data.reports} />
+          </section>
 
-      {/* ── Two-column: Top Products + Hourly ── */}
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
-        {/* Top Products */}
-        {dashboard?.topProducts && dashboard.topProducts.length > 0 && (
-          <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high p-5">
-            <h3 className="mb-3 flex items-center gap-2 font-bold text-sm">
-              <Star size={16} className="text-secondary" />
-              Productos más vendidos hoy
-            </h3>
-            <div className="space-y-2">
-              {dashboard.topProducts.map((p, i) => (
-                <div key={p.name} className="flex items-center gap-3">
-                  <span className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold ${
-                    i === 0 ? "bg-secondary/20 text-secondary" : "bg-surface-variant text-on-surface-variant"
-                  }`}>
-                    {i + 1}
-                  </span>
-                  <span className="flex-1 truncate text-sm text-on-surface">{p.name}</span>
-                  <span className="text-sm font-bold text-primary">{p.units} uds</span>
-                </div>
-              ))}
+          <div className="grid gap-5 xl:grid-cols-3">
+            <section className={panel + " p-5"}>
+              <SectionTitle icon={<Wallet size={17} />} title="Desglose de venta" />
+              <dl className="space-y-3 text-sm">
+                {[["Productos y extras", summary.subtotal], ["Descuentos", -summary.discounts], ["Envíos", summary.deliveryFees], ["Propinas", summary.tips], ["Cargo de la app", summary.appFees]].map(([label, amount]) => (
+                  <div key={String(label)} className="flex justify-between gap-3"><dt className="text-on-surface-variant">{label}</dt><dd className="font-semibold tabular-nums">{formatCents(Number(amount))}</dd></div>
+                ))}
+                <div className="flex justify-between gap-3 border-t border-outline-variant/20 pt-3 font-bold"><dt>Total confirmado</dt><dd className="text-secondary">{formatCents(summary.periodRevenue)}</dd></div>
+                <div className="flex justify-between gap-3 text-on-surface-variant"><dt>Reembolsos registrados*</dt><dd>{formatCents(summary.refunds)}</dd></div>
+              </dl>
+              <p className="mt-4 text-xs leading-relaxed text-on-surface-variant">Ventas de pedidos confirmados, según su fecha de creación. No equivalen a utilidad ni a dinero liquidado. *Reembolsos asociados a pedidos del período.</p>
+            </section>
+            <section className={panel + " p-5"}>
+              <SectionTitle icon={<ShoppingBag size={17} />} title="Venta por método de pago" />
+              <div className="space-y-4">
+                {["CASH", "CARD", "TRANSFER"].map((method) => {
+                  const row = data.payments.find((item) => item.method === method);
+                  const amount = row?.revenue ?? 0;
+                  return <div key={method}>
+                    <div className="mb-1 flex justify-between gap-3 text-sm"><span>{paymentNames[method]}</span><strong className="tabular-nums">{formatCents(amount)}</strong></div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-container"><div className="h-full rounded-full bg-primary" style={{ width: (summary.periodRevenue ? amount / summary.periodRevenue * 100 : 0) + "%" }} /></div>
+                    <p className="mt-1 text-xs text-on-surface-variant">{row?.orders ?? 0} pedidos confirmados</p>
+                  </div>;
+                })}
+              </div>
+            </section>
+            <section className={panel + " p-5"}>
+              <SectionTitle icon={<Clock size={17} />} title="Estado de los pedidos" />
+              <dl className="space-y-2.5 text-sm">
+                {Object.entries(statusNames).map(([status, label]) => <div key={status} className="flex justify-between gap-2">
+                  <dt className="text-on-surface-variant">{label}</dt><dd className={"font-bold tabular-nums " + (status === "CANCELLED" ? "text-error" : "")}>{data.statuses.find((row) => row.status === status)?.orders ?? 0}</dd>
+                </div>)}
+              </dl>
+              <p className="mt-4 text-xs text-on-surface-variant">Estado actual de los pedidos creados en el período.</p>
+            </section>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <section className={panel + " overflow-hidden p-5"}>
+              <SectionTitle icon={<ShoppingBag size={17} />} title="10 productos más vendidos" />
+              {data.topProducts.length ? <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="text-xs text-on-surface-variant"><th className="pb-3 text-left font-medium">Producto</th><th className="pb-3 text-right font-medium">Unidades</th><th className="pb-3 text-right font-medium">Venta base</th></tr></thead>
+                <tbody className="divide-y divide-outline-variant/10">{data.topProducts.map((product, i) => <tr key={product.id}>
+                  <td className="py-2.5 pr-3"><span className="mr-2 text-xs text-primary">{i + 1}.</span>{product.name}</td>
+                  <td className="py-2.5 pr-3 text-right font-bold tabular-nums">{product.units}</td><td className="py-2.5 text-right tabular-nums">{formatCents(product.grossRevenue)}</td>
+                </tr>)}</tbody>
+              </table></div> : <p className="py-8 text-center text-sm text-on-surface-variant">Sin productos vendidos en este período.</p>}
+              <p className="mt-4 text-xs text-on-surface-variant">Venta base sin extras, descuentos ni envíos; puede diferir del total confirmado.</p>
+            </section>
+            <section className={panel + " p-5"}>
+              <SectionTitle icon={<Clock size={17} />} title="Horarios con más pedidos" note="Horario de México" />
+              <div className="mt-6 flex h-36 items-end gap-1" aria-label="Pedidos por hora">
+                {Array.from({ length: 24 }, (_, hour) => {
+                  const count = data.byHour.find((row) => row.hour === hour)?.orders ?? 0;
+                  return <div key={hour} className="group relative flex h-full min-w-0 flex-1 flex-col justify-end" title={hour + ":00 · " + count + " pedidos"}>
+                    <div className={"min-h-[2px] rounded-t " + (hour === peak?.hour ? "bg-secondary" : "bg-primary/50")} style={{ height: Math.max(2, count / (peak?.orders || 1) * 100) + "%" }} />
+                    <span className="mt-1 text-center text-[9px] text-on-surface-variant">{hour % 3 === 0 ? hour + "h" : ""}</span>
+                    <span className="sr-only">{hour}:00: {count} pedidos</span>
+                  </div>;
+                })}
+              </div>
+              <p className="mt-5 text-sm text-on-surface-variant">{peak ? "Mayor actividad: " + peak.hour + ":00–" + (peak.hour + 1) + ":00 · " + peak.orders + " pedidos." : "Sin pedidos confirmados en este período."}</p>
+            </section>
+          </div>
+
+          <section className={panel + " overflow-hidden"}>
+            <div className="flex flex-wrap items-center justify-between gap-2 p-5"><h2 className="font-headline font-bold">Desglose diario</h2><p className="text-xs text-on-surface-variant">Selecciona una fecha para ver ese día</p></div>
+            <div className="overflow-x-auto">
+              <table className="w-full whitespace-nowrap text-sm">
+                <caption className="sr-only">Resultados por día del período seleccionado en horario de México</caption>
+                <thead className="border-y border-outline-variant/15 bg-surface-container text-xs text-on-surface-variant"><tr>
+                  {["Fecha", "Confirmados", "Venta", "Ticket", "Envíos", "Sucursal", "Cancelados", "Pendientes", "Clientes", "Primera compra"].map((label) => <th key={label} scope="col" className="px-4 py-3 text-left font-semibold">{label}</th>)}
+                </tr></thead>
+                <tbody className="divide-y divide-outline-variant/10">{data.reports.map((day) => <tr key={day.date} className="hover:bg-surface-container">
+                  <td className="px-4 py-3"><button className="font-semibold text-primary hover:underline" onClick={() => { const next = { dateFrom: day.date, dateTo: day.date }; setRange(next); setDraft(next); setPreset("custom"); setFormError(""); }}>{dateLabel(day.date)}</button></td>
+                  {[day.totalOrders, formatCents(day.totalRevenue), formatCents(day.avgTicket), day.deliveryOrders, day.pickupOrders, day.cancelledOrders, day.pendingOrders, day.customers, day.newCustomers].map((value, i) => <td key={i} className="px-4 py-3 tabular-nums">{value}</td>)}
+                </tr>)}</tbody>
+              </table>
             </div>
-          </div>
-        )}
-
-        {/* Hourly Distribution */}
-        {dashboard?.byHour && dashboard.byHour.length > 0 && (
-          <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high p-5">
-            <h3 className="mb-3 flex items-center gap-2 font-bold text-sm">
-              <Clock size={16} className="text-primary" />
-              Pedidos por hora (hoy)
-            </h3>
-            <div className="flex items-end gap-1" style={{ height: 120 }}>
-              {(() => {
-                const max = Math.max(...dashboard.byHour.map((h) => h.orders), 1);
-                // Show hours 12-23 (typical restaurant hours)
-                const hours = Array.from({ length: 12 }, (_, i) => i + 12);
-                return hours.map((hr) => {
-                  const data = dashboard.byHour.find((h) => h.hour === hr);
-                  const count = data?.orders ?? 0;
-                  const pct = (count / max) * 100;
-                  return (
-                    <div key={hr} className="flex flex-1 flex-col items-center gap-1">
-                      <div className="relative w-full flex flex-col justify-end" style={{ height: 90 }}>
-                        <div
-                          className={`w-full rounded-t-sm transition-all ${count > 0 ? "bg-primary" : "bg-surface-variant/30"}`}
-                          style={{ height: `${Math.max(pct, 4)}%` }}
-                        />
-                        {count > 0 && (
-                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] font-bold text-primary">
-                            {count}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[9px] text-on-surface-variant/60">{hr}h</span>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Daily Breakdown Table ── */}
-      <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high overflow-hidden">
-        <div className="flex items-center justify-between border-b border-outline-variant/10 p-4">
-          <h2 className="font-bold">Desglose diario</h2>
-          <span className="text-xs text-on-surface-variant">Últimos {period} días</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-container border-b border-outline-variant/10">
-              <tr>
-                <th className="p-3 text-left font-semibold">Fecha</th>
-                <th className="p-3 text-center font-semibold">Pedidos</th>
-                <th className="p-3 text-center font-semibold">Ingresos</th>
-                <th className="p-3 text-center font-semibold">Ticket</th>
-                <th className="p-3 text-center font-semibold">
-                  <span className="inline-flex items-center gap-1"><Truck size={12} /> Envío</span>
-                </th>
-                <th className="p-3 text-center font-semibold">
-                  <span className="inline-flex items-center gap-1"><Store size={12} /> Sucursal</span>
-                </th>
-                <th className="p-3 text-center font-semibold">
-                  <span className="inline-flex items-center gap-1"><XCircle size={12} /> Cancel.</span>
-                </th>
-                <th className="p-3 text-center font-semibold">
-                  <span className="inline-flex items-center gap-1"><Users size={12} /> Nuevos</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-outline-variant/10">
-              {isLoading
-                ? Array.from({ length: 7 }).map((_, i) => (
-                    <tr key={i}>
-                      <td colSpan={8} className="p-3">
-                        <div className="h-6 animate-pulse rounded bg-surface-variant" />
-                      </td>
-                    </tr>
-                  ))
-                : data?.reports.map((day) => (
-                    <tr key={day.date} className="hover:bg-surface-container transition-colors">
-                      <td className="p-3 font-medium">
-                        {new Date(day.date + "T12:00:00").toLocaleDateString("es-MX", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </td>
-                      <td className="p-3 text-center font-bold">{day.totalOrders}</td>
-                      <td className="p-3 text-center font-bold text-secondary">
-                        {formatCents(day.totalRevenue)}
-                      </td>
-                      <td className="p-3 text-center">{formatCents(day.avgTicket)}</td>
-                      <td className="p-3 text-center text-violet-400">{day.deliveryOrders || "—"}</td>
-                      <td className="p-3 text-center text-emerald-400">{day.pickupOrders || "—"}</td>
-                      <td className="p-3 text-center text-error">
-                        {day.cancelledOrders > 0 ? day.cancelledOrders : "—"}
-                      </td>
-                      <td className="p-3 text-center text-primary">{day.newCustomers}</td>
-                    </tr>
-                  ))}
-              {!isLoading && data?.reports.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center text-sm text-on-surface-variant">
-                    Sin datos para este período
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          </section>
+          <p className="text-xs leading-relaxed text-on-surface-variant">“Primera compra” identifica la primera orden confirmada del cliente en todo su historial. Un cliente puede comprar varios días: los clientes diarios no se suman para calcular el total del período. La comparación usa el período anterior de igual duración; el día de hoy aún puede estar incompleto.</p>
+        </>
+      )}
     </div>
   );
 }
 
-/* ─── Summary Card ──────────────────────────────────────── */
-
-function SummaryCard({
-  icon, iconColor, label, value, change, sub,
-}: {
-  icon: React.ReactNode;
-  iconColor: string;
-  label: string;
-  value: string;
-  change?: number;
-  sub?: string;
-}) {
-  return (
-    <div className="rounded-xl border border-outline-variant/20 bg-surface-container-high p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${iconColor}`}>
-          {icon}
-        </div>
-        {change !== undefined && (
-          <span className={`flex items-center gap-0.5 text-[11px] font-bold ${
-            change >= 0 ? "text-green-400" : "text-error"
-          }`}>
-            {change >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-            {change >= 0 ? "+" : ""}{change.toFixed(1)}%
-          </span>
-        )}
-      </div>
-      <p className="font-headline text-xl font-extrabold text-on-surface">{value}</p>
-      <p className="text-xs text-on-surface-variant">{sub ?? label}</p>
+function Metric({ label, value, icon, change, detail }: { label: string; value: string; icon: ReactNode; change?: number | null; detail?: string }) {
+  return <div className={panel + " min-w-0 p-4"}>
+    <div className="mb-3 flex items-center justify-between gap-2">
+      <span className="rounded-lg bg-primary/10 p-2 text-primary">{icon}</span>
+      {change !== undefined && <span title="Comparado con el período anterior" className={"inline-flex items-center text-xs font-bold " + (change === null ? "text-on-surface-variant" : change < 0 ? "text-error" : "text-emerald-400")}>
+        {change === null ? "Sin base previa" : <>{change < 0 ? <ArrowDownRight size={14} /> : <ArrowUpRight size={14} />}{change > 0 ? "+" : ""}{change.toFixed(1)}%</>}
+      </span>}
     </div>
-  );
+    <p className="break-words font-headline text-xl font-black tabular-nums sm:text-2xl">{value}</p>
+    <p className="mt-1 text-xs font-semibold text-on-surface-variant">{label}</p>
+    {detail && <p className="mt-1 text-[11px] text-on-surface-variant">{detail}</p>}
+  </div>;
 }
 
-/* ─── Mini Stat ─────────────────────────────────────────── */
+function SectionTitle({ icon, title, note }: { icon: ReactNode; title: string; note?: string }) {
+  return <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="flex items-center gap-2 font-headline text-sm font-bold"><span className="text-primary">{icon}</span>{title}</h2>{note && <span className="text-xs text-on-surface-variant">{note}</span>}</div>;
+}
 
-function MiniStat({ icon, label, value, color }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-outline-variant/15 bg-surface-container p-3">
-      <span className={color}>{icon}</span>
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/60">{label}</p>
-        <p className="text-sm font-bold text-on-surface">{value}</p>
-      </div>
-    </div>
-  );
+function RevenueChart({ reports }: { reports: BusinessReports["reports"] }) {
+  const days = [...reports].reverse();
+  const max = Math.max(...days.map((day) => day.totalRevenue), 1);
+  const x = (index: number) => days.length === 1 ? 500 : 12 + index / (days.length - 1) * 976;
+  const y = (value: number) => 145 - value / max * 125;
+  const points = days.map((day, i) => x(i) + "," + y(day.totalRevenue)).join(" ");
+  return <div>
+    <div className="mb-2 flex justify-between text-xs text-on-surface-variant"><span>Máximo diario: {formatCents(max === 1 ? 0 : max)}</span><span>Ventas confirmadas</span></div>
+    <svg viewBox="0 0 1000 160" className="h-40 w-full text-primary" role="img" aria-label="Evolución diaria de ventas del período seleccionado">
+      {[20, 82, 145].map((value) => <line key={value} x1="0" x2="1000" y1={value} y2={value} stroke="currentColor" opacity=".12" />)}
+      <polygon points={x(0) + ",145 " + points + " " + x(days.length - 1) + ",145"} fill="currentColor" opacity=".08" />
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
+      {days.map((day, i) => <circle key={day.date} cx={x(i)} cy={y(day.totalRevenue)} r={days.length < 32 ? 4 : 2} fill="currentColor"><title>{dateLabel(day.date)}: {formatCents(day.totalRevenue)}</title></circle>)}
+    </svg>
+    <div className="flex justify-between text-xs text-on-surface-variant"><span>{dateLabel(days[0].date)}</span><span>{dateLabel(days[days.length - 1].date)}</span></div>
+  </div>;
 }

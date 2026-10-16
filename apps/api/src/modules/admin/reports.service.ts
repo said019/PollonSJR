@@ -1,6 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { Prisma } from "@prisma/client";
-import { mexicoTodayISO, mexicoDayRange, mexicoStartOfDaysAgo } from "../../utils/timezone";
+import { mexicoTodayISO, mexicoDayRange } from "../../utils/timezone";
 
 export class ReportsService {
   constructor(private app: FastifyInstance) {}
@@ -180,102 +179,6 @@ export class ReportsService {
     };
   }
 
-  /**
-   * Reports for the frontend view (N days with summary + comparison).
-   */
-  async getReportsView(days: number = 7, type?: "DELIVERY" | "PICKUP") {
-    // N días hacia atrás desde el comienzo de hoy en TZ de México.
-    const from = mexicoStartOfDaysAgo(days);
-
-    // Comparison window: same length as current period, immediately preceding it.
-    // Special case: when days=0 ("Hoy") compare against yesterday (1 full day).
-    const prevFrom = new Date(from);
-    prevFrom.setDate(prevFrom.getDate() - Math.max(days, 1));
-
-    const typeWhere = type ? { type } : {};
-
-    // Current period
-    const currentOrders = await this.app.prisma.order.findMany({
-      where: {
-        createdAt: { gte: from },
-        status: { notIn: ["PENDING_PAYMENT"] },
-        ...typeWhere,
-      },
-      select: { total: true, subtotal: true, type: true, status: true, customerId: true, createdAt: true },
-    });
-
-    // Previous period for comparison
-    const prevOrders = await this.app.prisma.order.findMany({
-      where: {
-        createdAt: { gte: prevFrom, lt: from },
-        status: { notIn: ["PENDING_PAYMENT"] },
-        ...typeWhere,
-      },
-      select: { total: true },
-    });
-
-    // Group by day
-    const byDay = new Map<string, {
-      totalOrders: number; totalRevenue: number; avgTicket: number;
-      deliveryOrders: number; pickupOrders: number; cancelledOrders: number;
-      customers: Set<string>;
-    }>();
-
-    for (const o of currentOrders) {
-      const day = o.createdAt.toISOString().split("T")[0];
-      if (!byDay.has(day)) {
-        byDay.set(day, {
-          totalOrders: 0, totalRevenue: 0, avgTicket: 0,
-          deliveryOrders: 0, pickupOrders: 0, cancelledOrders: 0,
-          customers: new Set(),
-        });
-      }
-      const d = byDay.get(day)!;
-      if (o.status !== "CANCELLED") {
-        d.totalOrders++;
-        d.totalRevenue += o.total;
-        if (o.type === "DELIVERY") d.deliveryOrders++;
-        else d.pickupOrders++;
-      } else {
-        d.cancelledOrders++;
-      }
-      d.customers.add(o.customerId);
-    }
-
-    const reports = Array.from(byDay.entries())
-      .sort(([a], [b]) => b.localeCompare(a))
-      .map(([date, d]) => ({
-        date,
-        totalOrders: d.totalOrders,
-        totalRevenue: d.totalRevenue,
-        avgTicket: d.totalOrders > 0 ? Math.round(d.totalRevenue / d.totalOrders) : 0,
-        deliveryOrders: d.deliveryOrders,
-        pickupOrders: d.pickupOrders,
-        cancelledOrders: d.cancelledOrders,
-        newCustomers: d.customers.size,
-      }));
-
-    const validCurrent = currentOrders.filter((o) => o.status !== "CANCELLED");
-    const periodRevenue = validCurrent.reduce((s, o) => s + o.total, 0);
-    const periodOrders = validCurrent.length;
-    const prevRevenue = prevOrders.reduce((s, o) => s + o.total, 0);
-    const prevOrderCount = prevOrders.length;
-
-    return {
-      reports,
-      summary: {
-        periodRevenue,
-        periodOrders,
-        periodAvgTicket: periodOrders > 0 ? Math.round(periodRevenue / periodOrders) : 0,
-        revenueChange: prevRevenue > 0
-          ? ((periodRevenue - prevRevenue) / prevRevenue) * 100
-          : 0,
-        ordersChange: prevOrderCount > 0
-          ? ((periodOrders - prevOrderCount) / prevOrderCount) * 100
-          : 0,
-      },
-    };
-  }
 
   /**
    * CSV export for a specific date.

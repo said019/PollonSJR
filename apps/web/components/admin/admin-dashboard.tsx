@@ -86,9 +86,14 @@ export function AdminDashboard() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-headline font-bold">Dashboard</h1>
-        <ConnectionStatus connected={true} />
+        <div className="flex flex-wrap items-center gap-3">
+          <a href="/admin/reports" className="rounded-lg border border-primary/30 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10">
+            Ver reportes por fecha
+          </a>
+          <ConnectionStatus connected={true} />
+        </div>
       </div>
 
       {/* Live stat cards */}

@@ -1,3 +1,5 @@
+export type { BusinessReports, BusinessReportDay } from "./business-reports";
+
 // ─── Socket Events ──────────────────────────────────────────
 
 export interface ServerToClientEvents {
