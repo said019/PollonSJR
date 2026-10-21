@@ -162,10 +162,11 @@ test("AI ambiguity, expiry, API failure and call budget leave the basket unchang
   await bot.advanceWithAI(s, input("quiero pollo")); assert.equal(calls, before); assert.equal(s.items.length, 0);
 });
 
-test("webhook fails closed, requires exact instance and ignores outgoing notifications", async () => {
+test("webhook fails closed, requires exact instance and pauses on unrecognized outgoing messages", async () => {
   const oldEnabled = process.env.WHATSAPP_BOT_ENABLED; const oldSecret = process.env.EVOLUTION_WEBHOOK_SECRET;
   process.env.WHATSAPP_BOT_ENABLED = "true"; process.env.EVOLUTION_WEBHOOK_SECRET = "s".repeat(32);
   const app = Fastify();
+  const f = fixture(); app.decorate("redis", f.app.redis); app.decorate("prisma", f.app.prisma);
   try {
     await app.register(evolutionWebhookRoutes, { prefix: "/hook" });
     const payload = { event: "messages.upsert", instance: process.env.EVOLUTION_INSTANCE || "pollon-sjr", data: { key: { id: "1", fromMe: true, remoteJid: "524271234567@s.whatsapp.net" }, message: { conversation: "Pedido confirmado" } } };

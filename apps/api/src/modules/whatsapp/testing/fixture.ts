@@ -6,6 +6,7 @@ const product = productSchema.parse({ id: "pollo", name: "Pollo", price: 15000, 
 export function createSimulationFixture() {
   const storage = new Map<string, string>();
   const queue: string[] = [];
+  const sets = new Map<string, Set<string>>();
   const orders = new Map<string, any>();
   const preferences = new Map<string, any>();
   const links: any[] = [];
@@ -20,7 +21,20 @@ export function createSimulationFixture() {
       if (options?.NX && storage.has(key)) return null;
       storage.set(key, value); return "OK";
     },
+    sCard: async (key: string) => sets.get(key)?.size || 0,
     eval: async (_script: string, options: any) => {
+      if (_script.includes("attention-state")) {
+        if (storage.has(options.keys[0])) return 1;
+        if (!sets.get(options.keys[1])?.size) return 0;
+        return storage.has(options.keys[2]) ? 2 : 1;
+      }
+      if (_script.includes("observe-app-outbound")) {
+        if (storage.has(options.keys[0])) return 0;
+        if (storage.has(options.keys[1])) return -1;
+        storage.set(options.keys[1], "1");
+        const members = sets.get(options.keys[2]) || new Set<string>();
+        members.add(options.arguments[0]); sets.set(options.keys[2], members); return 1;
+      }
       if (storage.get(options.keys[0]) === options.arguments[0]) storage.delete(options.keys[0]);
     },
     rPush: async (_key: string, value: string) => queue.push(value),
@@ -28,7 +42,8 @@ export function createSimulationFixture() {
       const actions: Array<() => void> = [];
       const tx: any = {
         set: (k: string, v: string) => { actions.push(() => { storage.set(k, v); }); return tx; },
-        del: (k: string) => { actions.push(() => { storage.delete(k); }); return tx; },
+        del: (k: string) => { actions.push(() => { storage.delete(k); sets.delete(k); }); return tx; },
+        sRem: (k: string, member: string) => { actions.push(() => { sets.get(k)?.delete(member); }); return tx; },
         rPush: (_k: string, v: string) => { actions.push(() => { queue.push(v); }); return tx; },
         exec: async () => { actions.forEach(fn => fn()); },
       };
@@ -66,5 +81,5 @@ export function createSimulationFixture() {
       $queryRaw: async () => [{ seq: 1 }],
     },
   };
-  return { app, storage, queue, orders, preferences, links, config, creates: () => creates };
+  return { app, storage, sets, queue, orders, preferences, links, config, creates: () => creates };
 }

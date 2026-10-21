@@ -44,7 +44,7 @@ for (const [message, topic] of cases) test(`manual topic: ${message}`, async () 
     const bot = new WhatsAppBot(f.app, async () => { calls++; throw new Error("Must not interpret manual topics as food orders"); });
     await bot.handle(input(message));
     assert.equal(JSON.parse(f.storage.get(`wa:bot:${phone}:session`)!).step, "human");
-    assert.equal(f.storage.get(`wa:bot:${phone}:human`), "1");
+    assert.ok(f.storage.get(`wa:bot:${phone}:human`));
     const replies = f.queue.length;
     for (const followup of ["¿En dónde?", "hola", "menu", "activar bot", "confirmar", "gracias"]) {
       await bot.handle(input(followup, `${open}-${followup}`));
@@ -88,7 +88,7 @@ test("human pause survives cart expiration and only authenticated outbound resum
   f.storage.delete(`wa:bot:${phone}:session`); // simulate expired 24-hour draft
   for (const text of ["activar bot", "PEDIR", "dame un descuento", "hola", "¿ya abrieron?"]) await bot.handle(input(text));
   assert.equal(f.queue.length, 0); assert.equal(f.creates(), 0);
-  assert.equal(f.storage.get(`wa:bot:${phone}:human`), "1");
+  assert.ok(f.storage.get(`wa:bot:${phone}:human`));
   await bot.handle({ ...input("activar bot", "operator-resume"), fromMe: true });
   assert.equal(f.storage.has(`wa:bot:${phone}:human`), false);
   assert.equal(f.storage.has(`wa:bot:${phone}:dialogue`), false);

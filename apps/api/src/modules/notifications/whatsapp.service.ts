@@ -1,3 +1,6 @@
+import crypto from "node:crypto";
+import { attentionKeys, attentionState, settledAttentionState, generation, recordAppOutbound } from "../whatsapp/attention";
+import { isExcludedContact } from "../whatsapp/conversation-policy";
 import { renderTemplate } from "./templates";
 import { aInternacional, esMexicano } from "../../utils/phone";
 import type { RedisClientType } from "redis";
@@ -11,6 +14,8 @@ export interface NotificationJob {
   attempts: number;
   createdAt: string;
   confirmation?: { checkoutId: string; code: string };
+  automation?: { generation: number; handoffId?: string };
+  staffNotification?: boolean;
 }
 
 /**
@@ -122,6 +127,23 @@ export async function numeroTieneWhatsApp(
   }
 }
 
+// Rechecked immediately before every provider request, including button fallback.
+// Old jobs are invalid after an operator resume, even if a retry is delayed.
+async function maySend(job: NotificationJob, redis?: RedisClientType, ownLease = false) {
+  if (job.template !== "bot_reply") return true;
+  if (process.env.WHATSAPP_BOT_ENABLED !== "true") return false;
+  if (job.staffNotification) return true;
+  if (!redis || !job.automation || isExcludedContact(job.to)) return false;
+  if (job.automation.generation !== await generation(redis, job.to)) return false;
+  const state = ownLease ? await attentionState(redis, job.to) : await settledAttentionState(redis, job.to);
+  if (state === "automatic") return true;
+  // Only the acknowledgement which established this customer-requested
+  // handoff may pass. Any staff intervention still cancels it immediately.
+  return Boolean(job.automation.handoffId) &&
+    await redis.get(attentionKeys(job.to).human) === `handoff:${job.automation.handoffId}` &&
+    await redis.sCard(attentionKeys(job.to).unknown) === 0;
+}
+
 /**
  * Evolution API sender.
  * Env vars required:
@@ -131,6 +153,7 @@ export async function numeroTieneWhatsApp(
  *   EVOLUTION_COUNTRY_CODE → defaults to "52" (MX)
  */
 export async function sendWhatsAppEvolution(job: NotificationJob, redis?: RedisClientType): Promise<void> {
+  if (!await maySend(job, redis)) return;
   const apiUrl = process.env.EVOLUTION_API_URL;
   const apiKey = process.env.EVOLUTION_API_KEY;
   const instance = process.env.EVOLUTION_INSTANCE;
@@ -142,54 +165,66 @@ export async function sendWhatsAppEvolution(job: NotificationJob, redis?: RedisC
     return sendWhatsAppMVP(job);
   }
 
-  const body = renderTemplate(job.template, job.params);
-  // México se guarda con 10 dígitos (se le antepone la clave); los extranjeros
-  // ya la traen, así que NO se les vuelve a poner.
-  const number = esMexicano(job.to) ? `${countryCode}${job.to}` : job.to;
+  if (!redis) throw new Error("Outbound message tracking requires Redis");
+  const leaseKey = attentionKeys(job.to).sending;
+  const lease = crypto.randomUUID();
+  if (!await redis.set(leaseKey, lease, { NX: true, EX: 60 })) throw new Error("WhatsApp sender busy; retry send");
+  try {
+    const body = renderTemplate(job.template, job.params);
+    // México se guarda con 10 dígitos (se le antepone la clave); los extranjeros
+    // ya la traen, así que NO se les vuelve a poner.
+    const number = esMexicano(job.to) ? `${countryCode}${job.to}` : job.to;
 
-  const headers = { "Content-Type": "application/json", apikey: apiKey };
-  let res: Response | undefined;
-  if (job.confirmation && process.env.WHATSAPP_REPLY_BUTTONS === "true") {
-    res = await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendButtons/${encodeURIComponent(instance)}`, {
-      method: "POST", headers, signal: AbortSignal.timeout(12000),
-      body: JSON.stringify({ number, title: "Revisa tu pedido", description: body,
-        buttons: [{ type: "reply", displayText: "Confirmar pedido", id: `wa_confirm:${job.confirmation.checkoutId}:${job.confirmation.code}` }] }),
+    const headers = { "Content-Type": "application/json", apikey: apiKey };
+    let res: Response | undefined;
+    if (job.confirmation && process.env.WHATSAPP_REPLY_BUTTONS === "true") {
+      if (!await maySend(job, redis, true)) return;
+      res = await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendButtons/${encodeURIComponent(instance)}`, {
+        method: "POST", headers, signal: AbortSignal.timeout(12000),
+        body: JSON.stringify({ number, title: "Revisa tu pedido", description: body,
+          buttons: [{ type: "reply", displayText: "Confirmar pedido", id: `wa_confirm:${job.confirmation.checkoutId}:${job.confirmation.code}` }] }),
+      });
+      // Only a definite unsupported request can fall back. On an ambiguous
+      // timeout or 5xx, let the existing queue retry the same confirmation.
+      if ([400, 404, 405, 422].includes(res.status)) res = undefined;
+    }
+    if (!res && !await maySend(job, redis, true)) return;
+    res ??= await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendText/${encodeURIComponent(instance)}`, {
+      method: "POST",
+      headers,
+      signal: AbortSignal.timeout(12000),
+      body: JSON.stringify({
+        number,
+        text: body,
+        // Optional Evolution API params:
+        delay: 0,
+        linkPreview: false,
+      }),
     });
-    // Only a definite unsupported request can fall back. On an ambiguous
-    // timeout or 5xx, let the existing queue retry the same confirmation.
-    if ([400, 404, 405, 422].includes(res.status)) res = undefined;
-  }
-  res ??= await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendText/${encodeURIComponent(instance)}`, {
-    method: "POST",
-    headers,
-    signal: AbortSignal.timeout(12000),
-    body: JSON.stringify({
-      number,
-      text: body,
-      // Optional Evolution API params:
-      delay: 800,
-      linkPreview: false,
-    }),
-  });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Evolution API ${res.status}: ${errText.slice(0, 200)}`);
-  }
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Evolution API ${res.status}: ${errText.slice(0, 200)}`);
+    }
 
-  if (job.confirmation && redis) {
     const sent = await res.json() as { key?: { id?: string } };
-    if (!sent.key?.id) throw new Error("Summary message ID missing");
-    await redis.set(`wa:summary:${job.to}:${job.confirmation.checkoutId}:${job.confirmation.code}`, sent.key.id, { EX: 600 });
-  }
+    if (!sent.key?.id || typeof sent.key.id !== "string" || sent.key.id.length > 200) throw new Error("Outbound message ID missing");
+    await recordAppOutbound(redis, job.to, sent.key.id);
+    if (job.confirmation) {
+      await redis.set(`wa:summary:${job.to}:${job.confirmation.checkoutId}:${job.confirmation.code}`, sent.key.id, { EX: 600 });
+    }
 
-  console.log(`📤 WA [${job.template}] → +${number} (Evolution OK)`);
+    console.log(`📤 WA [${job.template}] → +${number} (Evolution OK)`);
+  } finally {
+    await redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", { keys: [leaseKey], arguments: [lease] });
+  }
 }
 
 /**
  * Smart default: if Evolution API is configured, use it; otherwise fall back to MVP (log only).
  */
 export async function sendWhatsApp(job: NotificationJob, redis?: RedisClientType): Promise<void> {
+  if (!await maySend(job, redis)) return;
   if (process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY && process.env.EVOLUTION_INSTANCE) {
     return sendWhatsAppEvolution(job, redis);
   }

@@ -1,6 +1,6 @@
 # Revisión de conversaciones y reglas de intervención
 
-21 de octubre de 2026. Bot desactivado; cambios preparados exclusivamente en local. No desplegar ni reactivar como parte de esta revisión.
+21 de octubre de 2026. Revisión ampliada con toma automática por el personal. Bot desactivado; cambios preparados exclusivamente en local. No desplegar ni reactivar como parte de esta revisión.
 
 ## Alcance y privacidad
 
@@ -32,13 +32,21 @@ La navegación volvió a fallar con `noWindowsAvailable`; la búsqueda también 
 - Eventos de protocolo y reacciones se ignoran incluso si traen texto adicional inesperado.
 - Continúan vigentes los controles previos: precios y promociones de la app, validación de confirmación, pausa distinta de cierre del día, consultas informativas con negocio cerrado y restricciones contra instrucciones del cliente que intentan cambiar reglas.
 
-## Requisito pendiente antes de reactivar
+## Toma automática por el personal — implementada localmente
 
-**La toma automática por cualquier mensaje del personal aún no está implementada.** El webhook actual distingue comandos explícitos (`pausar bot` / `activar bot`) y descarta otros mensajes salientes. No se debe presentar esta revisión como solución completa a la intervención humana automática.
+La detección que estaba pendiente ya está implementada y probada. Un mensaje saliente autenticado que no esté reconocido como envío de la app bloquea la asistencia de ese chat antes de procesar mensajes del cliente. Incluye texto, audio, imagen y ubicación. El bloqueo no caduca con el carrito ni se levanta por saludos, insistencia o instrucciones del cliente.
 
-La implementación siguiente debe distinguir los mensajes humanos de respuestas y notificaciones enviadas por la app, incluyendo el caso en que el webhook llega antes de que finalice el envío. También debe suprimir respuestas automáticas ya en cola cuando una persona toma el chat. Pausar indiscriminadamente por cualquier `fromMe` haría que el asistente se pause por sus propias respuestas; ignorarlos todos permite interrumpir al personal.
+La identificación usa el ID real devuelto por Evolution, no similitud del texto. Si el webhook llega primero, queda una marca provisional; el remitente de la app únicamente elimina la marca de su propio ID. Si también contestó el personal, esa otra marca permanece. Las operaciones de identificación son atómicas en Redis. Los envíos directos de códigos y la cola de notificaciones participan en el mismo registro.
 
-Antes de habilitar recepción: verificar esa distinción y sus carreras con pruebas; establecer el estado manual de conversaciones que ya atiende el personal; configurar exclusiones y destinatarios de avisos si corresponde; comprobar persistencia de Redis. El bot no importa automáticamente el historial de Brave ni puede deducir por sí solo quién es familiar o proveedor. No hay números reales incorporados al código.
+Las respuestas del bot se comprueban antes de entrar a la cola y justo antes de cada solicitud de envío. Se descarta el resultado de IA pendiente cuando interviene el personal. Cada reactivación explícita cambia la generación del chat: los reintentos y respuestas antiguas no vuelven a enviarse después. Un acuse de derivación solicitado por el cliente tiene autorización limitada a su propia derivación; una intervención del personal también lo cancela.
+
+El comando saliente `activar bot` del operador puede reanudar ese chat y descarta el carrito anterior. Un comando escrito por el cliente no puede hacerlo. Si el comando coincide con un envío de la app aún sin identificar, se mantiene el bloqueo; el operador puede repetirlo cuando termine ese envío. Esto impide que un eco automático con texto de comando active una conversación.
+
+### Límites operativos
+
+- La protección actúa cuando llega el evento del personal al servidor. No retira un mensaje ya enviado o una solicitud de envío que ya había comenzado antes de recibir ese evento.
+- Redis conserva los bloqueos sin vencimiento. La aplicación debe conservar esos datos al reiniciar; borrar Redis elimina también sus estados.
+- El cambio sigue local. Producción permanece apagada y sin suscripción de recepción. No se importó el historial de Brave ni se modificaron contactos o chats existentes. Al preparar una futura activación habrá que preservar/configurar los chats que ya atiende el equipo y las exclusiones; no se activa nada automáticamente al instalar este código.
 
 ## Ejemplos de comportamiento esperado
 
@@ -57,8 +65,9 @@ Antes de habilitar recepción: verificar esa distinción y sus carreras con prue
 
 - TypeScript: aprobado.
 - Compilación de producción: aprobada, sin iniciar servidor, migraciones ni trabajos.
-- Suite compilada: **142 pruebas aprobadas, 0 fallos, 1 omitida** (reporte SQL que requiere base de datos). Prueba de arranque de la API compilada: aprobada con infraestructura sintética.
+- Suite compilada: **157 pruebas aprobadas, 0 fallos, 1 omitida** (reporte SQL que requiere base de datos). Prueba de arranque de la API compilada: aprobada con infraestructura sintética.
 - Simulador: **147 conversaciones, 1,299 turnos, 147 aprobadas, 0 fallos**. Incluye 20 secuencias nuevas de atención manual, abierto y pausado, con insistencia posterior.
+- Toma por el personal: 15 pruebas adicionales de webhook, remitente y manejador; además, **150 escenarios concurrentes aprobados con Redis real aislado**, mediante socket local sin conexiones de producción. Se probaron ambos órdenes de llegada, intervención simultánea, duplicados, comandos, bloqueos y cancelación de confirmaciones antiguas.
 - Pruebas específicas: temas manuales antes de IA, preguntas legítimas sin falsos positivos en el conjunto, confirmaciones invalidadas, pausa tras expirar carrito, reactivación solo por operador, exclusiones y eventos técnicos.
 - Dos expectativas antiguas del simulador se actualizaron deliberadamente: «ya pagué» ahora deriva a revisión humana tanto en efectivo como en confirmación; no se acepta como pago ni se vuelve a confirmar automáticamente.
 - Pruebas deterministas con almacenamiento y colas en memoria. No se hicieron pedidos ni envíos reales; esta ronda no evalúa respuestas nuevas del modelo en vivo.
@@ -71,6 +80,8 @@ npm run build:api:production
 npm run test:api:compiled
 npm run test:api:runtime
 node --import tsx apps/api/src/modules/whatsapp/testing/simulate.ts /tmp/pollon-conversation-simulations
+# Requiere redis-server local; crea y elimina una instancia temporal sin puerto TCP.
+node --import tsx apps/api/src/modules/whatsapp/testing/attention-redis.ts
 ```
 
 ## Estado operativo verificado

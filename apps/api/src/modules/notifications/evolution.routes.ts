@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { adminOnly } from "../../middlewares/admin-only";
 import { timingSafeEqual } from "node:crypto";
 import { WhatsAppBot, parseIncoming } from "../whatsapp/bot";
+import { observeOutbound, attentionKeys } from "../whatsapp/attention";
 import { whatsappCatalogRoutes } from "../whatsapp/catalog.routes";
 
 const EVO_URL = () => process.env.EVOLUTION_API_URL?.replace(/\/$/, "");
@@ -118,7 +119,7 @@ export async function evolutionRoutes(app: FastifyInstance) {
         params: { code: "TEST-" + Math.floor(Math.random() * 1000).toString().padStart(3, "0") },
         attempts: 0,
         createdAt: new Date().toISOString(),
-      });
+      }, app.redis);
       return { success: true, message: `Mensaje de prueba enviado a +52${phone}` };
     } catch (err: any) {
       return reply.status(500).send({ error: "Error enviando", detail: err.message });
@@ -162,16 +163,18 @@ export async function evolutionWebhookRoutes(app: FastifyInstance) {
           return reply.status(401).send({ error: "Unauthorized" });
         }
         if (instance !== EVO_INSTANCE()) return reply.status(200).send({ ignored: true });
-        const messages = Array.isArray(data?.messages) ? data.messages : Array.isArray(data) ? data : [data];
+        const messages: unknown[] = Array.isArray(data?.messages) ? data.messages : Array.isArray(data) ? data : [data];
         if (messages.length > 50) return reply.status(413).send({ error: "Batch too large" });
-        for (const raw of messages) {
-          const incoming = parseIncoming(raw);
-          if (!incoming) continue;
-          // Ignore ordinary outbound notifications; only explicit operator
-          // commands can pause/resume a conversation.
-          if (incoming.fromMe && !["pausar bot", "activar bot"].includes(incoming.text.trim().toLowerCase())) continue;
-          await bot.handle(incoming);
+        // Observe staff intervention before customer turns in the same batch.
+        const incomingMessages = messages.map((raw: unknown) => parseIncoming(raw)).filter((m): m is NonNullable<typeof m> => m !== null);
+        for (const incoming of incomingMessages.filter(m => m.fromMe)) {
+          if (await observeOutbound(app.redis, incoming.phone, incoming.id) === "app") continue;
+          // Never execute a command while it could still be an unacknowledged
+          // app echo. It remains a hold unless the sender proves its own ID.
+          if (["pausar bot", "activar bot"].includes(incoming.text.trim().toLowerCase()) &&
+              !await app.redis.get(attentionKeys(incoming.phone).sending)) await bot.handle(incoming);
         }
+        for (const incoming of incomingMessages.filter(m => !m.fromMe)) await bot.handle(incoming);
         break;
 
       case "send.message":

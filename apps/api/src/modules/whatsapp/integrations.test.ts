@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseGeocodingResponse, geocodeAddress } from "./geocoder";
+import { createSimulationFixture } from "./testing/fixture";
 import { resolveCatalog } from "./catalog";
 import { sendWhatsAppEvolution, type NotificationJob } from "../notifications/whatsapp.service";
 
@@ -52,11 +53,11 @@ test("native cart resolver uses the read-only order details endpoint and require
   await assert.rejects(resolveCatalog(app, { sellerJid: "5214428219534@s.whatsapp.net", lines: [{ id: "native", quantity: 20 }, { id: "native", quantity: 1 }] }), /límite/);
 });
 
-const job: NotificationJob = { id: "job", to: "4271234567", type: "whatsapp", template: "bot_reply", params: { text: "Resumen: total $150" }, attempts: 0, createdAt: new Date().toISOString(), confirmation: { checkoutId: "checkout", code: "ABC123" } };
+const job: NotificationJob = { automation: { generation: 0 }, id: "job", to: "4271234567", type: "whatsapp", template: "bot_reply", params: { text: "Resumen: total $150" }, attempts: 0, createdAt: new Date().toISOString(), confirmation: { checkoutId: "checkout", code: "ABC123" } };
 
 test("confirmation buttons bind checkout and revision; unsupported buttons fall back to a replyable summary", async t => {
-  env(t, { EVOLUTION_API_URL: "https://evolution.example", EVOLUTION_API_KEY: "test-evo", EVOLUTION_INSTANCE: "test", WHATSAPP_REPLY_BUTTONS: "true" });
-  let calls = 0; let marker: unknown;
+  env(t, { EVOLUTION_API_URL: "https://evolution.example", EVOLUTION_API_KEY: "test-evo", EVOLUTION_INSTANCE: "test", WHATSAPP_REPLY_BUTTONS: "true", WHATSAPP_BOT_ENABLED: "true" });
+  let calls = 0;
   t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
     calls++;
     const body = JSON.parse(options.body as string);
@@ -68,16 +69,18 @@ test("confirmation buttons bind checkout and revision; unsupported buttons fall 
     assert.ok(url.includes("sendText")); assert.equal(body.text, job.params.text);
     return new Response(JSON.stringify({ key: { id: "delivered-id" } }));
   });
-  const redis = { set: async (...args: unknown[]) => { marker = args; } } as any;
+  const f = createSimulationFixture(); const redis = f.app.redis;
   await sendWhatsAppEvolution(job, redis);
   assert.equal(calls, 2);
-  assert.deepEqual(marker, ["wa:summary:4271234567:checkout:ABC123", "delivered-id", { EX: 600 }]);
+  assert.equal(f.storage.get("wa:summary:4271234567:checkout:ABC123"), "delivered-id");
 });
 
 test("sender never marks failed sends as delivered or falls back after ambiguous 5xx", async t => {
-  env(t, { EVOLUTION_API_URL: "https://evolution.example", EVOLUTION_API_KEY: "test-evo", EVOLUTION_INSTANCE: "test", WHATSAPP_REPLY_BUTTONS: "true" });
+  env(t, { EVOLUTION_API_URL: "https://evolution.example", EVOLUTION_API_KEY: "test-evo", EVOLUTION_INSTANCE: "test", WHATSAPP_REPLY_BUTTONS: "true", WHATSAPP_BOT_ENABLED: "true" });
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls++; return new Response("Unavailable", { status: 503 }); });
-  await assert.rejects(sendWhatsAppEvolution(job, { set: async () => assert.fail("must not mark delivered") } as any));
+  const f = createSimulationFixture();
+  await assert.rejects(sendWhatsAppEvolution(job, f.app.redis));
+  assert.equal(f.storage.has("wa:summary:4271234567:checkout:ABC123"), false);
   assert.equal(calls, 1);
 });

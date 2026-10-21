@@ -126,7 +126,7 @@ export async function authRoutes(app: FastifyInstance) {
             params: { code },
             attempts: 0,
             createdAt: new Date().toISOString(),
-          });
+          }, app.redis);
         } catch (sendErr) {
           // No filtrar el código en logs; sólo el motivo del fallo.
           app.log.error({ err: sendErr }, "No se pudo enviar el OTP por WhatsApp");

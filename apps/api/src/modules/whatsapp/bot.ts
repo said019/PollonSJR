@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { answerQuestion, isQuestion } from "./questions";
 import { writeReply } from "./reply-writer";
 import { requestPolicyReply } from "./request-policy";
+import { settledAttentionState, attentionKeys, generation } from "./attention";
 import { manualTopic, manualTopicReply, isExcludedContact } from "./conversation-policy";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -109,7 +110,7 @@ export function parseIncoming(raw: unknown, now = Date.now()): Incoming | null {
   const phone = digits.startsWith("52") ? normalizarTelefono(digits) : digits;
   if (!phone) return null;
   const text = m.message?.conversation || m.message?.extendedTextMessage?.text || "";
-  if (text.length > 1000) return null;
+  if (text.length > 1000 && !m.key.fromMe) return null;
   const loc = m.message?.locationMessage;
   const product = m.message?.productMessage;
   const order = m.message?.orderMessage;
@@ -121,7 +122,7 @@ export function parseIncoming(raw: unknown, now = Date.now()): Incoming | null {
   const unsupportedMedia = ["imageMessage", "audioMessage", "videoMessage", "documentMessage", "stickerMessage", "contactMessage", "contactsArrayMessage"].some(k => Boolean(m.message?.[k]));
   // Reactions, receipts and protocol events must not start conversations.
   if (!text && !loc && !product && !order && !buttonId && !unsupportedMedia) return null;
-  return { id: m.key.id, phone, text, fromMe: m.key.fromMe,
+  return { id: m.key.id, phone, text: text.slice(0, 1000), fromMe: m.key.fromMe,
     ...(unsupportedMedia ? { unsupportedMedia: true } : {}),
     replyTo: m.message?.extendedTextMessage?.contextInfo?.stanzaId,
     buttonId,
@@ -671,6 +672,7 @@ export class WhatsAppBot {
             items: s.items.map(i => ({ productId: i.productId, qty: i.qty, variant: i.variant, modifiers: i.modifiers })),
           });
           try {
+            if (await settledAttentionState(this.app.redis, input.phone) !== "automatic") return respond("");
             await new OrdersService(this.app).create(customer.id, data, { checkoutId: s.checkoutId, expectedTotal: s.total! });
           } catch (error) {
             existing = await this.app.prisma.order.findUnique({ where: { whatsappCheckoutId: s.checkoutId } });
@@ -701,6 +703,14 @@ export class WhatsAppBot {
     if (!await this.app.redis.set(lock, token, { NX: true, EX: 120 })) throw new Error("WhatsApp conversation busy; retry webhook");
     try {
       if (await this.app.redis.get(seen)) return;
+      const blocked = async () => {
+        if (input.fromMe) return false;
+        const state = await settledAttentionState(this.app.redis, input.phone);
+        if (state === "human") { await this.app.redis.set(seen, "1", { EX: 604800 }); return true; }
+        return false;
+      };
+      if (await blocked()) return;
+      const replyGeneration = await generation(this.app.redis, input.phone) + (input.fromMe && normalize(input.text) === "activar bot" ? 1 : 0);
       const raw = await this.app.redis.get(sessionKey);
       let session: Session | null = raw ? JSON.parse(raw) : null;
       // The pause is separate from the expiring cart: a new day, menu request,
@@ -726,27 +736,33 @@ export class WhatsAppBot {
       }
       if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = session && session.step !== "done" ? "¡Con gusto!" : "";
       const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);
+      if (await blocked()) return;
       if (result.text && !input.fromMe && process.env.WHATSAPP_AI_ENABLED === "true" && process.env.ANTHROPIC_API_KEY) {
         const rateKey = `${prefix}:writing:${Math.floor(Date.now() / 600000)}`;
         const count = await this.app.redis.incr(rateKey);
         await this.app.redis.expire(rateKey, 660);
         if (count <= 20) result.text = await writeReply({ message: input.text, authoritativeReply: result.text, recent });
       }
+      if (await blocked()) return;
       if (await this.app.redis.get(lock) !== token) throw new Error("WhatsApp conversation lock expired");
       // Persist state, dedup marker, and response together. A send failure must
       // never replay the state transition or recreate a confirmed order.
       const tx = this.app.redis.multi();
       if (result.text && !input.fromMe) tx.set(historyKey, JSON.stringify([...recent, { customer: input.text.slice(0, 1000), reply: result.text.slice(0, 4000) }].slice(-3)), { EX: 1800 });
-      if (result.session?.step === "human") tx.set(humanKey, "1");
-      else if (input.fromMe && text === "activar bot") { tx.del(humanKey); tx.del(historyKey); }
+      if (result.session?.step === "human") tx.set(humanKey, result.handoff ? `handoff:${input.id}` : "1");
+      else if (input.fromMe && text === "activar bot") {
+        tx.del(humanKey); tx.del(historyKey); tx.del(attentionKeys(input.phone).unknown);
+        tx.set(attentionKeys(input.phone).generation, String(replyGeneration));
+      }
       if (result.session) tx.set(sessionKey, JSON.stringify(result.session), { EX: 86400 });
       else tx.del(sessionKey);
       tx.set(seen, "1", { EX: 604800 });
       const confirmation = result.session?.step === "confirm" && result.session.confirmation && result.session.confirmation.code !== previousConfirmation
         ? { checkoutId: result.session.checkoutId, code: result.session.confirmation.code } : undefined;
-      const enqueue = (to: string, text: string, summary = false) => tx.rPush("notifications:queue", JSON.stringify({
+      const enqueue = (to: string, text: string, summary = false, staffNotification = false) => tx.rPush("notifications:queue", JSON.stringify({
         id: crypto.randomUUID(), type: "whatsapp", to, template: "bot_reply", params: { text }, attempts: 0, createdAt: new Date().toISOString(),
         ...(summary && confirmation ? { confirmation } : {}),
+        ...(staffNotification ? { staffNotification: true } : { automation: { generation: replyGeneration, ...(result.handoff ? { handoffId: input.id } : {}) } }),
       }));
       if (result.text) {
         // Keep menus and summaries below WhatsApp's text payload size.
@@ -763,7 +779,7 @@ export class WhatsAppBot {
       }
       if (result.handoff) {
         const phones = (process.env.OWNER_PHONES || "").split(",").map(p => normalizarTelefono(p)).filter((p): p is string => Boolean(p));
-        for (const phone of new Set(phones)) enqueue(phone, `Atención por WhatsApp solicitada: ${input.phone}. Revisa el chat del negocio. La asistencia automática está pausada para este cliente.`);
+        for (const phone of new Set(phones)) enqueue(phone, `Atención por WhatsApp solicitada: ${input.phone}. Revisa el chat del negocio. La asistencia automática está pausada para este cliente.`, false, true);
       }
       await tx.exec();
     } finally {
