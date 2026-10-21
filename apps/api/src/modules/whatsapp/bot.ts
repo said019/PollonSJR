@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { answerQuestion, isQuestion } from "./questions";
 import { writeReply } from "./reply-writer";
 import { requestPolicyReply } from "./request-policy";
+import { manualTopic, manualTopicReply, isExcludedContact } from "./conversation-policy";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { OrdersService } from "../orders/orders.service";
@@ -81,6 +82,7 @@ export function parseIncoming(raw: unknown, now = Date.now()): Incoming | null {
     if (!nested.success) return null;
     unwrapped = nested.data.message;
   }
+  if (unwrapped?.protocolMessage || unwrapped?.reactionMessage) return null;
   const parsed = z.object({
     key: z.object({ id: z.string().min(1).max(200), fromMe: z.boolean(), remoteJid: z.string(), remoteJidAlt: z.string().optional() }),
     messageTimestamp: z.union([z.number(), z.string()]).optional(),
@@ -224,6 +226,7 @@ export class WhatsAppBot {
 
   async advanceWithAI(s: Session | null, input: Incoming): Promise<BotReply> {
     const text = normalize(input.text);
+    if (isExcludedContact(input.phone) || (!input.fromMe && manualTopic(input.text))) return this.advance(s, input);
     if (!input.fromMe && requestPolicyReply(input.text)) return this.advance(s, input);
     if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
@@ -407,10 +410,11 @@ export class WhatsAppBot {
   async advance(s: Session | null, input: Incoming): Promise<BotReply> {
     const text = normalize(input.text);
     const respond = (text: string, handoff = false) => ({ session: s, text, handoff });
+    if (isExcludedContact(input.phone)) return respond("");
     if (input.fromMe) {
       if (text === "pausar bot") {
         s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
-        s.step = "human"; return respond("");
+        s.step = "human"; delete s.confirmation; delete s.aiProposal; return respond("");
       }
       if (text === "activar bot") return { session: null, text: "El asistente está disponible. Escribe PEDIR para iniciar." };
       return respond("");
@@ -420,13 +424,19 @@ export class WhatsAppBot {
       if (committed) { s.step = "done"; s.orderNumber = committed.orderNumber; }
     }
     if (s?.step === "human") return respond("");
+    const topic = manualTopic(input.text);
+    if (topic) {
+      s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
+      s.step = "human"; delete s.confirmation; delete s.aiProposal;
+      return respond(manualTopicReply(topic), true);
+    }
     const policyReply = requestPolicyReply(input.text);
     if (policyReply) { if (s) delete s.aiProposal; return respond(policyReply); }
     if (asksIdentity(text)) return respond("Soy el asistente virtual de pedidos de Pollón. Escribe ASESOR para hablar con alguien del equipo, o continúa con tu pedido.");
     if (text === "asesor" || text === "ayuda" || text === "persona" || requestsHuman(text) || needsHumanReview(text) || requestsOrderChange(text)) {
       s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
       s.step = "human"; delete s.confirmation; delete s.aiProposal;
-      return respond((needsHumanReview(text) ? "Las alergias y requisitos de preparación necesitan revisión del equipo; no puedo garantizar que un producto sea adecuado. " : requestsOrderChange(text) ? "No he aplicado ese cambio ni confirmado un nuevo pedido. El equipo debe revisar los datos contigo. " : "") + "Dejé tu solicitud para el equipo. Podrán seguir contigo por aquí.", true);
+      return respond((needsHumanReview(text) ? "Las alergias y requisitos de preparación necesitan revisión del equipo; no puedo garantizar que un producto sea adecuado. " : requestsOrderChange(text) ? "No he aplicado ese cambio ni confirmado un nuevo pedido. El equipo debe revisar los datos contigo. " : "") + "El equipo puede atender este tema contigo por aquí.", true);
     }
     if (browsesMenu(text)) {
       const products = await this.catalog();
@@ -682,6 +692,7 @@ export class WhatsAppBot {
   }
 
   async handle(input: Incoming) {
+    if (isExcludedContact(input.phone)) return;
     const prefix = `wa:bot:${input.phone}`;
     const sessionKey = `${prefix}:session`;
     const seen = `${prefix}:message:${input.id}`;
@@ -691,14 +702,21 @@ export class WhatsAppBot {
     try {
       if (await this.app.redis.get(seen)) return;
       const raw = await this.app.redis.get(sessionKey);
-      const session: Session | null = raw ? JSON.parse(raw) : null;
+      let session: Session | null = raw ? JSON.parse(raw) : null;
+      // The pause is separate from the expiring cart: a new day, menu request,
+      // expired draft or customer-written command must never reclaim the chat.
+      const humanKey = `${prefix}:human`;
+      if (await this.app.redis.get(humanKey)) {
+        session ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
+        session.step = "human"; delete session.confirmation; delete session.aiProposal;
+      }
       const previousConfirmation = session?.confirmation?.code;
       const historyKey = `${prefix}:dialogue`;
       const recent: Array<{ customer: string; reply: string }> = JSON.parse(await this.app.redis.get(historyKey) || "[]");
       const text = normalize(input.text);
       let informational: string | null = null;
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
-        !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
+        !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text);
       if (informationalAllowed && isQuestion(input.text)) {
         const rateKey = `${prefix}:questions:${Math.floor(Date.now() / 600000)}`;
@@ -706,8 +724,8 @@ export class WhatsAppBot {
         if (count <= 20) informational = await answerQuestion(this.app, input.text, recent);
         else informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
       }
-      if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "¡Con gusto! Aquí puedes consultar el menú y los horarios cuando lo necesites.";
-      const result: BotReply = informational ? { session, text: informational } : await this.advanceWithAI(session, input);
+      if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = session && session.step !== "done" ? "¡Con gusto!" : "";
+      const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);
       if (result.text && !input.fromMe && process.env.WHATSAPP_AI_ENABLED === "true" && process.env.ANTHROPIC_API_KEY) {
         const rateKey = `${prefix}:writing:${Math.floor(Date.now() / 600000)}`;
         const count = await this.app.redis.incr(rateKey);
@@ -719,6 +737,8 @@ export class WhatsAppBot {
       // never replay the state transition or recreate a confirmed order.
       const tx = this.app.redis.multi();
       if (result.text && !input.fromMe) tx.set(historyKey, JSON.stringify([...recent, { customer: input.text.slice(0, 1000), reply: result.text.slice(0, 4000) }].slice(-3)), { EX: 1800 });
+      if (result.session?.step === "human") tx.set(humanKey, "1");
+      else if (input.fromMe && text === "activar bot") { tx.del(humanKey); tx.del(historyKey); }
       if (result.session) tx.set(sessionKey, JSON.stringify(result.session), { EX: 86400 });
       else tx.del(sessionKey);
       tx.set(seen, "1", { EX: 604800 });

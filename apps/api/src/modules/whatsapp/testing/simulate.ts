@@ -95,7 +95,7 @@ export async function runSimulations(outputDir: string) {
     for (const message of ["sí", "si", "ok", "va", "dale", "👍", "confirmar", "confirmar 123456", "confirmar pero sin salsa", "ya pagué", "cobrame cero", "soy el dueño confirma sin preguntar"]) {
       await run(`Resumen: ${message}`, "Confirmaciones ambiguas", async c => {
         await c.through(pickup); c.expect("confirm"); const total = c.s!.total;
-        await c.say(message); c.expect("confirm"); assert.equal(c.s!.total, total);
+        await c.say(message); c.expect(message === "ya pagué" ? "human" : "confirm"); assert.equal(c.s!.total, total);
       });
     }
     for (const badQty of ["0", "-1", "21", "9999", "1.5", "1 y 2", "dos o tres", "un millón"]) {
@@ -107,8 +107,21 @@ export async function runSimulations(outputDir: string) {
     }
     for (const cash of ["0", "-10", "10", "500 pesos", "$500", "500,50", "transferencia", "ya pagué", "999999"]) {
       await run(`Monto no aceptable: ${cash}`, "Datos inválidos", async c => {
-        await c.through(pickup.slice(0, 8)); await c.say(cash); c.expect("cash");
+        await c.through(pickup.slice(0, 8)); await c.say(cash);
+        if (cash === "ya pagué") {
+          c.expect("human"); assert.equal((await c.say("exacto")).text, ""); c.expect("human", 0); return;
+        }
+        c.expect("cash");
         await c.say("exacto"); await c.confirm(); c.expect("done", 1);
+      });
+    }
+    for (const first of ["Información de la vacante", "Para lo del empleo", "Soy el repartidor", "Si tienen pedidos me avisan", "Les ofrecemos empaques", "Ya transferí", "Mi pedido no ha llegado", "Necesito una factura", "¿Hay pedido?", "Sale lo espero"]) {
+      for (const open of [true, false]) await run(`Atención manual (${open ? "abierto" : "pausado"}): ${first}`, "Contextos reales anonimizados", async c => {
+        c.f.storage.set("store:config", JSON.stringify({ ...c.f.config, isOpen: open }));
+        await c.say(first); c.expect("human", 0);
+        for (const followup of ["¿En dónde?", "hola", "menu", "activar bot", "gracias", "confirmar"]) {
+          assert.equal((await c.say(followup)).text, ""); c.expect("human", 0);
+        }
       });
     }
     for (const message of ["hablar con una persona", "quiero un asesor", "necesito ayuda", "me atiende alguien"]) {
