@@ -1,5 +1,6 @@
 import { renderTemplate } from "./templates";
 import { aInternacional, esMexicano } from "../../utils/phone";
+import type { RedisClientType } from "redis";
 
 export interface NotificationJob {
   id: string;
@@ -9,6 +10,7 @@ export interface NotificationJob {
   params: Record<string, string>;
   attempts: number;
   createdAt: string;
+  confirmation?: { checkoutId: string; code: string };
 }
 
 /**
@@ -128,13 +130,14 @@ export async function numeroTieneWhatsApp(
  *   EVOLUTION_INSTANCE    → instance name (e.g. "pollon-sjr")
  *   EVOLUTION_COUNTRY_CODE → defaults to "52" (MX)
  */
-export async function sendWhatsAppEvolution(job: NotificationJob): Promise<void> {
+export async function sendWhatsAppEvolution(job: NotificationJob, redis?: RedisClientType): Promise<void> {
   const apiUrl = process.env.EVOLUTION_API_URL;
   const apiKey = process.env.EVOLUTION_API_KEY;
   const instance = process.env.EVOLUTION_INSTANCE;
   const countryCode = process.env.EVOLUTION_COUNTRY_CODE || "52";
 
   if (!apiUrl || !apiKey || !instance) {
+    if (job.template === "bot_reply") throw new Error("Bot sender not configured");
     // Missing config → fall back to MVP log
     return sendWhatsAppMVP(job);
   }
@@ -144,12 +147,22 @@ export async function sendWhatsAppEvolution(job: NotificationJob): Promise<void>
   // ya la traen, así que NO se les vuelve a poner.
   const number = esMexicano(job.to) ? `${countryCode}${job.to}` : job.to;
 
-  const res = await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendText/${instance}`, {
+  const headers = { "Content-Type": "application/json", apikey: apiKey };
+  let res: Response | undefined;
+  if (job.confirmation && process.env.WHATSAPP_REPLY_BUTTONS === "true") {
+    res = await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendButtons/${encodeURIComponent(instance)}`, {
+      method: "POST", headers, signal: AbortSignal.timeout(12000),
+      body: JSON.stringify({ number, title: "Revisa tu pedido", description: body,
+        buttons: [{ type: "reply", displayText: "Confirmar pedido", id: `wa_confirm:${job.confirmation.checkoutId}:${job.confirmation.code}` }] }),
+    });
+    // Only a definite unsupported request can fall back. On an ambiguous
+    // timeout or 5xx, let the existing queue retry the same confirmation.
+    if ([400, 404, 405, 422].includes(res.status)) res = undefined;
+  }
+  res ??= await fetch(`${apiUrl.replace(/\/$/, "")}/message/sendText/${encodeURIComponent(instance)}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: apiKey,
-    },
+    headers,
+    signal: AbortSignal.timeout(12000),
     body: JSON.stringify({
       number,
       text: body,
@@ -164,15 +177,22 @@ export async function sendWhatsAppEvolution(job: NotificationJob): Promise<void>
     throw new Error(`Evolution API ${res.status}: ${errText.slice(0, 200)}`);
   }
 
+  if (job.confirmation && redis) {
+    const sent = await res.json() as { key?: { id?: string } };
+    if (!sent.key?.id) throw new Error("Summary message ID missing");
+    await redis.set(`wa:summary:${job.to}:${job.confirmation.checkoutId}:${job.confirmation.code}`, sent.key.id, { EX: 600 });
+  }
+
   console.log(`📤 WA [${job.template}] → +${number} (Evolution OK)`);
 }
 
 /**
  * Smart default: if Evolution API is configured, use it; otherwise fall back to MVP (log only).
  */
-export async function sendWhatsApp(job: NotificationJob): Promise<void> {
+export async function sendWhatsApp(job: NotificationJob, redis?: RedisClientType): Promise<void> {
   if (process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY && process.env.EVOLUTION_INSTANCE) {
-    return sendWhatsAppEvolution(job);
+    return sendWhatsAppEvolution(job, redis);
   }
+  if (job.template === "bot_reply") throw new Error("Bot sender not configured");
   return sendWhatsAppMVP(job);
 }

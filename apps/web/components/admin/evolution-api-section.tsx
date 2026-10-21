@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { WhatsAppCatalogLinks } from "./whatsapp-catalog-links";
 
 interface StatusResponse {
   provider: "evolution";
@@ -313,6 +314,7 @@ export function EvolutionApiSection() {
           )}
         </div>
       )}
+      <WhatsAppCatalogLinks />
     </section>
   );
 }

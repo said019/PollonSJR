@@ -88,13 +88,15 @@ export async function updateStoreHours(
  * Validates: isOpen, acceptOrders, day of week, and time window.
  */
 export async function isAcceptingOrders(
-  app: FastifyInstance
-): Promise<{ accepting: boolean; reason?: string }> {
+  app: FastifyInstance,
+  now: Date = new Date()
+): Promise<{ accepting: boolean; reason?: string; closure?: "day" | "cutoff" | "hours" | "paused" }> {
   const config = await getStoreConfig(app);
 
   if (!config.isOpen) {
     return {
       accepting: false,
+      closure: "day",
       reason: config.closedMessage ?? "El negocio está cerrado por hoy.",
     };
   }
@@ -102,6 +104,7 @@ export async function isAcceptingOrders(
   if (!config.acceptOrders) {
     return {
       accepting: false,
+      closure: "paused",
       reason: "No estamos aceptando pedidos en este momento.",
     };
   }
@@ -109,16 +112,15 @@ export async function isAcceptingOrders(
   // All time checks use Mexico City local time so the schedule matches
   // what the admin configures in the dashboard, regardless of server TZ.
   const nowMx = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" })
+    now.toLocaleString("en-US", { timeZone: "America/Mexico_City" })
   );
   const dayOfWeek = nowMx.getDay(); // 0=Sun, 6=Sat
 
   if (config.openDays.length > 0 && !config.openDays.includes(dayOfWeek)) {
-    const DAY_NAMES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-    const openDayNames = config.openDays.map((d: number) => DAY_NAMES[d]).join(", ");
     return {
       accepting: false,
-      reason: `Hoy no tenemos servicio. Abrimos: ${openDayNames}.`,
+      closure: "day",
+      reason: "¡Hola! Hoy no tenemos servicio. Gracias por escribirnos 🍗",
     };
   }
 
@@ -139,8 +141,22 @@ export async function isAcceptingOrders(
   if (currentMinutes >= closeMinutes) {
     return {
       accepting: false,
-      reason: `Cerramos a las ${config.closeTime} hrs. ¡Hasta mañana!`,
+      closure: "hours",
+      reason: `Por hoy ya cerramos. Nuestro horario termina a las ${config.closeTime} hrs.`,
     };
+  }
+
+  // Server-only order cutoff, distinct from the published closing time.
+  // Never return the private value or put it into public store configuration.
+  const cutoff = process.env.ORDER_CUTOFF_TIME?.trim();
+  if (cutoff) {
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(cutoff)) {
+      return { accepting: false, reason: "No estamos recibiendo pedidos en este momento. Puedes escribir ASESOR para pedir ayuda." };
+    }
+    const [hour, minute] = cutoff.split(":").map(Number);
+    if (currentMinutes >= hour * 60 + minute) {
+      return { accepting: false, closure: "cutoff", reason: "Por hoy ya no estamos recibiendo pedidos. ¡Gracias por escribirnos!" };
+    }
   }
 
   return { accepting: true };

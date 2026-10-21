@@ -70,7 +70,7 @@ export class LoyaltyService {
       where: { id: orderId },
       include: { customer: { include: { loyalty: true } } },
     });
-    if (!order) return;
+    if (!order || order.whatsappCheckoutId) return; // Rewards remain exclusive to app orders.
 
     let card = order.customer.loyalty;
     if (!card) {

@@ -35,7 +35,8 @@ export class OrdersService {
       items: Array<CreateOrderPayload["items"][number] & {
         modifiers?: Array<{ name: string; option: string; price: number; qty?: number }>;
       }>;
-    }
+    },
+    whatsapp?: { checkoutId: string; expectedTotal: number }
   ): Promise<{
     orderId: string;
     orderNumber: number;
@@ -151,7 +152,7 @@ export class OrdersService {
 
     const products = await this.app.prisma.product.findMany({
       where: { id: { in: allProductIds }, active: true },
-      include: { modifiers: { select: { name: true } } },
+      include: { modifiers: true },
     });
 
     if (products.length !== allProductIds.length) {
@@ -161,6 +162,31 @@ export class OrdersService {
     const soldOut = products.filter((p) => p.soldOut);
     if (soldOut.length > 0) {
       throw new Error(`Productos agotados: ${soldOut.map((p) => p.name).join(", ")}`);
+    }
+
+    if (whatsapp) {
+      for (const item of data.items) {
+        const product = products.find(p => p.id === item.productId)!;
+        const variants = (product.variants ?? []) as Array<{ label: string; price: number }>;
+        if (variants.length ? !variants.some(v => v.label === item.variant) : Boolean(item.variant)) {
+          throw new Error("La presentación cambió. Selecciona el producto de nuevo.");
+        }
+        const selected = item.modifiers ?? [];
+        if (selected.some(m => !product.modifiers.some(def => def.name === m.name))) {
+          throw new Error("Las opciones del producto cambiaron.");
+        }
+        for (const def of product.modifiers) {
+          const picks = selected.filter(m => m.name === def.name);
+          const options = def.options as Array<{ label: string; price: number }>;
+          const count = picks.reduce((sum, m) => sum + (m.qty ?? 1), 0);
+          const minimum = def.totalQuota ?? Math.max(def.minSelect, def.required ? 1 : 0);
+          const maximum = def.totalQuota ?? def.maxSelect;
+          if (count < minimum || count > maximum || new Set(picks.map(m => m.option)).size !== picks.length ||
+              picks.some(m => !options.some(o => o.label === m.option && o.price === m.price) || (!def.totalQuota && (m.qty ?? 1) !== 1))) {
+            throw new Error("Las opciones o precios del producto cambiaron. Selecciónalos de nuevo.");
+          }
+        }
+      }
     }
 
     const usesAppComboPromotion = validateAppComboPromotion(
@@ -317,10 +343,18 @@ export class OrdersService {
       discountParts.push(`Cupón ${data.couponCode.toUpperCase().trim()}`);
     }
 
+    // Server-only WhatsApp context: never accepted from the public order body.
+    // A changed price/fee requires another explicit confirmation in the chat.
+    if (whatsapp && (paymentMethod !== "CASH" || subtotal + deliveryFee !== whatsapp.expectedTotal)) {
+      throw new Error("El total cambió. Revisa el resumen y confirma nuevamente.");
+    }
+
     // 5b. Apply pending loyalty reward (free product)
     const { LoyaltyService: LS } = await import("../loyalty/loyalty.service");
     const loyaltyService = new LS(this.app);
-    const reward = await loyaltyService.applyPendingReward(
+    const reward = whatsapp
+      ? { discountAmount: 0, rewardApplied: false, productName: null, productId: null, rewardExpiresAt: null }
+      : await loyaltyService.applyPendingReward(
       customerId,
       rewardEligibleLines
     );
@@ -384,6 +418,7 @@ export class OrdersService {
 
     const order = await this.app.prisma.order.create({
       data: {
+        whatsappCheckoutId: whatsapp?.checkoutId,
         customerId,
         orderNumber,
         status: initialStatus,

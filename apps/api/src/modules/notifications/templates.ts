@@ -1,6 +1,7 @@
 type TemplateParams = Record<string, string>;
 
 const TEMPLATES: Record<string, (p: TemplateParams) => string> = {
+  bot_reply: (p) => p.text,
   otp_code: (p) =>
     `Tu código de verificación de Pollón SJR es: *${p.code}*\n\nVálido por 5 minutos. No lo compartas con nadie.`,
 

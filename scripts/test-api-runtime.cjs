@@ -31,7 +31,7 @@ async function check(entry, source) {
       const response = await fetch(`http://127.0.0.1:${result.port}${url}`, { signal: AbortSignal.timeout(5000) });
       assert.equal(response.status, expected, url); await response.body?.cancel();
     }
-    assert.equal(result.schedules.length, 6);
+    assert.equal(result.schedules.length, 7);
     assert.equal(result.redisConnections, 5);
     assert.equal(result.workerWaits, 1);
     delete result.port;

@@ -128,15 +128,15 @@ async function bootstrap() {
     return { ok: true, env: process.env.NODE_ENV, ts: new Date().toISOString() };
   });
 
-  await app.ready();
-
-  // Cron jobs
+  // Register scheduler cleanup before Fastify locks its lifecycle hooks.
   startScheduler(app);
+
+  await app.ready();
 
   // Notification worker (uses a dedicated Redis connection to avoid blocking)
   const workerRedis = app.redis.duplicate();
   workerRedis.connect().then(() => {
-    startNotificationWorker(workerRedis as any, sendWhatsApp);
+    startNotificationWorker(workerRedis as any, (job) => sendWhatsApp(job, app.redis));
   }).catch((err) => app.log.error("Notification worker Redis error:", err));
 
   httpServer.listen(PORT, "0.0.0.0", () => {

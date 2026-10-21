@@ -1,5 +1,8 @@
 import { FastifyInstance } from "fastify";
 import { adminOnly } from "../../middlewares/admin-only";
+import { timingSafeEqual } from "node:crypto";
+import { WhatsAppBot, parseIncoming } from "../whatsapp/bot";
+import { whatsappCatalogRoutes } from "../whatsapp/catalog.routes";
 
 const EVO_URL = () => process.env.EVOLUTION_API_URL?.replace(/\/$/, "");
 const EVO_KEY = () => process.env.EVOLUTION_API_KEY;
@@ -17,6 +20,7 @@ function evoHeaders() {
  * Registered at /api/evolution
  */
 export async function evolutionRoutes(app: FastifyInstance) {
+  await app.register(whatsappCatalogRoutes);
   // ─── Status: is WhatsApp connected? ──────────────────────
 
   app.get("/status", { preHandler: [adminOnly] }, async () => {
@@ -127,6 +131,7 @@ export async function evolutionRoutes(app: FastifyInstance) {
  * Registered at /api/webhook/evolution
  */
 export async function evolutionWebhookRoutes(app: FastifyInstance) {
+  const bot = new WhatsAppBot(app);
   app.post("/", async (request, reply) => {
     const payload = request.body as any;
     const { event, instance, data } = payload || {};
@@ -146,17 +151,26 @@ export async function evolutionWebhookRoutes(app: FastifyInstance) {
         break;
 
       case "messages.upsert":
-        // Incoming messages — for now just log. Can be extended to handle customer replies.
-        const msg = data?.messages?.[0] || data;
-        if (msg && !msg.key?.fromMe) {
-          const from = msg.key?.remoteJid?.replace("@s.whatsapp.net", "");
-          const text =
-            msg.message?.conversation ||
-            msg.message?.extendedTextMessage?.text ||
-            "";
-          if (text) {
-            app.log.info(`[Evolution] Msg from ${from}: ${text.slice(0, 100)}`);
-          }
+        if (process.env.WHATSAPP_BOT_ENABLED !== "true") break;
+        // Receiving orders is a privileged action. Fail closed without a
+        // separate shared secret and an exact instance match.
+        const secret = process.env.EVOLUTION_WEBHOOK_SECRET || "";
+        const supplied = request.headers["x-webhook-secret"];
+        if (secret.length < 32) return reply.status(503).send({ error: "Webhook not configured" });
+        if (typeof supplied !== "string" || Buffer.byteLength(supplied) !== Buffer.byteLength(secret) ||
+            !timingSafeEqual(Buffer.from(secret), Buffer.from(supplied))) {
+          return reply.status(401).send({ error: "Unauthorized" });
+        }
+        if (instance !== EVO_INSTANCE()) return reply.status(200).send({ ignored: true });
+        const messages = Array.isArray(data?.messages) ? data.messages : Array.isArray(data) ? data : [data];
+        if (messages.length > 50) return reply.status(413).send({ error: "Batch too large" });
+        for (const raw of messages) {
+          const incoming = parseIncoming(raw);
+          if (!incoming) continue;
+          // Ignore ordinary outbound notifications; only explicit operator
+          // commands can pause/resume a conversation.
+          if (incoming.fromMe && !["pausar bot", "activar bot"].includes(incoming.text.trim().toLowerCase())) continue;
+          await bot.handle(incoming);
         }
         break;
 

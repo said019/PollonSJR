@@ -8,6 +8,13 @@ import { activateScheduledOrders } from "./activate-scheduled.job";
 import { runReEngagement } from "./re-engagement.job";
 
 export function startScheduler(app: FastifyInstance) {
+  // Expired preferences stop being readable immediately; remove all expired
+  // rows daily, including customers who never write again.
+  const memoryCleanup = cron.schedule("0 3 * * *", () => {
+    app.prisma.whatsAppPreference.deleteMany({ where: { expiresAt: { lte: new Date() } } })
+      .catch(err => app.log.error({ err }, "WhatsApp preference cleanup failed"));
+  });
+  app.addHook("onClose", async () => { memoryCleanup.stop(); });
   // */5 * * * * → Activate scheduled orders 30 min before scheduledFor
   cron.schedule("*/5 * * * *", () => {
     activateScheduledOrders(app).catch((err) =>
