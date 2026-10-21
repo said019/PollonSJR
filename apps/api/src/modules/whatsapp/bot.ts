@@ -3,6 +3,7 @@ import { answerQuestion, isQuestion } from "./questions";
 import { writeReply } from "./reply-writer";
 import { requestPolicyReply } from "./request-policy";
 import { settledAttentionState, attentionKeys, generation } from "./attention";
+import { isDeliveryReference, repeatsImageReference } from "./image-request";
 import { manualTopic, manualTopicReply, isExcludedContact } from "./conversation-policy";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -36,6 +37,8 @@ type Step = "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "ty
 export type Session = {
   step: Step; checkoutId: string; catalog: Product[]; items: Item[];
   closedPendingConfirmation?: boolean;
+  imageRequest?: { caption: string };
+  deliveryReference?: string;
   pending?: Item; selected?: Product; modifierIndex?: number; name?: string;
   type?: "PICKUP" | "DELIVERY"; lat?: number; lng?: number; address?: string;
   notes?: string; cashAmount?: number; fee?: number; total?: number; orderNumber?: number;
@@ -56,6 +59,7 @@ export type Incoming = {
   buttonId?: string;
   catalogSelection?: CatalogSelection;
   unsupportedMedia?: boolean;
+  hasImage?: boolean;
 };
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const normalize = (text: string) => text.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -109,7 +113,8 @@ export function parseIncoming(raw: unknown, now = Date.now()): Incoming | null {
   const digits = jid.split("@")[0];
   const phone = digits.startsWith("52") ? normalizarTelefono(digits) : digits;
   if (!phone) return null;
-  const text = m.message?.conversation || m.message?.extendedTextMessage?.text || "";
+  const photo = z.object({ caption: z.string().max(1000).optional() }).passthrough().safeParse(m.message?.imageMessage);
+  const text = m.message?.conversation || m.message?.extendedTextMessage?.text || (photo.success ? photo.data.caption : "") || "";
   if (text.length > 1000 && !m.key.fromMe) return null;
   const loc = m.message?.locationMessage;
   const product = m.message?.productMessage;
@@ -124,6 +129,7 @@ export function parseIncoming(raw: unknown, now = Date.now()): Incoming | null {
   if (!text && !loc && !product && !order && !buttonId && !unsupportedMedia) return null;
   return { id: m.key.id, phone, text: text.slice(0, 1000), fromMe: m.key.fromMe,
     ...(unsupportedMedia ? { unsupportedMedia: true } : {}),
+    ...(photo.success ? { hasImage: true } : {}),
     replyTo: m.message?.extendedTextMessage?.contextInfo?.stanzaId,
     buttonId,
     ...(product ? { catalogSelection: { sellerJid: product.businessOwnerJid, lines: [{ id: product.product.productId, quantity: 1 }], singleProduct: true } } : {}),
@@ -229,6 +235,7 @@ export class WhatsAppBot {
     const text = normalize(input.text);
     if (isExcludedContact(input.phone) || (!input.fromMe && manualTopic(input.text))) return this.advance(s, input);
     if (!input.fromMe && requestPolicyReply(input.text)) return this.advance(s, input);
+    if (!input.fromMe && s?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) return this.advance(s, input);
     if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
     if (!s && !input.fromMe) {
@@ -439,6 +446,31 @@ export class WhatsAppBot {
       s.step = "human"; delete s.confirmation; delete s.aiProposal;
       return respond((needsHumanReview(text) ? "Las alergias y requisitos de preparación necesitan revisión del equipo; no puedo garantizar que un producto sea adecuado. " : requestsOrderChange(text) ? "No he aplicado ese cambio ni confirmado un nuevo pedido. El equipo debe revisar los datos contigo. " : "") + "El equipo puede atender este tema contigo por aquí.", true);
     }
+    if (input.hasImage) {
+      if (!s && !/\b(?:pedir|pedido|promocion|promo|menu|catalogo|producto|precio|cuesta|papas|pollo|hamburguesa|hot.?dog)\b/.test(text)) {
+        return respond("¿Qué necesitas revisar de la imagen? Cuéntamelo en un mensaje de texto para ayudarte.");
+      }
+      if ((s && !["menu", "more"].includes(s.step)) || s?.imageRequest) {
+        s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
+        s.step = "human"; delete s.confirmation; delete s.aiProposal; delete s.imageRequest;
+        return respond("Para no anotar algo distinto, el equipo necesita revisar la imagen contigo por aquí.", true);
+      }
+      s ??= { step: "menu", checkoutId: crypto.randomUUID(), catalog: await this.catalog(), items: [] };
+      s.step = "menu";
+      s.imageRequest = { caption: input.text.slice(0, 1000) };
+      delete s.aiProposal;
+      const availability = await isAcceptingOrders(this.app);
+      return respond((availability.accepting ? "" : availability.reason + "\n\n") +
+        "¿Qué producto de la imagen quieres y cuántos? Escríbeme el nombre para revisar el precio actual y si hay alguna promoción vigente.");
+    }
+    if (s?.imageRequest && isDeliveryReference(input.text)) {
+      s.deliveryReference = input.text.trim().slice(0, 350);
+      return respond("Tengo esa referencia de entrega pendiente de confirmar. ¿Qué producto de la imagen quieres y cuántos? Después revisamos la ubicación y el costo de envío.");
+    }
+    if (s?.imageRequest && repeatsImageReference(input.text)) {
+      s.step = "human"; delete s.confirmation; delete s.aiProposal; delete s.imageRequest;
+      return respond("Para no anotar algo distinto, el equipo necesita revisar la imagen contigo por aquí.", true);
+    }
     if (browsesMenu(text)) {
       const products = await this.catalog();
       const availability = await isAcceptingOrders(this.app);
@@ -558,6 +590,7 @@ export class WhatsAppBot {
         const index = parseSelection(text, s.catalog.length);
         if (index === null) return respond(menu(s));
         if (s.items.length >= 30) return respond("Llegaste al máximo de productos. Escribe ASESOR para completar tu pedido.");
+        delete s.imageRequest;
         s.selected = s.catalog[index]; s.step = "quantity";
         return respond(`De ${s.selected.name}, ¿cuántos te anoto? Puedes pedir de 1 a 20.`);
       }
@@ -600,7 +633,7 @@ export class WhatsAppBot {
         if (["2", "domicilio"].includes(text)) {
           if (!(await getStoreConfig(this.app)).deliveryActive) return respond("El envío a domicilio no está disponible. Responde 1 para recoger o ASESOR.");
           s.type = "DELIVERY"; s.step = "location";
-          return respond("¿Me pasas calle, número, colonia y ciudad? También puedes compartir tu ubicación por WhatsApp. Primero revisamos que sea el lugar correcto.");
+          return respond((s.deliveryReference ? `Compartiste esta referencia: ${s.deliveryReference}\n` : "") + "¿Me confirmas calle, número, colonia y ciudad? También puedes compartir tu ubicación por WhatsApp. Primero revisamos que sea el lugar correcto.");
         }
         s.type = "PICKUP"; s.step = "notes"; return respond("¿Cómo te lo preparamos? Déjame tus indicaciones o escribe SIN NOTAS.");
       case "location": {
@@ -726,7 +759,7 @@ export class WhatsAppBot {
       const text = normalize(input.text);
       let informational: string | null = null;
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
-        !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
+        !(session?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) && !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text);
       if (informationalAllowed && isQuestion(input.text)) {
         const rateKey = `${prefix}:questions:${Math.floor(Date.now() / 600000)}`;

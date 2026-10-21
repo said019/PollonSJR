@@ -48,6 +48,18 @@ El comando saliente `activar bot` del operador puede reanudar ese chat y descart
 - Redis conserva los bloqueos sin vencimiento. La aplicación debe conservar esos datos al reiniciar; borrar Redis elimina también sus estados.
 - El cambio sigue local. Producción permanece apagada y sin suscripción de recepción. No se importó el historial de Brave ni se modificaron contactos o chats existentes. Al preparar una futura activación habrá que preservar/configurar los chats que ya atiende el equipo y las exclusiones; no se activa nada automáticamente al instalar este código.
 
+## Pedidos mediante foto y mensajes separados
+
+Caso añadido: el cliente adjunta una imagen con varias ofertas, escribe que quiere esa promoción con papas y luego envía una referencia de entrega. Se conserva el texto que acompaña a la imagen; se pide producto y cantidad sin elegir al azar. Pedir una promoción no se clasifica por sí solo como intento de cambiar precios.
+
+La referencia de entrega posterior se mantiene en el borrador y se vuelve a mostrar al solicitar los datos de domicilio. No se convierte en nombre del cliente, coordenadas, cobertura confirmada ni tarifa. Los datos precisos siguen requiriendo validación y confirmación.
+
+Si el cliente insiste con una referencia ambigua a la misma foto o vuelve a enviarla sin aclarar, se deriva al equipo una sola vez y se mantiene silencio. Una imagen durante confirmación o después de registrar un pedido también requiere revisión; no crea otra compra. La atención manual previa sigue teniendo prioridad.
+
+**Alcance:** este cambio conserva el pie de foto y el contexto escrito; no descarga ni interpreta los píxeles con visión. Una imagen sin contexto comercial recibe una solicitud de contexto, no una venta automática. No se utiliza ningún precio de una imagen como fuente de verdad. Las pruebas usan imágenes simuladas y referencias de entrega inventadas; no se copiaron datos privados de la captura al repositorio.
+
+Siete pruebas nuevas cubren pie de foto, dirección separada, insistencia, imagen repetida, confirmación pendiente, pausa del negocio, instrucciones maliciosas y la diferencia entre consultar una promoción y exigir una excepción.
+
 ## Ejemplos de comportamiento esperado
 
 | Mensaje / situación | Respuesta o acción |
@@ -65,7 +77,7 @@ El comando saliente `activar bot` del operador puede reanudar ese chat y descart
 
 - TypeScript: aprobado.
 - Compilación de producción: aprobada, sin iniciar servidor, migraciones ni trabajos.
-- Suite compilada: **157 pruebas aprobadas, 0 fallos, 1 omitida** (reporte SQL que requiere base de datos). Prueba de arranque de la API compilada: aprobada con infraestructura sintética.
+- Suite compilada: **164 pruebas aprobadas, 0 fallos, 1 omitida** (reporte SQL que requiere base de datos). Prueba de arranque de la API compilada: aprobada con infraestructura sintética.
 - Simulador: **147 conversaciones, 1,299 turnos, 147 aprobadas, 0 fallos**. Incluye 20 secuencias nuevas de atención manual, abierto y pausado, con insistencia posterior.
 - Toma por el personal: 15 pruebas adicionales de webhook, remitente y manejador; además, **150 escenarios concurrentes aprobados con Redis real aislado**, mediante socket local sin conexiones de producción. Se probaron ambos órdenes de llegada, intervención simultánea, duplicados, comandos, bloqueos y cancelación de confirmaciones antiguas.
 - Pruebas específicas: temas manuales antes de IA, preguntas legítimas sin falsos positivos en el conjunto, confirmaciones invalidadas, pausa tras expirar carrito, reactivación solo por operador, exclusiones y eventos técnicos.
