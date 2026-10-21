@@ -44,5 +44,7 @@ async function run(){
   return {name:c.name,transcript};
  })));
  writeFileSync(process.argv.includes("--extended")?"docs/testing/whatsapp-questions-extended-live.json":"docs/testing/whatsapp-questions-live.json",JSON.stringify({calls,results},null,2));
- console.log(JSON.stringify({calls,conversations:results.length,turns:results.flatMap(r=>r.transcript).length,failures:results.flatMap(r=>r.transcript.filter((t:any)=>!t.passed).map((t:any)=>({name:r.name,...t})))}));
+ const failures=results.flatMap(r=>r.transcript.filter((t:any)=>!t.passed).map((t:any)=>({name:r.name,...t})));
+ console.log(JSON.stringify({calls,conversations:results.length,turns:results.flatMap(r=>r.transcript).length,failures}));
+ if(failures.length)process.exitCode=1;
 }run();

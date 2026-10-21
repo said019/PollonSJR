@@ -92,6 +92,14 @@ export async function isAcceptingOrders(
   now: Date = new Date()
 ): Promise<{ accepting: boolean; reason?: string; closure?: "day" | "cutoff" | "hours" | "paused" }> {
   const config = await getStoreConfig(app);
+  return evaluateStoreAvailability(config, now);
+}
+
+/** Evaluate one snapshot so public answers cannot combine two different states. */
+export function evaluateStoreAvailability(
+  config: { isOpen: boolean; acceptOrders: boolean; closedMessage?: string | null; openDays: number[]; openTime: string; closeTime: string },
+  now: Date = new Date()
+): { accepting: boolean; reason?: string; closure?: "day" | "cutoff" | "hours" | "paused" } {
 
   if (!config.isOpen) {
     return {

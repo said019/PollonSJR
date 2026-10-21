@@ -11,7 +11,7 @@ export function protect(reply: string) {
   const lines: string[] = [];
   const text = reply.split("\n").map(line => {
     // Keep totals, selections, addresses, instructions and final outcomes exact.
-    if ((/[\d$]|confirm|registr|pago|direcci|alerg|garant|preferencia|venc|resumen|pausa temporal/i.test(line) || /\b[A-ZÁÉÍÓÚÑ]{2,}\b/.test(line)) || line.includes("https://")) {
+    if ((/[\d$]|confirm|registr|pago|direcci|alerg|garant|preferencia|venc|resumen|pausa temporal|recibiendo pedidos|aceptando pedidos|no tenemos servicio|cerrad|abrimos|reanudaci/i.test(line) || /\b[A-ZÁÉÍÓÚÑ]{2,}\b/.test(line)) || line.includes("https://")) {
       lines.push(line); return `[[P${lines.length - 1}]]`;
     }
     return line;
@@ -23,7 +23,7 @@ export function restore(candidate: string, original: string, lines: string[]): s
   if (JSON.stringify(markers) !== JSON.stringify(lines.map((_, i) => `[[P${i}]]`))) return null;
   const prose = candidate.replace(/\[\[P\d+\]\]/g, "");
   if (/\[\[|\]\]|https?:|\d|\$/.test(prose)) return null;
-  if (/pausa temporal/i.test(original) && /cerrad|no (?:hay|tenemos|habra|tendremos) servicio|no abrimos|todo el dia/.test(normalize(prose))) return null;
+  if (/pausa temporal/i.test(original) && /cerrad|no (?:hay|tenemos|habra|tendremos) servicio|no abrimos|todo el dia|en breve|pronto|en un rato|te aviso|avisaremos|ya estamos (?:abiertos|recibiendo)/.test(normalize(prose))) return null;
   const forbidden = /\b(?:confirmad[oa]|registrad[oa]|aceptad[oa]|pagad[oa]|reembolso|descuento|gratis|excepcion|manana|humano|persona real|6:40|18:40)\b/g;
   for (const word of normalize(prose).match(forbidden) || []) if (!normalize(original).includes(word)) return null;
   return candidate.replace(/\[\[P(\d+)\]\]/g, (_, i) => lines[Number(i)]).trim();

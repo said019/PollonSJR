@@ -342,7 +342,11 @@ export class WhatsAppBot {
       delete s.confirmation; delete s.aiProposal;
       if (pendingConfirmation) s.closedPendingConfirmation = true;
     }
-    if (status.closure === "paused") return { session: s, text: (isGreeting(text) ? "¡Hola! Gracias por escribirnos.\n" : "") + status.reason };
+    if (status.closure === "paused") {
+      const empathy = /\b(?:por favor|porfa|insisto|solo|nada mas|andale)\b/.test(text) ? "Entiendo que quieres pedir; disculpa la molestia.\n" : isGreeting(text) ? "¡Hola! Gracias por escribirnos.\n" : "";
+      const pending = pendingConfirmation ? (/\b(?:antes|hace rato|empece|empezamos)\b/.test(text) ? "\nSí, ya habíamos empezado a armarlo, pero tu pedido todavía no quedó registrado. Si se reanuda la recepción, tendrás que revisar el resumen y confirmar nuevamente." : "\nTu pedido todavía no quedó registrado. Si se reanuda la recepción, tendrás que revisar el resumen y confirmar nuevamente.") : "";
+      return { session: s, text: empathy + status.reason + pending };
+    }
     if (pendingConfirmation && (status.closure === "cutoff" || status.closure === "hours")) {
       if (/\b(?:antes|hace rato|temprano|ya te|ya les)\b/.test(text)) {
         return { session: s, text: "Sí, empezamos a verlo antes, pero quedó pendiente la confirmación. Disculpa la molestia." };
@@ -431,7 +435,7 @@ export class WhatsAppBot {
       const list = products.map(p => `${p.name} — ${p.variants?.length ? "desde " + money(Math.min(...p.variants.map(v => v.price))) : money(p.price)}`).join("\n");
       return respond("¡Claro! Puedes consultar el menú aquí:\n" + catalogUrl() +
         (list ? "\n\n" + list : "") +
-        (!availability.accepting ? "\n\nPor ahora no estamos recibiendo pedidos, pero sí puedes ver las opciones." : "") +
+        (!availability.accepting ? "\n\n" + (availability.closure === "paused" ? availability.reason : "Por ahora no estamos recibiendo pedidos, pero sí puedes ver las opciones.") : "") +
         "\nLos precios y la disponibilidad se revisan cuando hagas tu pedido.");
     }
     if (input.unsupportedMedia) return respond("¿Me lo escribes en un mensaje de texto? Por ahora no puedo revisar audios, fotos ni archivos. También puedes compartir tu ubicación o escribir ASESOR para que te ayude el equipo.");
@@ -714,8 +718,8 @@ export class WhatsAppBot {
       if (result.session) tx.set(sessionKey, JSON.stringify(result.session), { EX: 86400 });
       else tx.del(sessionKey);
       tx.set(seen, "1", { EX: 604800 });
-      const confirmation = result.session?.step === "confirm" && result.session.confirmation?.code !== previousConfirmation
-        ? { checkoutId: result.session.checkoutId, code: result.session.confirmation!.code } : undefined;
+      const confirmation = result.session?.step === "confirm" && result.session.confirmation && result.session.confirmation.code !== previousConfirmation
+        ? { checkoutId: result.session.checkoutId, code: result.session.confirmation.code } : undefined;
       const enqueue = (to: string, text: string, summary = false) => tx.rPush("notifications:queue", JSON.stringify({
         id: crypto.randomUUID(), type: "whatsapp", to, template: "bot_reply", params: { text }, attempts: 0, createdAt: new Date().toISOString(),
         ...(summary && confirmation ? { confirmation } : {}),

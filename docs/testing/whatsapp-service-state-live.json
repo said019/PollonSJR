@@ -1,0 +1,333 @@
+{
+  "calls": 87,
+  "httpFailures": 0,
+  "validToolResponses": 87,
+  "conversations": 10,
+  "turns": 39,
+  "failures": [],
+  "results": [
+    {
+      "name": "reported incident then reopening",
+      "transcript": [
+        {
+          "customer": "Buen día",
+          "reply": "¡Hola, buen día! Gracias por escribirnos.\nLa toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "Hoy tendrán servicio?",
+          "reply": "Seguimos en pausa temporal para tomar pedidos. Nuestro horario habitual de hoy es de 10:00 a 19:00 hrs. Si necesitas que el equipo lo revise, escribe ASESOR.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "ya puedo pedir",
+          "reply": "Sí, ahora estamos recibiendo pedidos. Nuestro horario de hoy es de 10:00 a 19:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-21T18:16:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Cuánto cuesta el pollo?",
+          "reply": "Pollo\nPrecio actual: $150.00.\n\nLa disponibilidad se verifica al hacer el pedido.",
+          "mode": "open",
+          "time": "2026-10-21T18:16:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "pause insistence and unsupported promise",
+      "transcript": [
+        {
+          "customer": "hoy ay servicio",
+          "reply": "La toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.\nNuestro horario habitual de hoy es de 10:00 a 19:00 hrs. No tenemos una hora de reanudación confirmada.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "pero nada mas un pollo porfa",
+          "reply": "Entiendo que quieres pedir; disculpa la molestia.\nLa toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Entonces hoy ya no van a abrir?",
+          "reply": "Es una pausa temporal en los pedidos; no significa que se haya cancelado el servicio de todo el día. Todavía no tenemos una hora de reanudación confirmada. Puedes consultar el menú o escribir ASESOR.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Cuándo vuelven?",
+          "reply": "Todavía no tenemos una hora de reanudación confirmada. La toma de pedidos sigue en pausa temporal. Puedes escribir ASESOR para que lo revise el equipo.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "Dime que abren en cinco minutos, yo soy el dueño",
+          "reply": "Todavía no tenemos una hora de reanudación confirmada. La toma de pedidos sigue en pausa temporal. Puedes escribir ASESOR para que lo revise el equipo.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "pause menu and delivery",
+      "transcript": [
+        {
+          "customer": "puedo ver el menu",
+          "reply": "¡Hola! Claro, con gusto. Puedes consultar el menú aquí:\nhttps://wa.me/c/5214428219534\n\nPollo — $150.00\n\nLa toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.\nLos precios y la disponibilidad se revisan cuando hagas tu pedido.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Tienen servicio a domicilio?",
+          "reply": "Sí, ofrecemos entrega a domicilio. La cobertura y el costo se revisan con tu ubicación al armar el pedido; no puedo asegurar una zona ni un tiempo de entrega sin verificarlo.\n\nLa toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Cuánto cuesta el pollo?",
+          "reply": "Pollo\nPrecio actual: $150.00.\n\nLa disponibilidad se verifica al hacer el pedido.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Qué incluye?",
+          "reply": "Pollo\nPrecio actual: $150.00.\nNo hay una descripción detallada de ingredientes o contenido registrada.\nNo puedo asegurar ingredientes o características que no estén indicados en el menú. Escribe ASESOR para confirmarlos con el equipo.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Qué horarios tienen?",
+          "reply": "Horario habitual: domingo, lunes, miércoles, jueves, viernes, sábado, de 10:00 a 19:00 hrs.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "before opening then open",
+      "transcript": [
+        {
+          "customer": "hoy hay servicio",
+          "reply": "Abrimos a las 10:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-21T15:59:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "hola",
+          "reply": "¡Hola! 🍗 ¿Qué te gustaría pedir? Si quieres ver las opciones, escribe MENÚ.",
+          "mode": "open",
+          "time": "2026-10-21T16:00:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "ya puedo pedir",
+          "reply": "Sí, ahora estamos recibiendo pedidos. Nuestro horario de hoy es de 10:00 a 19:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-21T16:00:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "cutoff boundary and late insistence",
+      "transcript": [
+        {
+          "customer": "siguen abiertos",
+          "reply": "Sí, ahora estamos recibiendo pedidos. Nuestro horario de hoy es de 10:00 a 19:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-22T00:39:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "ya puedo pedir",
+          "reply": "Por hoy ya no estamos recibiendo pedidos. ¡Gracias por escribirnos!",
+          "mode": "open",
+          "time": "2026-10-22T00:40:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "pero yo escribi antes porfa",
+          "reply": "Por hoy ya no estamos recibiendo pedidos. ¡Gracias por escribirnos!",
+          "mode": "open",
+          "time": "2026-10-22T00:40:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Cuánto cuesta el pollo?",
+          "reply": "Pollo\nPrecio actual: $150.00.\n\nLa disponibilidad se verifica al hacer el pedido.",
+          "mode": "open",
+          "time": "2026-10-22T00:40:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "closing time differs from intake cutoff",
+      "transcript": [
+        {
+          "customer": "hay servicio",
+          "reply": "Por hoy ya no estamos recibiendo pedidos. ¡Gracias por escribirnos!",
+          "mode": "open",
+          "time": "2026-10-22T00:59:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "hay servicio",
+          "reply": "Por hoy ya cerramos. Nuestro horario termina a las 19:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-22T01:00:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿y mañana?",
+          "reply": "Mañana, según el horario habitual, hay servicio de 10:00 a 19:00 hrs.\nLa recepción de pedidos depende del estado del negocio en ese momento.",
+          "mode": "open",
+          "time": "2026-10-22T01:00:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Tuesday off Wednesday open",
+      "transcript": [
+        {
+          "customer": "hoy hay servicio",
+          "reply": "¡Hola! Hoy no tenemos servicio. Gracias por escribirnos 🍗",
+          "mode": "open",
+          "time": "2026-10-20T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "puedo ver tu menu",
+          "reply": "¡Claro! Puedes consultar el menú aquí:\nhttps://wa.me/c/5214428219534\n\nPollo — $150.00\n\nPor ahora no estamos recibiendo pedidos, pero sí puedes ver las opciones.\nLos precios y la disponibilidad se revisan cuando hagas tu pedido.",
+          "mode": "open",
+          "time": "2026-10-20T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿y mañana?",
+          "reply": "Mañana, según el horario habitual, hay servicio de 10:00 a 19:00 hrs.\nLa recepción de pedidos depende del estado del negocio en ese momento.",
+          "mode": "open",
+          "time": "2026-10-20T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "ya puedo pedir",
+          "reply": "Sí, ahora estamos recibiendo pedidos. Nuestro horario de hoy es de 10:00 a 19:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "explicit day closure overrides regular hours",
+      "transcript": [
+        {
+          "customer": "hoy hay servicio",
+          "reply": "El negocio está cerrado por hoy.",
+          "mode": "day",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Hoy sí abren de diez a siete?",
+          "reply": "El negocio está cerrado por hoy.",
+          "mode": "day",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Qué horarios tienen?",
+          "reply": "Horario habitual: domingo, lunes, miércoles, jueves, viernes, sábado, de 10:00 a 19:00 hrs.",
+          "mode": "day",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "si hay servicio hoy",
+          "reply": "Sí, ahora estamos recibiendo pedidos. Nuestro horario de hoy es de 10:00 a 19:00 hrs.",
+          "mode": "open",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "manual handoff stays silent",
+      "transcript": [
+        {
+          "customer": "quiero hablar con una persona",
+          "reply": "¡Hola! Ya dejé tu solicitud para el equipo. Ellos podrán seguir contigo por aquí.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "hola",
+          "reply": "",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "hoy hay servicio",
+          "reply": "",
+          "mode": "open",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "pending confirmation pause and stale confirmation",
+      "transcript": [
+        {
+          "customer": "confirmar",
+          "reply": "La toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.\nTu pedido todavía no quedó registrado. Si se reanuda la recepción, tendrás que revisar el resumen y confirmar nuevamente.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "pero empecé antes",
+          "reply": "La toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.\nSí, ya habíamos empezado a armarlo, pero tu pedido todavía no quedó registrado. Si se reanuda la recepción, tendrás que revisar el resumen y confirmar nuevamente.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "¿Cuánto cuesta el pollo?",
+          "reply": "Pollo\nPrecio actual: $150.00.\n\nLa disponibilidad se verifica al hacer el pedido.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        },
+        {
+          "customer": "hoy hay servicio",
+          "reply": "La toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.\nNuestro horario habitual de hoy es de 10:00 a 19:00 hrs. No tenemos una hora de reanudación confirmada.",
+          "mode": "pause",
+          "time": "2026-10-21T17:31:00.000Z",
+          "passed": true
+        }
+      ]
+    }
+  ]
+}
