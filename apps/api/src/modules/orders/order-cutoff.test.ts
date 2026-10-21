@@ -107,3 +107,21 @@ test("app and WhatsApp order creation share the cutoff; cancellation and human s
     assert.equal(reply.text, expected); assert.equal(reply.session, null); assert.equal(f.creates(), 0);
   }
 });
+
+test("temporary pause is distinct from a closed day and does not override the schedule or cutoff", async t => {
+ env(t,{ORDER_CUTOFF_TIME:"18:40"});
+ const f=createSimulationFixture();
+ const config={...f.config,acceptOrders:false,openDays:[3],openTime:"10:00",closeTime:"19:00"};
+ f.storage.set("store:config",JSON.stringify(config));
+ const wednesday=(time:string)=>new Date(`2026-10-21T${time}-06:00`);
+ const paused=await isAcceptingOrders(f.app,wednesday("11:31:00"));
+ assert.equal(paused.closure,"paused");assert.match(paused.reason!,/pausa temporal/);assert.doesNotMatch(paused.reason!,/hoy no|no haya servicio|cerrado/);
+ assert.doesNotMatch(paused.reason!,/mañana|pronto|en unos minutos/);
+ assert.notEqual((await isAcceptingOrders(f.app,wednesday("09:00:00"))).closure,"paused");
+ assert.equal((await isAcceptingOrders(f.app,wednesday("18:40:00"))).closure,"cutoff");
+ assert.equal((await isAcceptingOrders(f.app,wednesday("19:00:00"))).closure,"hours");
+ assert.equal((await isAcceptingOrders(f.app,at("11:31:00"))).closure,"day");
+ f.storage.set("store:config",JSON.stringify({...config,acceptOrders:true}));
+ assert.equal((await isAcceptingOrders(f.app,wednesday("11:32:00"))).accepting,true);
+ assert.equal(f.creates(),0);
+});

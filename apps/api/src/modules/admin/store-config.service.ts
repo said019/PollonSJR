@@ -101,14 +101,6 @@ export async function isAcceptingOrders(
     };
   }
 
-  if (!config.acceptOrders) {
-    return {
-      accepting: false,
-      closure: "paused",
-      reason: "No estamos aceptando pedidos en este momento.",
-    };
-  }
-
   // All time checks use Mexico City local time so the schedule matches
   // what the admin configures in the dashboard, regardless of server TZ.
   const nowMx = new Date(
@@ -157,6 +149,14 @@ export async function isAcceptingOrders(
     if (currentMinutes >= hour * 60 + minute) {
       return { accepting: false, closure: "cutoff", reason: "Por hoy ya no estamos recibiendo pedidos. ¡Gracias por escribirnos!" };
     }
+  }
+
+  if (!config.acceptOrders) {
+    return {
+      accepting: false,
+      closure: "paused",
+      reason: "La toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.",
+    };
   }
 
   return { accepting: true };

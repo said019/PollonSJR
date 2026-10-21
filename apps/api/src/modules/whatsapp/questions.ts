@@ -44,7 +44,7 @@ export async function answerQuestion(app:FastifyInstance,message:string,recent:D
  const config=await getStoreConfig(app);const blocks:string[]=[];
  if(decision.topics.includes("hours")){
   blocks.push(renderHours(config,decision.day,now));
-  if(decision.day==="today") {const status=await isAcceptingOrders(app,now);blocks.push(status.accepting?"Ahora estamos recibiendo pedidos.":"En este momento no estamos recibiendo pedidos; puedes seguir consultando el menú y los horarios.");}
+  if(decision.day==="today") {const status=await isAcceptingOrders(app,now);blocks.push(status.accepting?"Ahora estamos recibiendo pedidos.":status.reason || "Por ahora no estamos recibiendo pedidos. Puedes consultar el menú o escribir ASESOR.");}
  }
  if(decision.topics.includes("products")){
   const selected=products.filter(p=>decision.productIds.includes(p.id));

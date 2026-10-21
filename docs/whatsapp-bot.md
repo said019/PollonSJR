@@ -222,3 +222,9 @@ Las preguntas de precios, contenido del menú, días y horario pasan por una cla
 El historial breve permite resolver referencias a productos. Cuando sólo se mencionó uno, preguntas como «qué trae», «qué sabores hay» o «cuánto cuesta ese» conservan ese contexto. Si se mostraron varios, una pregunta plural de precios cotiza todos; una referencia ambigua pide aclaración. Las consultas no consumen pasos del pedido ni confirman órdenes. Se respeta la pausa para atención humana y hay límites de consumo por teléfono.
 
 Verificación de esta ampliación: 16 conversaciones sintéticas completas con Haiku real y una copia del menú público, 66 mensajes en la ronda final sin fallos detectados; 127 conversaciones deterministas; 92 pruebas aprobadas y una de reportes omitida por requerir base de datos separada. También se verificaron tipos, compilación y arranque de la API. Los informes iniciales conservan fallos detectados antes de las correcciones. No se usaron chats de clientes ni se enviaron mensajes de prueba a WhatsApp.
+
+## Pausa temporal y días sin servicio
+
+Una pausa de recepción dentro del horario se comunica explícitamente como «pausa temporal», nunca como cierre por el resto del día. Los días sin servicio, antes de abrir, cierre y corte privado se evalúan por separado y tienen prioridad sobre una pausa persistida. La IA conserva la frase de pausa y el servidor rechaza una redacción que agregue cierre por todo el día. No se promete una hora de reanudación ni se cambia automáticamente el interruptor del administrador.
+
+Regresión: miércoles 21/10/2026 a las 11:31, pausa/reanudación, día no laborable, antes de abrir, corte y cierre. Pasaron 94 pruebas, el arranque de la API y 3 casos con Haiku real. No se enviaron mensajes a clientes.

@@ -32,12 +32,21 @@ test("closed greeting passes through AI in the real handler, deduplicates and ke
  const f=createSimulationFixture(); f.storage.set("store:config",JSON.stringify({...f.config,acceptOrders:false}));
  f.app.redis.incr=async(k:string)=>{const n=Number(f.storage.get(k)||0)+1;f.storage.set(k,String(n));return n;};f.app.redis.expire=async()=>1;
  let calls=0;const histories:unknown[]=[];
- globalThis.fetch=async(_url,init)=>{calls++;const b=JSON.parse(init!.body as string),name=b.tool_choice.name;if(name==="redactar")histories.push(JSON.parse(b.messages[0].content).historial);return new Response(JSON.stringify({stop_reason:"tool_use",content:[{type:"tool_use",name,input:name==="redactar"?{text:"¡Hola! Gracias por escribirnos. Por ahora no estamos recibiendo pedidos."}:{valid:true}}]}));};
+ globalThis.fetch=async(_url,init)=>{calls++;const b=JSON.parse(init!.body as string),name=b.tool_choice.name;if(name==="redactar")histories.push(JSON.parse(b.messages[0].content).historial);return new Response(JSON.stringify({stop_reason:"tool_use",content:[{type:"tool_use",name,input:name==="redactar"?{text:"¡Hola! Gracias por escribirnos.\n"+JSON.parse(b.messages[0].content).respuesta_autorizada}:{valid:true}}]}));};
  const bot=new WhatsAppBot(f.app);const input={id:"first",phone:"4270000001",text:"hola",fromMe:false};
  await bot.handle(input);await bot.handle(input);
  assert.equal(calls,2);assert.equal(f.queue.length,1);assert.match(JSON.parse(f.queue[0]).params.text,/¡Hola! Gracias/);assert.equal(f.creates(),0);
  await bot.handle({...input,phone:"4270000002"});assert.deepEqual(histories,[[],[]]);
  const before=calls;
  f.storage.set(`wa:bot:${input.phone}:writing:${Math.floor(Date.now()/600000)}`,"20");
- await bot.handle({...input,id:"limited"});assert.equal(calls,before);assert.equal(JSON.parse(f.queue.at(-1)!).params.text,"No estamos aceptando pedidos en este momento.");
+ await bot.handle({...input,id:"limited"});assert.equal(calls,before);assert.match(JSON.parse(f.queue.at(-1)!).params.text,/pausa temporal/);
+});
+
+test("AI cannot turn a temporary pause into an all-day closure", () => {
+ const original="La toma de pedidos está en pausa temporal. Mientras tanto, puedes consultar el menú o escribir ASESOR para que te atienda el equipo.";
+ const p=protect(original);
+ assert.equal(p.lines.length,1);
+ assert.equal(restore("Hoy no tenemos servicio.",original,p.lines),null);
+ assert.equal(restore("Hoy no tenemos servicio.\n[[P0]]",original,p.lines),null);
+ assert.equal(restore("¡Hola!\n[[P0]]",original,p.lines),"¡Hola!\n"+original);
 });

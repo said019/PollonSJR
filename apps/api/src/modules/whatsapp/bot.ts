@@ -342,6 +342,7 @@ export class WhatsAppBot {
       delete s.confirmation; delete s.aiProposal;
       if (pendingConfirmation) s.closedPendingConfirmation = true;
     }
+    if (status.closure === "paused") return { session: s, text: (isGreeting(text) ? "¡Hola! Gracias por escribirnos.\n" : "") + status.reason };
     if (pendingConfirmation && (status.closure === "cutoff" || status.closure === "hours")) {
       if (/\b(?:antes|hace rato|temprano|ya te|ya les)\b/.test(text)) {
         return { session: s, text: "Sí, empezamos a verlo antes, pero quedó pendiente la confirmación. Disculpa la molestia." };
