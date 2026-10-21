@@ -13,6 +13,8 @@ export function createSimulationFixture() {
   storage.set("store:config", JSON.stringify(config));
   let creates = 0;
   const redis: any = {
+    incr: async (key: string) => { const n=Number(storage.get(key) || 0)+1; storage.set(key,String(n)); return n; },
+    expire: async () => 1,
     get: async (key: string) => storage.get(key) ?? null,
     set: async (key: string, value: string, options?: { NX?: boolean }) => {
       if (options?.NX && storage.has(key)) return null;
@@ -66,4 +68,3 @@ export function createSimulationFixture() {
   };
   return { app, storage, queue, orders, preferences, links, config, creates: () => creates };
 }
-

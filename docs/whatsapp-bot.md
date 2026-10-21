@@ -214,3 +214,11 @@ Se conservan hasta tres turnos por teléfono durante 30 minutos, separados del r
 Verificación: 85 pruebas aprobadas, una de reportes omitida por falta de base de prueba; 127 conversaciones locales y 15 situaciones con Haiku real. El informe sintético está en docs/testing/whatsapp-writer-live.json. Ejecutar testing/writer-live.ts requiere --live y credenciales del entorno, nunca guardadas en el repositorio.
 
 Consultar el menú es una operación de lectura disponible también cuando la recepción está pausada, el negocio está cerrado o pasó el corte. No crea pedidos ni garantiza disponibilidad futura. Se verificaron las dos frases reportadas por el usuario con Haiku real y 86 pruebas pasaron (una de reportes requiere base separada).
+
+## Consultas informativas y seguimiento
+
+Las preguntas de precios, contenido del menú, días y horario pasan por una clasificación de lectura antes del control de recepción de pedidos. Sólo se seleccionan productos actuales de la app; la respuesta se construye con sus precios, descripciones y opciones. No se infieren ingredientes ni garantías de alérgenos. El horario se calcula en America/Mexico_City y se distingue entre horario habitual y estado actual de recepción. El corte privado no se proporciona al modelo.
+
+El historial breve permite resolver referencias a productos. Cuando sólo se mencionó uno, preguntas como «qué trae», «qué sabores hay» o «cuánto cuesta ese» conservan ese contexto. Si se mostraron varios, una pregunta plural de precios cotiza todos; una referencia ambigua pide aclaración. Las consultas no consumen pasos del pedido ni confirman órdenes. Se respeta la pausa para atención humana y hay límites de consumo por teléfono.
+
+Verificación de esta ampliación: 16 conversaciones sintéticas completas con Haiku real y una copia del menú público, 66 mensajes en la ronda final sin fallos detectados; 127 conversaciones deterministas; 92 pruebas aprobadas y una de reportes omitida por requerir base de datos separada. También se verificaron tipos, compilación y arranque de la API. Los informes iniciales conservan fallos detectados antes de las correcciones. No se usaron chats de clientes ni se enviaron mensajes de prueba a WhatsApp.

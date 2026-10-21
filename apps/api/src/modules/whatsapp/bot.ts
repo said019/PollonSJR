@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { answerQuestion, isQuestion } from "./questions";
 import { writeReply } from "./reply-writer";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -61,7 +62,7 @@ const requestsCancel = (text: string) => /^(?:por favor[, ]+)?(?:cancela(?:r|lo)
 const requestsOrderChange = (text: string) => /\b(?:cambia(?:r|me)?|cambial[oa]|modifica(?:r)?|corrige|corregir|quita(?:r)?).{0,50}\b(?:direccion|domicilio|pedido|producto|cantidad|entrega|pago|nombre)\b/.test(text);
 const asksIdentity = (text: string) => /\b(?:eres|hablo con|estoy hablando con|me atiende)\b.*\b(?:bot|robot|human[oa]|persona|real|virtual|ia|inteligencia artificial|chatgpt)\b|\b(?:quien eres|quien me atiende|quien responde|como te llamas|con quien hablo|con quien estoy hablando)\b/.test(text);
 const isGreeting = (text: string) => /^(?:(?:hola+|ola|holi|buenas|buen dia|buenos dias|buenas tardes|buenas noches|que tal)\s*)+$/.test(text.replace(/[^\p{L}\p{N}\s]/gu, "").trim());
-const browsesMenu = (text: string) => /\b(?:menu|catalogo|carta)\b/.test(text) && /\b(?:ver|pasas|pasar|mandas|mandame|muestras|mostrar|tienes|consultar|conocer)\b/.test(text) || /^(?:el |tu )?(?:menu|catalogo|carta)[.!?¿¡\s]*$/.test(text);
+const browsesMenu = (text: string) => /\bque (?:venden|ofrecen)\b/.test(text) || /\b(?:menu|catalogo|carta)\b/.test(text) && /\b(?:ver|pasas|pasar|mandas|mandame|muestras|mostrar|tienes|tienen|consultar|conocer)\b/.test(text) || /^(?:el |tu )?(?:menu|catalogo|carta)[.!?¿¡\s]*$/.test(text);
 const asksMenu = (text: string) => /^(?:pedir|nuevo|menu|quiero pedir|quiero hacer un pedido|me pasas el menu|mandame el menu|me mandas el menu|tienes menu|puedo ver el menu)$/.test(text.replace(/[.!?¿¡]/g, "").trim());
 const help = "\n\nEscribe ASESOR para atención personal o CANCELAR para descartar este borrador.";
 
@@ -683,9 +684,21 @@ export class WhatsAppBot {
       const raw = await this.app.redis.get(sessionKey);
       const session: Session | null = raw ? JSON.parse(raw) : null;
       const previousConfirmation = session?.confirmation?.code;
-      const result = await this.advanceWithAI(session, input);
       const historyKey = `${prefix}:dialogue`;
       const recent: Array<{ customer: string; reply: string }> = JSON.parse(await this.app.redis.get(historyKey) || "[]");
+      const text = normalize(input.text);
+      let informational: string | null = null;
+      const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
+        !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
+        !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text);
+      if (informationalAllowed && isQuestion(input.text)) {
+        const rateKey = `${prefix}:questions:${Math.floor(Date.now() / 600000)}`;
+        const count = await this.app.redis.incr(rateKey); await this.app.redis.expire(rateKey, 660);
+        if (count <= 20) informational = await answerQuestion(this.app, input.text, recent);
+        else informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
+      }
+      if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "¡Con gusto! Aquí puedes consultar el menú y los horarios cuando lo necesites.";
+      const result: BotReply = informational ? { session, text: informational } : await this.advanceWithAI(session, input);
       if (result.text && !input.fromMe && process.env.WHATSAPP_AI_ENABLED === "true" && process.env.ANTHROPIC_API_KEY) {
         const rateKey = `${prefix}:writing:${Math.floor(Date.now() / 600000)}`;
         const count = await this.app.redis.incr(rateKey);
