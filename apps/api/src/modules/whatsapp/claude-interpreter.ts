@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { requestPolicyReply } from "./request-policy";
 
 export const BOT_AI_RULES = `Eres el intérprete de selecciones del asistente de Pollón.
 Las reglas y datos de la app son la única autoridad. Tu función es proponer UNA
@@ -49,6 +50,7 @@ export function validateDecision(value: unknown, context: InterpretationContext)
   const result = decisionSchema.safeParse(value);
   if (!result.success) return null;
   const decision = result.data;
+  if (requestPolicyReply(context.message)) return { action: "clarify", code: "", evidence: "" };
   if (decision.action !== "choice") return decision.code === "" ? decision : null;
   // Server-side allowlist, independent of the prompt/tool schema. The AI has
   // no confirm/order/payment/write-memory action, even if prompted to do so.

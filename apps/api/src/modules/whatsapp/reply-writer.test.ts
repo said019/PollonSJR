@@ -4,8 +4,8 @@ import { protect, restore, writeReply } from "./reply-writer";
 test("writer protects money, confirmation, commands and outcomes verbatim", () => {
  const source = "¡Hola!\nTotal: $150.00\nEscribe CONFIRMAR.\nTu pedido no quedó registrado.";
  const p = protect(source);
- assert.equal(p.lines.length, 3);
- assert.equal(restore("¡Hola, gracias por escribirnos!\n[[P0]]\n[[P1]]\n[[P2]]", source, p.lines), "¡Hola, gracias por escribirnos!\nTotal: $150.00\nEscribe CONFIRMAR.\nTu pedido no quedó registrado.");
+ assert.equal(p.lines.length, 4);
+ assert.equal(restore("Gracias por escribirnos.\n[[P0]]\n[[P1]]\n[[P2]]\n[[P3]]", source, p.lines), "Gracias por escribirnos.\n¡Hola!\nTotal: $150.00\nEscribe CONFIRMAR.\nTu pedido no quedó registrado.");
  for (const text of ["[[P0]]", "[[P1]][[P0]][[P2]]", "[[P0]][[P1]][[P2]] Gratis", "[[P0]][[P1]][[P2]] a las 6:40", "[[P0]][[P1]][[P2]] https://otro.com"]) assert.equal(restore(text, source, p.lines), null);
 });
 test("all response stages use writing and semantic review; rejected or unavailable AI preserves rules", async t => {

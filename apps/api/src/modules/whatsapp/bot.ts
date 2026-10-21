@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { answerQuestion, isQuestion } from "./questions";
 import { writeReply } from "./reply-writer";
+import { requestPolicyReply } from "./request-policy";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { OrdersService } from "../orders/orders.service";
@@ -223,6 +224,7 @@ export class WhatsAppBot {
 
   async advanceWithAI(s: Session | null, input: Incoming): Promise<BotReply> {
     const text = normalize(input.text);
+    if (!input.fromMe && requestPolicyReply(input.text)) return this.advance(s, input);
     if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
     if (!s && !input.fromMe) {
@@ -418,6 +420,8 @@ export class WhatsAppBot {
       if (committed) { s.step = "done"; s.orderNumber = committed.orderNumber; }
     }
     if (s?.step === "human") return respond("");
+    const policyReply = requestPolicyReply(input.text);
+    if (policyReply) { if (s) delete s.aiProposal; return respond(policyReply); }
     if (asksIdentity(text)) return respond("Soy el asistente virtual de pedidos de Pollón. Escribe ASESOR para hablar con alguien del equipo, o continúa con tu pedido.");
     if (text === "asesor" || text === "ayuda" || text === "persona" || requestsHuman(text) || needsHumanReview(text) || requestsOrderChange(text)) {
       s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
@@ -694,7 +698,7 @@ export class WhatsAppBot {
       const text = normalize(input.text);
       let informational: string | null = null;
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
-        !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
+        !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text);
       if (informationalAllowed && isQuestion(input.text)) {
         const rateKey = `${prefix}:questions:${Math.floor(Date.now() / 600000)}`;
