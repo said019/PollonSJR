@@ -212,3 +212,5 @@ Todas las respuestas al cliente producidas por el flujo pasan por Haiku para red
 Se conservan hasta tres turnos por teléfono durante 30 minutos, separados del recuerdo voluntario de preferencias. El redactor no recibe credenciales ni el corte interno. Hay un máximo de 20 redacciones por teléfono en cada ventana de 10 minutos y tiempo máximo por llamada.
 
 Verificación: 85 pruebas aprobadas, una de reportes omitida por falta de base de prueba; 127 conversaciones locales y 15 situaciones con Haiku real. El informe sintético está en docs/testing/whatsapp-writer-live.json. Ejecutar testing/writer-live.ts requiere --live y credenciales del entorno, nunca guardadas en el repositorio.
+
+Consultar el menú es una operación de lectura disponible también cuando la recepción está pausada, el negocio está cerrado o pasó el corte. No crea pedidos ni garantiza disponibilidad futura. Se verificaron las dos frases reportadas por el usuario con Haiku real y 86 pruebas pasaron (una de reportes requiere base separada).

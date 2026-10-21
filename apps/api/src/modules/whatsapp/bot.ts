@@ -61,6 +61,7 @@ const requestsCancel = (text: string) => /^(?:por favor[, ]+)?(?:cancela(?:r|lo)
 const requestsOrderChange = (text: string) => /\b(?:cambia(?:r|me)?|cambial[oa]|modifica(?:r)?|corrige|corregir|quita(?:r)?).{0,50}\b(?:direccion|domicilio|pedido|producto|cantidad|entrega|pago|nombre)\b/.test(text);
 const asksIdentity = (text: string) => /\b(?:eres|hablo con|estoy hablando con|me atiende)\b.*\b(?:bot|robot|human[oa]|persona|real|virtual|ia|inteligencia artificial|chatgpt)\b|\b(?:quien eres|quien me atiende|quien responde|como te llamas|con quien hablo|con quien estoy hablando)\b/.test(text);
 const isGreeting = (text: string) => /^(?:(?:hola+|ola|holi|buenas|buen dia|buenos dias|buenas tardes|buenas noches|que tal)\s*)+$/.test(text.replace(/[^\p{L}\p{N}\s]/gu, "").trim());
+const browsesMenu = (text: string) => /\b(?:menu|catalogo|carta)\b/.test(text) && /\b(?:ver|pasas|pasar|mandas|mandame|muestras|mostrar|tienes|consultar|conocer)\b/.test(text) || /^(?:el |tu )?(?:menu|catalogo|carta)[.!?¿¡\s]*$/.test(text);
 const asksMenu = (text: string) => /^(?:pedir|nuevo|menu|quiero pedir|quiero hacer un pedido|me pasas el menu|mandame el menu|me mandas el menu|tienes menu|puedo ver el menu)$/.test(text.replace(/[.!?¿¡]/g, "").trim());
 const help = "\n\nEscribe ASESOR para atención personal o CANCELAR para descartar este borrador.";
 
@@ -221,6 +222,7 @@ export class WhatsAppBot {
 
   async advanceWithAI(s: Session | null, input: Incoming): Promise<BotReply> {
     const text = normalize(input.text);
+    if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
     if (!s && !input.fromMe) {
       // Initialize through the usual store/catalog/command checks, then use
@@ -415,6 +417,20 @@ export class WhatsAppBot {
       s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog: [], items: [] };
       s.step = "human"; delete s.confirmation; delete s.aiProposal;
       return respond((needsHumanReview(text) ? "Las alergias y requisitos de preparación necesitan revisión del equipo; no puedo garantizar que un producto sea adecuado. " : requestsOrderChange(text) ? "No he aplicado ese cambio ni confirmado un nuevo pedido. El equipo debe revisar los datos contigo. " : "") + "Dejé tu solicitud para el equipo. Podrán seguir contigo por aquí.", true);
+    }
+    if (browsesMenu(text)) {
+      const products = await this.catalog();
+      const availability = await isAcceptingOrders(this.app);
+      if (availability.accepting && !s) {
+        s = { step: "menu", checkoutId: crypto.randomUUID(), catalog: products, items: [] };
+        return respond(menu(s));
+      }
+      if (availability.accepting && s?.step === "menu") { s.catalog = products; delete s.aiProposal; return respond(menu(s)); }
+      const list = products.map(p => `${p.name} — ${p.variants?.length ? "desde " + money(Math.min(...p.variants.map(v => v.price))) : money(p.price)}`).join("\n");
+      return respond("¡Claro! Puedes consultar el menú aquí:\n" + catalogUrl() +
+        (list ? "\n\n" + list : "") +
+        (!availability.accepting ? "\n\nPor ahora no estamos recibiendo pedidos, pero sí puedes ver las opciones." : "") +
+        "\nLos precios y la disponibilidad se revisan cuando hagas tu pedido.");
     }
     if (input.unsupportedMedia) return respond("¿Me lo escribes en un mensaje de texto? Por ahora no puedo revisar audios, fotos ni archivos. También puedes compartir tu ubicación o escribir ASESOR para que te ayude el equipo.");
     const memory = new WhatsAppMemory(this.app);
