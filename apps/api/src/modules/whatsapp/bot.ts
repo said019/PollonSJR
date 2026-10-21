@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { writeReply } from "./reply-writer";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { OrdersService } from "../orders/orders.service";
@@ -667,10 +668,19 @@ export class WhatsAppBot {
       const session: Session | null = raw ? JSON.parse(raw) : null;
       const previousConfirmation = session?.confirmation?.code;
       const result = await this.advanceWithAI(session, input);
+      const historyKey = `${prefix}:dialogue`;
+      const recent: Array<{ customer: string; reply: string }> = JSON.parse(await this.app.redis.get(historyKey) || "[]");
+      if (result.text && !input.fromMe && process.env.WHATSAPP_AI_ENABLED === "true" && process.env.ANTHROPIC_API_KEY) {
+        const rateKey = `${prefix}:writing:${Math.floor(Date.now() / 600000)}`;
+        const count = await this.app.redis.incr(rateKey);
+        await this.app.redis.expire(rateKey, 660);
+        if (count <= 20) result.text = await writeReply({ message: input.text, authoritativeReply: result.text, recent });
+      }
       if (await this.app.redis.get(lock) !== token) throw new Error("WhatsApp conversation lock expired");
       // Persist state, dedup marker, and response together. A send failure must
       // never replay the state transition or recreate a confirmed order.
       const tx = this.app.redis.multi();
+      if (result.text && !input.fromMe) tx.set(historyKey, JSON.stringify([...recent, { customer: input.text.slice(0, 1000), reply: result.text.slice(0, 4000) }].slice(-3)), { EX: 1800 });
       if (result.session) tx.set(sessionKey, JSON.stringify(result.session), { EX: 86400 });
       else tx.del(sessionKey);
       tx.set(seen, "1", { EX: 604800 });

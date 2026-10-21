@@ -204,3 +204,11 @@ La disponibilidad se comprueba al iniciar, al avanzar la conversación, al prepa
 No se consultó ni modificó la configuración de producción para este ajuste. La activación futura requiere configurar también esta variable en el servidor. Las pruebas cubren 18:39:59, 18:40:00, 18:40:59, cierre público, días sin servicio y confirmaciones pendientes.
 
 Las respuestas de cierre distinguen el día sin servicio de una confirmación tardía. Ante «pero te escribí hace rato» se explica que quedó pendiente la confirmación; insistir no registra un pedido. La publicación del código no activa por sí sola la recepción: requiere las variables y el webhook descritos arriba.
+
+## Redacción conversacional con IA
+
+Todas las respuestas al cliente producidas por el flujo pasan por Haiku para redacción natural, incluidos saludos y cierres. El servidor sigue decidiendo las acciones y restricciones. Las líneas con importes, comandos y resultados de confirmación se restauran literalmente; una segunda llamada verifica equivalencia semántica. Fallos, rechazos de validación y límites de consumo conservan la respuesta autorizada. No se genera texto en conversaciones pausadas para atención humana ni para mensajes salientes del operador.
+
+Se conservan hasta tres turnos por teléfono durante 30 minutos, separados del recuerdo voluntario de preferencias. El redactor no recibe credenciales ni el corte interno. Hay un máximo de 20 redacciones por teléfono en cada ventana de 10 minutos y tiempo máximo por llamada.
+
+Verificación: 85 pruebas aprobadas, una de reportes omitida por falta de base de prueba; 127 conversaciones locales y 15 situaciones con Haiku real. El informe sintético está en docs/testing/whatsapp-writer-live.json. Ejecutar testing/writer-live.ts requiere --live y credenciales del entorno, nunca guardadas en el repositorio.
