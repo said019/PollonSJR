@@ -23,3 +23,7 @@ Customer reports: repeated location requests, excess messages during checkout, a
 ## Limits
 
 The send guard cannot retract messages already delivered; pre-release queue jobs without revisions are not retroactively rewritten. The off-catalog rule targets unresolved “orden de …” lines; other ambiguities retain their existing clarification behavior. No staff notification number or catalog price was invented, and existing human holds were not cleared.
+
+## Follow-up: compound-order courtesy messages
+
+A remaining path treated bare thanks/acknowledgements in the bundle step as a product clarification. These messages now stay silent and preserve the pending size/quote without accepting an order. Regression coverage sends five courtesy messages both before size selection and after the quote, verifies no outbound jobs/state changes, then resumes normally. Typecheck, build and runtime parity pass; compiled suite: 219 passed, 0 failed, 1 existing skip. General simulations: 147 conversations / 1,317 turns, all pass. No customer messages sent.

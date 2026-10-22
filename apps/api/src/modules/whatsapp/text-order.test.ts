@@ -283,3 +283,14 @@ test("repeated clarification failure stops the loop with a single human handoff"
  assert.equal(f.session().step,"human");assert.match(JSON.parse(f.queue.at(-1)!).params.text,/no te voy a pedir que repitas/);
  const n=f.queue.length;await f.send("no entiendo");assert.equal(f.queue.length,n);assert.equal(f.creates(),0);
 });
+
+ test("courtesy acknowledgements during a compound order stay silent and preserve the pending choice",async()=>{
+ for(const stage of ["sizes","quote"]){
+ const f=setup();await f.send(request);if(stage==="quote")await f.send("grandes");
+ const before=f.session();const count=f.queue.length;
+ for(const message of ["gracias","ok","perfecto","muchas gracias","sale gracias"])await f.send(message);
+ assert.equal(f.queue.length,count);assert.deepEqual(f.session(),before);assert.equal(f.creates(),0);
+ if(stage==="sizes")await f.send("grandes");
+ await f.send("si");assert.equal(f.session().items.length,4);assert.equal(f.session().step,"name");assert.equal(f.creates(),0);
+ }
+ });

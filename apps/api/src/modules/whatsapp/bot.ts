@@ -960,8 +960,8 @@ export class WhatsAppBot {
         if (count <= 20) informational = await answerQuestion(this.app, input.text, recent);
         else if (knownQuestion) informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
       }
-      if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "";
-      if (informational !== null && session?.textOrder) delete session.textOrder.quote;
+      if (!input.fromMe && !input.location && !input.buttonId && !input.catalogSelection && !input.unsupportedMedia && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "";
+      if (informational && session?.textOrder) delete session.textOrder.quote;
       const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);
       if (informational === null && !input.fromMe && result.text && result.session &&
           !["confirm", "done", "human"].includes(result.session.step) && !browsesMenu(text) &&
