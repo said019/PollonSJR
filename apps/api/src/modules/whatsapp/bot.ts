@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isTextOrderCandidate, parseTextOrder, resolveTextOrder, applySideSizes, correctUnknownLine, type TextOrderDraft, type QueuedProduct } from "./text-order";
 import { answerQuestion, isQuestion, asksCurrentService } from "./questions";
 import { writeReply } from "./reply-writer";
 import { requestPolicyReply } from "./request-policy";
@@ -32,11 +33,15 @@ type Item = {
   modifiers: Array<{ name: string; option: string; price: number; qty: number }>;
   configuration: string;
 };
-type Step = "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "type" |
+type Step = "bundle" | "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "type" |
   "location" | "address" | "address_choice" | "address_confirm" | "notes" | "payment" | "cash" | "confirm" | "done" | "human" | "reuse";
 export type Session = {
   step: Step; checkoutId: string; catalog: Product[]; items: Item[];
   closedPendingConfirmation?: boolean;
+  textOrder?: TextOrderDraft;
+  lastTextOrder?: string;
+  batchOrder?: boolean;
+  skipOptionalModifiers?: boolean;
   imageRequest?: { caption: string };
   deliveryReference?: string;
   pending?: Item; selected?: Product; modifierIndex?: number; name?: string;
@@ -46,7 +51,7 @@ export type Session = {
   confirmation?: { code: string; expiresAt: number };
   addressCandidates?: AddressCandidate[];
   candidate?: AddressCandidate;
-  queuedProducts?: Array<{ productId: string; qty: number; variant?: string }>;
+  queuedProducts?: QueuedProduct[];
   catalogVariant?: string;
   reuseItems?: Item[];
   pendingMemory?: { note?: string; basket?: RememberedBasket; expiresAt: number };
@@ -172,14 +177,27 @@ function modifierPrompt(s: Session) {
       `\nElige de ${Math.max(m.minSelect, m.required ? 1 : 0)} a ${m.maxSelect}, separados por comas.`) +
     (!m.required && m.minSelect === 0 && !m.totalQuota ? " Escribe OMITIR si no deseas agregar." : "");
 }
+function checkoutPrompt(s: Session): string {
+  if (!s.name) { s.step = "name"; return "¿A qué nombre lo ponemos?"; }
+  if (!s.type) { s.step = "type"; return "¿Pasas a recoger o te lo llevamos?\n1. Recoger en el local\n2. A domicilio"; }
+  if (s.type === "DELIVERY" && (s.lat === undefined || s.lng === undefined)) { s.step = "location"; return "Compárteme tu ubicación para revisar el envío."; }
+  if (s.type === "DELIVERY" && !s.address) { s.step = "address"; return "Ya tengo tu ubicación. Sólo me faltan la calle, el número y las referencias de entrega."; }
+  s.step = "notes"; return "¿Cómo te lo preparamos? Déjame tus indicaciones o escribe SIN NOTAS.";
+}
 function nextModifier(s: Session): string {
+  while (s.modifierIndex! < s.selected!.modifiers.length) {
+    const m = s.selected!.modifiers[s.modifierIndex!];
+    if (s.pending!.modifiers.some(p=>p.name===m.name) || s.skipOptionalModifiers && !m.required && m.minSelect===0 && !m.totalQuota) s.modifierIndex!++;
+    else break;
+  }
   if (s.modifierIndex! < s.selected!.modifiers.length) {
     s.step = "modifier";
     return modifierPrompt(s);
   }
   s.items.push(s.pending!);
-  delete s.pending; delete s.selected;
+  delete s.pending; delete s.selected; delete s.skipOptionalModifiers;
   if (s.queuedProducts?.length) return beginQueuedProduct(s);
+  if (s.batchOrder) { delete s.batchOrder; return "Ya tengo los productos. " + checkoutPrompt(s); }
   s.step = "more";
   return "Agregado ✅\n" + s.items.map(i => `${i.qty} × ${i.name}${i.variant ? " (" + i.variant + ")" : ""}: ${money(itemTotal(i))}`).join("\n") +
     "\n\n¿Algo más? Escribe MÁS para agregar o LISTO para seguir.";
@@ -188,10 +206,10 @@ function nextModifier(s: Session): string {
 function beginQueuedProduct(s: Session): string {
   const entry = s.queuedProducts!.shift()!;
   const p = s.catalog.find(p => p.id === entry.productId)!;
-  s.selected = p; s.modifierIndex = 0;
+  s.selected = p; s.modifierIndex = 0; s.skipOptionalModifiers = entry.skipOptional;
   const variant = p.variants?.find(v => v.label === entry.variant);
   s.pending = { productId: p.id, name: p.name, qty: entry.qty, unitPrice: variant?.price ?? p.price,
-    ...(variant ? { variant: variant.label } : {}), modifiers: [], configuration: JSON.stringify(p) };
+    ...(variant ? { variant: variant.label } : {}), modifiers: entry.modifiers ?? [], configuration: JSON.stringify(p) };
   if (p.variants?.length && !variant) {
     s.step = "variant";
     return `${entry.qty} × ${p.name}. Elige la presentación:\n` + p.variants.map((v, i) => `${i + 1}. ${v.label} — ${money(v.price)}`).join("\n");
@@ -238,6 +256,7 @@ export class WhatsAppBot {
     if (!input.fromMe && s?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) return this.advance(s, input);
     if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
+    if (!input.fromMe && (s?.step === "bundle" || ((!s || ["menu", "more"].includes(s.step)) && isTextOrderCandidate(input.text)))) return this.advance(s, input);
     if (!s && !input.fromMe) {
       // Initialize through the usual store/catalog/command checks, then use
       // the customer's actual first message instead of asking them to repeat it.
@@ -292,6 +311,37 @@ export class WhatsAppBot {
     const choice = choices.find(c => c.code === decision.code)!;
     s.aiProposal = { step: s.step, code: choice.code, label: choice.label, expiresAt: Date.now() + 300000 };
     return { session: s, text: `¿Te refieres a esto?\n${this.selectionLabel(s, choice)}\n\nEscribe ELEGIR si está bien, o dime otra opción. Al final revisamos y confirmas el pedido completo.` };
+  }
+
+  private async bundleQuote(s: Session): Promise<{ text: string; entries: QueuedProduct[]; signature?: string }> {
+    s.catalog = await this.catalog();
+    const resolved = resolveTextOrder(s.textOrder!, s.catalog);
+    if (resolved.missing.length) {
+      delete s.textOrder!.quote;
+      return { text: `Tengo anotado: ${s.textOrder!.source}\n${resolved.missing.join("\n")}`, entries: [] };
+    }
+    const signature = JSON.stringify({ entries: resolved.entries, products: resolved.entries.map(e=>s.catalog.find(p=>p.id===e.productId)) });
+    const lines = resolved.entries.map(e=>{
+      const p=s.catalog.find(p=>p.id===e.productId)!;
+      const base=p.variants?.length ? `desde ${money(Math.min(...p.variants.map(v=>v.price))*e.qty)}` : money((p.price+(e.modifiers??[]).reduce((sum,m)=>sum+m.price*m.qty,0))*e.qty);
+      return `${e.qty} × ${p.name}${e.modifiers?.length?` (${e.modifiers.map(m=>m.option).join(", ")})`:""} — ${base}`;
+    });
+    return { text: "Lo puedo armar así:\n" + lines.join("\n") + "\n¿Está bien así? Responde SÍ para seguir; todavía falta confirmar el pedido completo.", entries: resolved.entries, signature };
+  }
+
+  private async bundlePrompt(s: Session): Promise<string> {
+    const quote=await this.bundleQuote(s);s.textOrder!.quote=quote.signature;return quote.text;
+  }
+
+  private pendingPrompt(s: Session): string {
+    switch(s.step) {
+      case "quantity": return `De ${s.selected!.name}, ¿cuántos te anoto?`;
+      case "variant": return "Sólo falta elegir la presentación:\n" + s.selected!.variants!.map((v,i)=>`${i+1}. ${v.label} — ${money(v.price)}`).join("\n");
+      case "modifier": return modifierPrompt(s);
+      case "name": return "¿A qué nombre lo ponemos?";
+      case "menu": return "Dime qué te gustaría pedir.";
+      default: return checkoutPrompt(s);
+    }
   }
 
   private async catalog() {
@@ -392,7 +442,7 @@ export class WhatsAppBot {
       const p = catalog.find(p => p.id === item.productId);
       if (!p || JSON.stringify(p) !== item.configuration) {
         s.step = "menu"; s.items = []; s.catalog = catalog;
-        delete s.pending; delete s.selected;
+        delete s.pending; delete s.selected; delete s.skipOptionalModifiers;
         return "El menú cambió o un producto se agotó. Selecciona de nuevo para confirmar opciones y precios actuales.\n\n" + menu(s);
       }
     }
@@ -535,6 +585,44 @@ export class WhatsAppBot {
         return this.unavailable(s, input.text, availability);
       }
     }
+    // A native location can arrive before product options, name or delivery type.
+    // Retain the draft and validate the point with the same coverage/pricing service.
+    if (input.location && s && ["bundle", "menu", "quantity", "variant", "modifier", "more", "name", "type"].includes(s.step)) {
+      if (!(await getStoreConfig(this.app)).deliveryActive) return respond("Por ahora no tenemos entrega a domicilio. Conservé tu pedido; puedes seguir para recoger o escribir ASESOR.");
+      const delivery = await new DeliveryService(this.app).calculate(input.location.lat, input.location.lng);
+      if (!delivery.available) return respond((delivery.reason || "Esa ubicación queda fuera de cobertura.") + " Conservé tu pedido. Puedes compartir otra ubicación.");
+      s.type = "DELIVERY"; s.lat = input.location.lat; s.lng = input.location.lng; s.fee = delivery.fee ?? 0;
+      delete s.address; delete s.candidate; delete s.addressCandidates;
+      return respond(`Ya tengo tu ubicación. El envío cuesta ${money(s.fee)}.\n` + (s.step === "bundle" ? await this.bundlePrompt(s) : this.pendingPrompt(s)));
+    }
+    if (s?.step === "bundle" && s.textOrder) {
+      const previousQuote=s.textOrder.quote;
+      const corrected=correctUnknownLine(s.textOrder,input.text,await this.catalog());
+      if(corrected){s.textOrder=corrected;return respond(await this.bundlePrompt(s));}
+      if (applySideSizes(s.textOrder, input.text)) return respond(await this.bundlePrompt(s));
+      if (/^(?:si|si claro|asi esta bien|esta bien|correcto|de acuerdo)[.! ]*$/.test(text) && previousQuote) {
+        const quote=await this.bundleQuote(s);
+        if (quote.signature !== previousQuote) { s.textOrder.quote=quote.signature; return respond("Cambió la disponibilidad o el precio. Revisa cómo queda:\n" + quote.text); }
+        if (s.items.length+quote.entries.length>30) return respond("Este pedido necesita que lo revise el equipo. Escribe ASESOR; conservé los datos que mandaste.");
+        s.queuedProducts=quote.entries.map(e=>({...e,skipOptional:true}));s.batchOrder=true;
+        s.lastTextOrder=s.textOrder.source;
+        delete s.textOrder;delete s.confirmation;delete s.aiProposal;
+        return respond(beginQueuedProduct(s));
+      }
+      return respond(await this.bundlePrompt(s));
+    }
+    if (s?.lastTextOrder && normalize(s.lastTextOrder)===text && ["name", "quantity", "variant", "modifier"].includes(s.step)) {
+      return respond("Ya tengo esos productos anotados. " + this.pendingPrompt(s));
+    }
+    if ((!s || ["menu", "more"].includes(s.step)) && isTextOrderCandidate(input.text)) {
+      const open=await isAcceptingOrders(this.app);if(!open.accepting)return this.unavailable(s,input.text,open);
+      const catalog=await this.catalog();const draft=parseTextOrder(input.text,catalog);
+      if(draft){
+        s ??= {step:"bundle",checkoutId:crypto.randomUUID(),catalog,items:[]};
+        s.step="bundle";s.catalog=catalog;s.textOrder=draft;delete s.aiProposal;delete s.confirmation;
+        return respond(await this.bundlePrompt(s));
+      }
+    }
     if (text === "usar preferencia") {
       if (s?.step !== "notes") return respond("Puedes usar tu preferencia cuando te pregunte por las indicaciones del pedido.");
       const stored = await memory.read(input.phone);
@@ -623,10 +711,10 @@ export class WhatsAppBot {
       case "more":
         if (["mas", "menu"].includes(text)) { s.step = "menu"; return respond(menu(s)); }
         if (text !== "listo") return respond("¿Algo más? Escribe MÁS para agregar o LISTO para seguir.");
-        s.step = "name"; return respond("¿A qué nombre lo ponemos?");
+        return respond(checkoutPrompt(s));
       case "name":
         if (input.text.trim().length < 2 || input.text.trim().length > 80) return respond("Escribe un nombre de 2 a 80 caracteres.");
-        s.name = input.text.trim(); s.step = "type"; return respond("¿Pasas a recoger o te lo llevamos?\n1. Recoger en el local\n2. A domicilio");
+        s.name = input.text.trim(); return respond(checkoutPrompt(s));
       case "type":
         if (!["1", "2", "recoger", "domicilio"].includes(text)) return respond("Responde 1 para recoger o 2 para domicilio.");
         if (["2", "domicilio"].includes(text)) {
@@ -759,7 +847,7 @@ export class WhatsAppBot {
       let informational: string | null = null;
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !(session?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) && !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
-        !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text);
+        !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text) && !(session?.step === "bundle" && (!isQuestion(input.text) || !!session.textOrder && applySideSizes(structuredClone(session.textOrder), input.text))) && !((!session || ["menu", "more"].includes(session.step)) && isTextOrderCandidate(input.text));
       // Let the classifier understand free-form conversation, not just regex matches.
       // Explicit choices and personal checkout fields retain their existing handling.
       const knownQuestion = isQuestion(input.text);
@@ -777,6 +865,7 @@ export class WhatsAppBot {
         else if (knownQuestion) informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
       }
       if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = session && session.step !== "done" ? "¡Con gusto!" : "";
+      if (informational !== null && session?.textOrder) delete session.textOrder.quote;
       const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);
       if (await blocked()) return;
       if (result.text && !input.fromMe && process.env.WHATSAPP_AI_ENABLED === "true" && process.env.ANTHROPIC_API_KEY) {

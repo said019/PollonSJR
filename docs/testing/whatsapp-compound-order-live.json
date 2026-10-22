@@ -1,0 +1,64 @@
+{
+  "syntheticOnly": true,
+  "publicProductionCatalog": true,
+  "shippingZone": "synthetic $60",
+  "ordersCreated": 0,
+  "realMessagesSent": 0,
+  "passed": true,
+  "turns": [
+    {
+      "customer": "Ocupo 18 piezas dos purés y dos ensaladas",
+      "reply": "Tengo anotado: Ocupo 18 piezas dos purés y dos ensaladas\n¿Los complementos los quieres chicos o grandes?",
+      "step": "bundle",
+      "items": 0
+    },
+    {
+      "customer": "[ubicación sintética]",
+      "reply": "Ya tengo tu ubicación. El envío cuesta $60.00.\nTengo anotado: Ocupo 18 piezas dos purés y dos ensaladas\n¿Los complementos los quieres chicos o grandes?",
+      "step": "bundle",
+      "items": 0
+    },
+    {
+      "customer": "grandes",
+      "reply": "Lo puedo armar así:\n1 × 12 Piezas — $220.00\n1 × 6 Piezas — $145.00\n2 × Complemento Grande (Puré de papa) — $76.00\n2 × Complemento Grande (Ensalada de zanahoria con col) — $76.00\n¿Está bien así? Responde SÍ para seguir; todavía falta confirmar el pedido completo.",
+      "step": "bundle",
+      "items": 0
+    },
+    {
+      "customer": "sí claro",
+      "reply": "Ya tengo los productos. ¿A qué nombre lo ponemos?",
+      "step": "name",
+      "items": 4
+    },
+    {
+      "customer": "Cliente Prueba",
+      "reply": "Ya tengo tu ubicación. Sólo me faltan la calle, el número y las referencias de entrega.",
+      "step": "address",
+      "items": 4
+    },
+    {
+      "customer": "Calle Prueba 123, Centro, puerta azul",
+      "reply": "¿Cómo te lo preparamos? Déjame tus indicaciones o escribe SIN NOTAS.",
+      "step": "notes",
+      "items": 4
+    },
+    {
+      "customer": "sin notas",
+      "reply": "¿Pagas en efectivo? Escribe EFECTIVO para seguir. Si prefieres otro medio de pago, escribe ASESOR y lo revisas con el equipo.",
+      "step": "payment",
+      "items": 4
+    },
+    {
+      "customer": "efectivo",
+      "reply": "¿Con cuánto vas a pagar? Dime el monto en pesos, por ejemplo 500, o escribe EXACTO.",
+      "step": "cash",
+      "items": 4
+    },
+    {
+      "customer": "exacto",
+      "reply": "Así va tu pedido:\n1 × 12 Piezas — $220.00\n1 × 6 Piezas — $145.00\n2 × Complemento Grande — $76.00\n  Sabor: 1 × Puré de papa\n2 × Complemento Grande — $76.00\n  Sabor: 1 × Ensalada de zanahoria con col\nNombre: Cliente Prueba\nEntrega: Calle Prueba 123, Centro, puerta azul\nEnvío: $60.00\nPago en efectivo exacto\n*Total: $577.00*\n\nPulsa Confirmar pedido. Si no aparecen botones, mantén presionado ESTE resumen, elige Responder y escribe CONFIRMAR. El resumen vence en 10 minutos.\n\nEscribe ASESOR para atención personal o CANCELAR para descartar este borrador.",
+      "step": "confirm",
+      "items": 4
+    }
+  ]
+}
