@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { parseDeliveryDetails, validRecipient, deliveryAddress, orderNotes } from "./delivery-details";
+import { parseDeliveryDetails, validRecipient, deliveryAddress, orderNotes, hasFacade } from "./delivery-details";
 import { isTextOrderCandidate, parseTextOrder, resolveTextOrder, applySideSizes, correctUnknownLine, type TextOrderDraft, type QueuedProduct } from "./text-order";
 import { answerQuestion, isQuestion, asksCurrentService } from "./questions";
 import { writeReply } from "./reply-writer";
@@ -35,7 +35,7 @@ type Item = {
   configuration: string;
 };
 type Step = "bundle" | "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "type" |
-  "location" | "address" | "address_choice" | "address_confirm" | "delivery_details" | "notes" | "payment" | "cash" | "confirm" | "done" | "human" | "reuse";
+  "location" | "location_check" | "address" | "address_choice" | "address_confirm" | "delivery_details" | "notes" | "payment" | "cash" | "confirm" | "done" | "human" | "reuse";
 export type Session = {
   step: Step; checkoutId: string; catalog: Product[]; items: Item[];
   closedPendingConfirmation?: boolean;
@@ -49,6 +49,7 @@ export type Session = {
   type?: "PICKUP" | "DELIVERY"; lat?: number; lng?: number; address?: string;
   facade?: string; deliveryPhone?: string;
   pickupRequest?: string;
+  locationNeedsCheck?: boolean;
   notes?: string; cashAmount?: number; fee?: number; total?: number; orderNumber?: number;
   aiProposal?: { step: Step; code: string; label: string; expiresAt: number };
   confirmation?: { code: string; expiresAt: number };
@@ -80,8 +81,11 @@ const isGreeting = (text: string) => /^(?:(?:hola+|ola|holi|buenas|buen dia|buen
 const browsesMenu = (text: string) => /\bque (?:venden|ofrecen)\b/.test(text) || /\b(?:menu|catalogo|carta)\b/.test(text) && /\b(?:ver|pasas|pasar|mandas|mandame|muestras|mostrar|tienes|tienen|consultar|conocer)\b/.test(text) || /^(?:el |tu )?(?:menu|catalogo|carta)[.!?¿¡\s]*$/.test(text);
 const asksMenu = (text: string) => /^(?:pedir|nuevo|menu|quiero pedir|quiero hacer un pedido|me pasas el menu|mandame el menu|me mandas el menu|tienes menu|puedo ver el menu)$/.test(text.replace(/[.!?¿¡]/g, "").trim());
 const help = "\n\nEscribe ASESOR para atención personal o CANCELAR para descartar este borrador.";
-const incomingDetails = (input: Incoming, step: string) =>
-  isQuestion(input.text) || asksCurrentService(input.text) ? null : parseDeliveryDetails(input.text, step, input.phone);
+const incomingDetails = (input: Incoming, step: string) => {
+  if (asksCurrentService(input.text)) return null;
+  const details = parseDeliveryDetails(input.text, step, input.phone);
+  return details?.name && !details.address && !details.phone && isQuestion(input.text) ? null : details;
+};
 const pickupRequest = (text: string) => /^(?:voy a|paso a|ire a|voy por|paso por) (?:recoger(?:lo|los| el pedido)?|el pedido)(?: en \d{1,3} (?:min|minutos?))?[.! ]*$/.test(normalize(text));
 
 // Do not interpret group IDs or privacy LIDs as phone numbers. Some versions
@@ -186,6 +190,7 @@ function modifierPrompt(s: Session) {
 function checkoutPrompt(s: Session): string {
   if (!s.name) { s.step = "name"; return "¿A qué nombre lo ponemos?"; }
   if (!s.type) { s.step = "type"; return "¿Pasas a recoger o te lo llevamos?\n1. Recoger en el local\n2. A domicilio"; }
+  if (s.type === "DELIVERY" && s.locationNeedsCheck) { s.step = "location_check"; return "¿La ubicación que ya mandaste corresponde a esta dirección? Responde SÍ o NO; si es la misma, no hace falta enviarla otra vez."; }
   if (s.type === "DELIVERY" && (s.lat === undefined || s.lng === undefined)) { s.step = "location"; return "Compárteme tu ubicación para revisar el envío."; }
   if (s.type === "DELIVERY" && !s.address) { s.step = "address"; return "Ya tengo tu ubicación. Sólo me faltan la calle, el número y las referencias de entrega."; }
   if (s.type === "DELIVERY" && (!s.facade || !s.deliveryPhone)) {
@@ -286,7 +291,7 @@ export class WhatsAppBot {
     // validation, payment, personal data collection or final confirmation.
     if (!s || input.fromMe || input.location || input.catalogSelection || input.buttonId || input.unsupportedMedia || !text || asksIdentity(text) || requestsHuman(text) || needsHumanReview(text) || requestsOrderChange(text) ||
         /^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text) ||
-        ["human", "done", "confirm", "name", "address", "delivery_details", "notes", "payment", "cash", "location"].includes(s.step) ||
+        ["human", "done", "confirm", "name", "address", "delivery_details", "notes", "payment", "cash", "location", "location_check"].includes(s.step) ||
         !!incomingDetails(input, s.step) || pickupRequest(input.text) ||
         ["cancelar", "asesor", "ayuda", "persona", "recoger", "menu", "omitir"].includes(text)) {
       if (s) delete s.aiProposal;
@@ -345,6 +350,10 @@ export class WhatsAppBot {
   }
 
   private async bundlePrompt(s: Session): Promise<string> {
+    if (s.textOrder?.unknownPhrase && /^orden(?:es)? de /.test(s.textOrder.unknownPhrase)) {
+      s.step = "human"; delete s.confirmation; delete s.aiProposal;
+      return "Ya tengo tu solicitud. El equipo sigue contigo por aquí para completar el pedido; no necesitas repetirlo.";
+    }
     const quote=await this.bundleQuote(s);s.textOrder!.quote=quote.signature;return quote.text;
   }
 
@@ -456,7 +465,7 @@ export class WhatsAppBot {
       delete s.confirmation; s.step = "delivery_details";
       return "Por ahora no tenemos entrega a domicilio. Conservé tu pedido; escribe RECOGER si puedes pasar por él o ASESOR para revisarlo con el equipo.";
     }
-    if (s.type === "DELIVERY" && (!s.name || !s.address || !s.facade || !s.deliveryPhone || s.lat === undefined || s.lng === undefined)) return checkoutPrompt(s);
+    if (s.type === "DELIVERY" && (!s.name || !s.address || !s.facade || !s.deliveryPhone || s.lat === undefined || s.lng === undefined || s.locationNeedsCheck)) return checkoutPrompt(s);
     if ((deliveryAddress(s)?.length ?? 0) > 500 || orderNotes(s).length > 500) {
       s.step = "human"; delete s.confirmation;
       return "Tus datos de entrega necesitan revisión del equipo para guardarlos completos. Conservé el pedido; todavía no está confirmado.";
@@ -621,6 +630,7 @@ export class WhatsAppBot {
     // A native location can arrive before product options, name or delivery type.
     // Retain the draft and validate the point with the same coverage/pricing service.
     if (input.location && s && !["human", "done", "reuse"].includes(s.step)) {
+      if (s.lat === input.location.lat && s.lng === input.location.lng && !s.locationNeedsCheck) return respond("");
       if (!(await getStoreConfig(this.app)).deliveryActive) return respond("Por ahora no tenemos entrega a domicilio. Conservé tu pedido; puedes seguir para recoger o escribir ASESOR.");
       const delivery = await new DeliveryService(this.app).calculate(input.location.lat, input.location.lng);
       if (!delivery.available) {
@@ -629,6 +639,7 @@ export class WhatsAppBot {
         return respond((delivery.reason || "Esa ubicación queda fuera de cobertura.") + " Conservé tu pedido. Puedes compartir otra ubicación.");
       }
       s.type = "DELIVERY"; s.lat = input.location.lat; s.lng = input.location.lng; s.fee = delivery.fee ?? 0;
+      delete s.locationNeedsCheck;
       delete s.candidate; delete s.addressCandidates; delete s.confirmation; delete s.aiProposal;
       return respond(`Ya tengo tu ubicación. El envío cuesta ${money(s.fee)}.\n` + (s.step === "bundle" ? await this.bundlePrompt(s) : this.pendingPrompt(s)));
     }
@@ -638,6 +649,8 @@ export class WhatsAppBot {
       const details = incomingDetails(input, s.step);
       if (details) {
         if (details.error) return respond(details.error);
+        if ((!details.name || details.name === s.name) && (!details.phone || details.phone === s.deliveryPhone) &&
+            (!details.address || details.address === s.address) && (!details.facade || details.facade === s.facade)) return respond("");
         if ((details.address || details.facade) && !(await getStoreConfig(this.app)).deliveryActive) return respond("Por ahora no tenemos entrega a domicilio. Conservé tu pedido; puedes seguir para recoger o escribir ASESOR.");
         // Preserve Google address selection when the customer explicitly chose
         // written-address checkout and has not shared a native point yet.
@@ -655,7 +668,8 @@ export class WhatsAppBot {
         if (details.phone) s.deliveryPhone = details.phone;
         if (details.address) {
           if (s.address && normalize(s.address) !== normalize(details.address)) {
-            delete s.lat; delete s.lng; delete s.fee; delete s.facade;
+            if (s.lat !== undefined && s.lng !== undefined) s.locationNeedsCheck = true;
+            else delete s.facade;
           }
           s.address = details.address; s.type = "DELIVERY";
           if (["address_choice", "address_confirm"].includes(s.step)) {
@@ -739,7 +753,7 @@ export class WhatsAppBot {
       return respond(menu(s));
     }
     if (s.step === "done") return respond(`Tu pedido #${s.orderNumber} ya está registrado. Escribe PEDIR para uno nuevo, RECORDAR PEDIDO para guardarlo como habitual o ASESOR.`);
-    if (text === "recoger" && ["location", "address", "address_choice", "address_confirm", "delivery_details"].includes(s.step)) { s.type = "PICKUP"; s.step = "notes"; delete s.candidate; return respond("¿Alguna indicación para tu pedido? Escribe SIN NOTAS si no tienes, o USAR PREFERENCIA si ya guardaste una."); }
+    if (text === "recoger" && ["location", "location_check", "address", "address_choice", "address_confirm", "delivery_details"].includes(s.step)) { s.type = "PICKUP"; s.step = "notes"; delete s.candidate; delete s.locationNeedsCheck; return respond("¿Alguna indicación para tu pedido? Escribe SIN NOTAS si no tienes, o USAR PREFERENCIA si ya guardaste una."); }
     if (input.location && ["address_choice", "address_confirm"].includes(s.step)) { s.step = "location"; delete s.candidate; }
     switch (s.step) {
       case "reuse":
@@ -822,6 +836,10 @@ export class WhatsAppBot {
       }
       case "address":
         return respond("¿Me escribes la calle y el número, además de una referencia de tu fachada?");
+      case "location_check":
+        if (/^(?:si|si claro|es la misma|la misma|correcto)[.! ]*$/.test(text)) { delete s.locationNeedsCheck; return respond(checkoutPrompt(s)); }
+        if (/^(?:no|es otra|otra)[.! ]*$/.test(text)) { delete s.locationNeedsCheck; delete s.lat; delete s.lng; delete s.fee; if (!hasFacade(s.address || "")) delete s.facade; return respond(checkoutPrompt(s)); }
+        return respond("Sólo confírmame si la ubicación anterior es la misma: SÍ o NO.");
       case "delivery_details":
         return respond(checkoutPrompt(s));
       case "notes":
@@ -907,6 +925,7 @@ export class WhatsAppBot {
       const replyGeneration = await generation(this.app.redis, input.phone) + (input.fromMe && normalize(input.text) === "activar bot" ? 1 : 0);
       const raw = await this.app.redis.get(sessionKey);
       let session: Session | null = raw ? JSON.parse(raw) : null;
+      const previousState = JSON.stringify(session);
       // The pause is separate from the expiring cart: a new day, menu request,
       // expired draft or customer-written command must never reclaim the chat.
       const humanKey = `${prefix}:human`;
@@ -922,7 +941,7 @@ export class WhatsAppBot {
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !incomingDetails(input, session?.step || "") &&
         !pickupRequest(input.text) &&
-        !/^(?:usar direccion|corregir)[.! ]*$/.test(text) &&
+        !/^(?:usar direccion|corregir)[.! ]*$/.test(text) && !(session?.step === "location_check" && /^(?:si|si claro|es la misma|la misma|correcto|no|es otra|otra)[.! ]*$/.test(text)) &&
         !(session?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) && !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text) && !(session?.step === "bundle" && (!isQuestion(input.text) || !!session.textOrder && applySideSizes(structuredClone(session.textOrder), input.text))) && !((!session || ["menu", "more"].includes(session.step)) && isTextOrderCandidate(input.text));
       // Let the classifier understand free-form conversation, not just regex matches.
@@ -932,7 +951,7 @@ export class WhatsAppBot {
         !/^\d+(?:\s*,\s*\d+)*$/.test(text) &&
         !/^(?:elegir|listo|recoger|omitir|exacto|efectivo|transferencia|tarjeta|si|no|ok|okay|sale|entendido|perfecto|gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|sin notas|usar direccion|corregir)[.! ]*$/.test(text) &&
         !/^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text) &&
-        !["name", "address", "delivery_details", "notes", "payment", "cash", "confirm", "address_confirm"].includes(session?.step || "");
+        !["name", "address", "delivery_details", "notes", "payment", "cash", "confirm", "address_confirm", "location_check"].includes(session?.step || "");
       if (informationalAllowed && asksCurrentService(input.text)) {
         informational = await answerQuestion(this.app, input.text, recent);
       } else if (informationalAllowed && (knownQuestion || semanticCandidate)) {
@@ -941,9 +960,17 @@ export class WhatsAppBot {
         if (count <= 20) informational = await answerQuestion(this.app, input.text, recent);
         else if (knownQuestion) informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
       }
-      if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = session && session.step !== "done" ? "¡Con gusto!" : "";
+      if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "";
       if (informational !== null && session?.textOrder) delete session.textOrder.quote;
       const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);
+      if (informational === null && !input.fromMe && result.text && result.session &&
+          !["confirm", "done", "human"].includes(result.session.step) && !browsesMenu(text) &&
+          recent.length >= 2 && recent.slice(-2).every(turn => turn.reply.trim() === result.text.trim())) {
+        result.session.step = "human"; delete result.session.confirmation; delete result.session.aiProposal;
+        result.text = "Disculpa, no te voy a pedir que repitas lo mismo. El equipo sigue contigo por aquí para completar el pedido.";
+        result.handoff = true;
+      }
+      if (result.session?.step === "human" && JSON.parse(previousState)?.step !== "human") result.handoff = true;
       if (await blocked()) return;
       if (result.text && !input.fromMe && process.env.WHATSAPP_AI_ENABLED === "true" && process.env.ANTHROPIC_API_KEY) {
         const rateKey = `${prefix}:writing:${Math.floor(Date.now() / 600000)}`;
@@ -956,6 +983,12 @@ export class WhatsAppBot {
       // Persist state, dedup marker, and response together. A send failure must
       // never replay the state transition or recreate a confirmed order.
       const tx = this.app.redis.multi();
+      // A newer checkout state makes older prompts obsolete. FAQ replies do
+      // not advance the checkout and must not discard an undelivered summary.
+      const revisionKey = `${prefix}:reply-revision`;
+      const stateChanged = previousState !== JSON.stringify(result.session);
+      const revision = stateChanged ? crypto.randomUUID() : await this.app.redis.get(revisionKey);
+      if (stateChanged) tx.set(revisionKey, revision!, { EX: 86400 });
       if (result.text && !input.fromMe) tx.set(historyKey, JSON.stringify([...recent, { customer: input.text.slice(0, 1000), reply: result.text.slice(0, 4000) }].slice(-3)), { EX: 1800 });
       if (result.session?.step === "human") tx.set(humanKey, result.handoff ? `handoff:${input.id}` : "1");
       else if (input.fromMe && text === "activar bot") {
@@ -970,7 +1003,7 @@ export class WhatsAppBot {
       const enqueue = (to: string, text: string, summary = false, staffNotification = false) => tx.rPush("notifications:queue", JSON.stringify({
         id: crypto.randomUUID(), type: "whatsapp", to, template: "bot_reply", params: { text }, attempts: 0, createdAt: new Date().toISOString(),
         ...(summary && confirmation ? { confirmation } : {}),
-        ...(staffNotification ? { staffNotification: true } : { automation: { generation: replyGeneration, ...(result.handoff ? { handoffId: input.id } : {}) } }),
+        ...(staffNotification ? { staffNotification: true } : { automation: { generation: replyGeneration, ...(informational === null && revision && result.session?.step !== "done" ? { revision } : {}), ...(result.handoff ? { handoffId: input.id } : {}) } }),
       }));
       if (result.text) {
         // Keep menus and summaries below WhatsApp's text payload size.

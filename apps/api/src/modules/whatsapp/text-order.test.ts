@@ -235,16 +235,13 @@ test("phone and facade arriving during Google address confirmation are retained 
 });
 
 const politeOrder="Te puedo encargar por favor un pedido:\n6 Piezas de pollo\n1 Orden de Huesitos";
-test("screenshot: polite multiline order is retained and pickup time does not replace unknown products",async()=>{
+test("off-catalog internal item hands off once without explaining catalog internals",async()=>{
  const f=setup();const first=await f.send(politeOrder);
- assert.doesNotMatch(first,/Menú de Pollón/);assert.equal(f.session().step,"bundle");assert.equal(f.session().textOrder.source,politeOrder);
- assert.equal(f.session().textOrder.lines[0].qty,6);assert.match(f.session().textOrder.unknownPhrase,/huesitos/);assert.match(first,/catálogo actual/);assert.doesNotMatch(first,/Dime a qué producto/);
- const checkout=f.session().checkoutId;
- const response=await f.send("Voy a recogerlo en 25 min");
- assert.match(response,/tiempo de preparación todavía no está confirmado/);assert.doesNotMatch(response,/Menú de Pollón/);
- assert.equal(f.session().type,"PICKUP");assert.equal(f.session().checkoutId,checkout);assert.equal(f.session().textOrder.source,politeOrder);
- assert.match(f.session().textOrder.unknownPhrase,/huesitos/);assert.equal(f.creates(),0);
- await f.send("si");assert.equal(f.session().items.length,0);assert.equal(f.creates(),0);
+ assert.doesNotMatch(first,/Menú de Pollón|catálogo|precio|ASESOR|huesitos/i);assert.equal(f.session().step,"human");assert.equal(f.session().textOrder.source,politeOrder);
+ assert.equal(f.session().textOrder.lines[0].qty,6);assert.match(f.session().textOrder.unknownPhrase,/huesitos/);
+ const count=f.queue.length;
+ for(const text of ["Voy a recogerlo en 25 min","si","Este sería mi pedido",politeOrder])await f.send(text);
+ assert.equal(f.queue.length,count);assert.equal(f.creates(),0);
 });
 
 test("polite order resolves only catalog products and pickup intent survives through final confirmation",async()=>{
@@ -269,4 +266,20 @@ test("polite requests phrased as questions are still drafts, while price questio
  const reply=await f.send(source);assert.doesNotMatch(reply,/Menú de Pollón/);assert.equal(f.session().textOrder.source,source);
  assert.equal(f.session().textOrder.lines[0].qty,6);assert.equal(f.creates(),0);
  assert.equal(parseTextOrder("¿Cuánto cuestan 6 piezas y 1 orden de Huesitos?",bundleProducts),null);
+});
+
+test("address clarification retains the native point and asks for confirmation instead of asking to resend",async()=>{
+ const f=setup();await acceptedBundle(f);await f.send("Cliente Prueba");await f.send("",{location:{lat:20.38,lng:-99.98}});
+ await f.send("Calle Prueba 64, puerta azul");await f.send("este número");
+ const reply=await f.send("Mi dirección es Calle Prueba número 64, puerta azul");
+ assert.match(reply,/no hace falta enviarla otra vez/);assert.equal(f.session().step,"location_check");assert.equal(f.session().lat,20.38);
+ await f.send("sí");assert.equal(f.session().step,"notes");assert.equal(f.session().lat,20.38);
+ await f.send("Calle Otra 90, puerta roja");await f.send("no");assert.equal(f.session().lat,undefined);assert.equal(f.session().step,"location");
+});
+
+test("repeated clarification failure stops the loop with a single human handoff",async()=>{
+ const f=setup();await acceptedBundle(f);
+ for(const text of ["si claro","si claro","si claro"])await f.send(text);
+ assert.equal(f.session().step,"human");assert.match(JSON.parse(f.queue.at(-1)!).params.text,/no te voy a pedir que repitas/);
+ const n=f.queue.length;await f.send("no entiendo");assert.equal(f.queue.length,n);assert.equal(f.creates(),0);
 });

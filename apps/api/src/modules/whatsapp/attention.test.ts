@@ -278,3 +278,65 @@ test("staff-led delivery and transfer conversation stays silent through location
   assert.equal(await attentionState(f.app.redis, phone), "human");
   assert.equal(f.creates(), 0);
 });
+
+test("actual outbound delivery drops obsolete questions after a burst of checkout details", async t => {
+ const {f,post}=await hook(t);
+ f.storage.set("store:location",JSON.stringify({lat:20.38,lng:-99.98}));
+ f.storage.set("delivery:zones",JSON.stringify([{id:"test",name:"Prueba",minKm:0,maxKm:6,fee:6000,active:true,sortOrder:0}]));
+ for(const [i,text] of ["pedir","1","1","listo","Cliente Prueba","2"].entries())await post(event(`start-${i}`,text,false));
+ await post(event("point","",false,{locationMessage:{degreesLatitude:20.38,degreesLongitude:-99.98}}));
+ await post(event("written","Mi dirección es Avenida Prueba 64, puerta azul",false));
+ await post(event("phone","4270000099 es el número de contacto",false));
+ const session=JSON.parse(f.storage.get(`wa:bot:${phone}:session`)!);
+ assert.equal(session.step,"notes");assert.equal(session.lat,20.38);assert.equal(session.deliveryPhone,"4270000099");
+ const sent:string[]=[];
+ t.mock.method(globalThis,"fetch",async(_url: string | URL | Request,options?: RequestInit)=>{sent.push(JSON.parse(options!.body as string).text);return new Response(JSON.stringify({key:{id:`sent-${sent.length}`}}));});
+ for(const raw of f.queue)await sendWhatsAppEvolution({...JSON.parse(raw),createdAt:new Date(0).toISOString()},f.app.redis);
+ assert.equal(sent.length,1);assert.match(sent[0],/preparamos/);assert.doesNotMatch(sent[0],/Compárteme tu ubicación|calle, el número|qué nombre|qué teléfono/);
+ const count=f.queue.length;
+ await post(event("point-again","",false,{locationMessage:{degreesLatitude:20.38,degreesLongitude:-99.98}}));
+ await post(event("phone-again","4270000099 es el número de contacto",false));
+ await post(event("thanks","gracias",false));
+ assert.equal(f.queue.length,count);assert.equal(f.creates(),0);
+});
+
+test("questions do not remove a valid pending summary and changed details invalidate it before sending",async t=>{
+ const {f,post}=await hook(t);
+ for(const [i,text] of ["pedir","1","1","listo","Cliente Prueba","1","sin notas","efectivo","exacto"].entries())await post(event(`checkout-${i}`,text,false));
+ const summary=JSON.parse(f.queue.at(-1)!);assert.ok(summary.confirmation);
+ await post(event("hours","hoy hay servicio",false));
+ let calls=0;t.mock.method(globalThis,"fetch",async()=>{calls++;return new Response(JSON.stringify({key:{id:`sent-${calls}`}}));});
+ await sendWhatsAppEvolution({...summary,createdAt:new Date(0).toISOString()},f.app.redis);assert.equal(calls,1);
+ await post(event("cancel","cancelar",false));
+ await sendWhatsAppEvolution({...summary,createdAt:new Date(0).toISOString()},f.app.redis);assert.equal(calls,1);assert.equal(f.creates(),0);
+});
+
+test("revision is rechecked before unsupported-button fallback",async t=>{
+ const {f}=await hook(t);process.env.WHATSAPP_REPLY_BUTTONS="true";
+ const key=`wa:bot:${phone}:reply-revision`;f.storage.set(key,"original");let calls=0;
+ t.mock.method(globalThis,"fetch",async()=>{calls++;f.storage.set(key,"newer");return new Response("unsupported",{status:400});});
+ await sendWhatsAppEvolution({...job(),createdAt:new Date(0).toISOString(),automation:{generation:0,revision:"original"},confirmation:{checkoutId:"draft",code:"ABC"}},f.app.redis);
+ assert.equal(calls,1);
+});
+
+test("a newer message during the brief send window cancels the stale prompt",async t=>{
+ const {f,post}=await hook(t);
+ await post(event("start","pedir",false));const old=JSON.parse(f.queue.at(-1)!);
+ let sends=0;t.mock.method(globalThis,"fetch",async()=>{sends++;return new Response(JSON.stringify({key:{id:"sent"}}));});
+ const pending=sendWhatsAppEvolution(old,f.app.redis);
+ await post(event("selection","1",false));await pending;
+ assert.equal(sends,0);
+ await sendWhatsAppEvolution({...JSON.parse(f.queue.at(-1)!),createdAt:new Date(0).toISOString()},f.app.redis);
+ assert.equal(sends,1);
+});
+
+test("an internal product review sends exactly one neutral handoff and keeps later customer messages silent",async t=>{
+ const {f,post}=await hook(t);
+ await post(event("request","Te puedo encargar por favor un pedido: 6 piezas de pollo 1 orden de Huesitos",false));
+ const sent:string[]=[];t.mock.method(globalThis,"fetch",async(_url: string | URL | Request,options?: RequestInit)=>{sent.push(JSON.parse(options!.body as string).text);return new Response(JSON.stringify({key:{id:`sent-${sent.length}`}}));});
+ for(const raw of f.queue)await sendWhatsAppEvolution(JSON.parse(raw),f.app.redis);
+ assert.equal(sent.length,1);assert.doesNotMatch(sent[0],/catálogo|huesitos|precio|ASESOR|configura/i);
+ const count=f.queue.length;
+ for(const [i,text] of ["Este sería mi pedido","Voy a recogerlo en 25 min","gracias"].entries())await post(event(`followup-${i}`,text,false));
+ assert.equal(f.queue.length,count);assert.equal(await attentionState(f.app.redis,phone),"human");assert.equal(f.creates(),0);
+});

@@ -14,7 +14,7 @@ export interface NotificationJob {
   attempts: number;
   createdAt: string;
   confirmation?: { checkoutId: string; code: string };
-  automation?: { generation: number; handoffId?: string };
+  automation?: { generation: number; handoffId?: string; revision?: string };
   staffNotification?: boolean;
 }
 
@@ -135,6 +135,7 @@ async function maySend(job: NotificationJob, redis?: RedisClientType, ownLease =
   if (job.staffNotification) return true;
   if (!redis || !job.automation || isExcludedContact(job.to)) return false;
   if (job.automation.generation !== await generation(redis, job.to)) return false;
+  if (job.automation.revision && job.automation.revision !== await redis.get(`wa:bot:${job.to}:reply-revision`)) return false;
   const state = ownLease ? await attentionState(redis, job.to) : await settledAttentionState(redis, job.to);
   if (state === "automatic") return true;
   // Only the acknowledgement which established this customer-requested
@@ -153,6 +154,13 @@ async function maySend(job: NotificationJob, redis?: RedisClientType, ownLease =
  *   EVOLUTION_COUNTRY_CODE → defaults to "52" (MX)
  */
 export async function sendWhatsAppEvolution(job: NotificationJob, redis?: RedisClientType): Promise<void> {
+  // Briefly allow consecutive customer details to replace a queued prompt.
+  // This is bounded, applies only to bot checkout replies, and is followed by
+  // the full revision/human-takeover check before any provider request.
+  if (job.template === "bot_reply" && job.automation?.revision && !job.automation.handoffId) {
+    const wait = Math.min(1200, Date.parse(job.createdAt) + 1200 - Date.now());
+    if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+  }
   if (!await maySend(job, redis)) return;
   const apiUrl = process.env.EVOLUTION_API_URL;
   const apiKey = process.env.EVOLUTION_API_KEY;
