@@ -2,7 +2,8 @@ import { FastifyInstance } from "fastify";
 import { adminOnly } from "../../middlewares/admin-only";
 import { timingSafeEqual } from "node:crypto";
 import { WhatsAppBot, parseIncoming } from "../whatsapp/bot";
-import { observeOutbound, attentionKeys } from "../whatsapp/attention";
+import { observeOutbound, attentionKeys, recordAppOutbound } from "../whatsapp/attention";
+import { isBusinessGreeting } from "../whatsapp/business-greeting";
 import { whatsappCatalogRoutes } from "../whatsapp/catalog.routes";
 
 const EVO_URL = () => process.env.EVOLUTION_API_URL?.replace(/\/$/, "");
@@ -168,6 +169,12 @@ export async function evolutionWebhookRoutes(app: FastifyInstance) {
         // Observe staff intervention before customer turns in the same batch.
         const incomingMessages = messages.map((raw: unknown) => parseIncoming(raw)).filter((m): m is NonNullable<typeof m> => m !== null);
         for (const incoming of incomingMessages.filter(m => m.fromMe)) {
+          if (isBusinessGreeting(incoming)) {
+            // Register only this approved automation's ID. This never removes
+            // an explicit human hold or any other staff message ID.
+            await recordAppOutbound(app.redis, incoming.phone, incoming.id);
+            continue;
+          }
           if (await observeOutbound(app.redis, incoming.phone, incoming.id) === "app") continue;
           // Never execute a command while it could still be an unacknowledged
           // app echo. It remains a hold unless the sender proves its own ID.

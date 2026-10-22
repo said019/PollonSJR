@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import Fastify from "fastify";
 import { WhatsAppBot, parseIncoming } from "./bot";
 import { attentionKeys, attentionState, generation, observeOutbound, recordAppOutbound } from "./attention";
 import { createSimulationFixture } from "./testing/fixture";
+import { isBusinessGreeting } from "./business-greeting";
 import { evolutionWebhookRoutes } from "../notifications/evolution.routes";
 import { sendWhatsAppEvolution, type NotificationJob } from "../notifications/whatsapp.service";
 
@@ -85,6 +87,36 @@ test("staff intervention during an app send survives acknowledgement of our own 
   assert.equal(await attentionState(f.app.redis, phone), "human");
   await sendWhatsAppEvolution(job("second"), f.app.redis);
   assert.equal(sends, 1); assert.equal(f.sets.get(attentionKeys(phone).unknown)?.has("staff"), true);
+});
+
+test("approved Business welcome does not silence the bot; ordinary staff replies still do", async t => {
+  const { f, post } = await hook(t);
+  const greeting = "Bienvenida automática de prueba.\nConsulta nuestra app.";
+  const saved = process.env.WHATSAPP_BUSINESS_GREETING_SHA256;
+  process.env.WHATSAPP_BUSINESS_GREETING_SHA256 = createHash("sha256").update(greeting.replace(/\s+/gu, " ")).digest("hex");
+  t.after(() => { if (saved === undefined) delete process.env.WHATSAPP_BUSINESS_GREETING_SHA256; else process.env.WHATSAPP_BUSINESS_GREETING_SHA256 = saved; });
+  assert.equal(isBusinessGreeting(input(greeting, "spoof", false)), false);
+  assert.equal(isBusinessGreeting(input(greeting + " Ya te atiendo yo", "extra", true)), false);
+  assert.equal(isBusinessGreeting({ ...input(greeting, "photo", true), hasImage: true }), false);
+  assert.equal(isBusinessGreeting(input("  " + greeting.replace("\n", "   ") + "  ", "spaces", true)), true);
+  await observeOutbound(f.app.redis, phone, "business-welcome"); // repair a delayed echo already marked unknown
+  assert.equal(await attentionState(f.app.redis, phone), "human");
+  assert.equal((await post(event("business-welcome", greeting))).statusCode, 200);
+  assert.equal(await attentionState(f.app.redis, phone), "automatic");
+  await post(event("customer-delivery", "Tienes servicio a domicilio?", false));
+  assert.ok(f.queue.length > 0, "Delivery question must not be silently discarded");
+  // Client copying the greeting cannot release a chat under staff attention.
+  await post(event("actual-staff", "Sí claro, ya te atiendo"));
+  await post(event("business-welcome-again", greeting));
+  assert.equal(f.sets.get(attentionKeys(phone).unknown)?.has("actual-staff"), true);
+  await post(event("customer-copy", greeting, false));
+  assert.equal(await attentionState(f.app.redis, phone), "human");
+  const count = f.queue.length;
+  await post(event("later-customer", "Buen día", false));
+  assert.equal(f.queue.length, count);
+  await f.app.redis.set(attentionKeys(phone).human, "explicit-handoff");
+  await post(event("business-after-handoff", greeting));
+  assert.equal(await f.app.redis.get(attentionKeys(phone).human), "explicit-handoff");
 });
 
 test("customer turn waits through early app echo and is processed after ID acknowledgement", async t => {
