@@ -77,9 +77,10 @@ export async function runSimulations(outputDir: string) {
           if (kind === "ambigua") { c.expect("address_choice"); await c.say("2"); }
           c.expect("address_confirm"); assert.equal(c.s!.lat, undefined);
           await c.say("sí"); c.expect("address_confirm");
-          await c.say("usar dirección"); c.expect("notes");
+          await c.say("usar dirección"); c.expect("delivery_details");
         }
-        await c.through(["Portón azul", "efectivo", "exacto"]); c.expect("confirm");
+        if (kind !== "fuera de zona") await c.through(["Portón azul", "este número"]);
+        await c.through(["sin notas", "efectivo", "exacto"]); c.expect("confirm");
         const fee = kind === "fuera de zona" ? 0 : 3000;
         assert.equal(c.s!.total, qty * 15000 + fee); await c.confirm(); c.expect("done", 1);
       }, undefined, kind === "ambigua" ? [{ ...address, address: "Otra calle 123" }, address] : [address]);

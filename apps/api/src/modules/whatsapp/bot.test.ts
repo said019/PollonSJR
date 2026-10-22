@@ -69,7 +69,7 @@ test("delivery requires coordinates, checks coverage, includes server fee and re
   assert.equal(s?.step, "location");
   const invalid = await bot.advance(s, input("mi casa")); assert.equal(invalid.session?.step, "location");
   s = (await bot.advance(s, { ...input(""), location: { lat: 20.38, lng: -99.99 } })).session;
-  for (const text of ["Calle Centro 123", "sin notas", "efectivo", "100"]) s = (await bot.advance(s, input(text))).session;
+  for (const text of ["Calle Centro 123", "Puerta azul", "este número", "sin notas", "efectivo", "100"]) s = (await bot.advance(s, input(text))).session;
   assert.equal(s?.step, "cash"); assert.equal(s?.total, 18000);
   s = (await bot.advance(s, input("200"))).session;
   assert.equal(s?.step, "confirm"); assert.equal(s?.fee, 3000); assert.equal(f.creates(), 0);
@@ -213,7 +213,7 @@ test("written addresses require choosing and confirming a precise result; fee us
   assert.equal(s?.step, "address_confirm"); assert.equal(s?.lat, undefined);
   await bot.advance(s, input("sí")); assert.equal(s?.lat, undefined);
   s = (await bot.advance(s, input("usar dirección"))).session;
-  assert.equal(s?.step, "notes"); assert.equal(s?.lat, candidates[0].lat); assert.equal(s?.fee, 3000);
+  assert.equal(s?.step, "delivery_details"); assert.equal(s?.lat, candidates[0].lat); assert.equal(s?.fee, 3000);
   assert.equal(f.creates(), 0);
 });
 

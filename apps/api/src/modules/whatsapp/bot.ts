@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { parseDeliveryDetails, validRecipient, deliveryAddress, orderNotes } from "./delivery-details";
 import { isTextOrderCandidate, parseTextOrder, resolveTextOrder, applySideSizes, correctUnknownLine, type TextOrderDraft, type QueuedProduct } from "./text-order";
 import { answerQuestion, isQuestion, asksCurrentService } from "./questions";
 import { writeReply } from "./reply-writer";
@@ -34,7 +35,7 @@ type Item = {
   configuration: string;
 };
 type Step = "bundle" | "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "type" |
-  "location" | "address" | "address_choice" | "address_confirm" | "notes" | "payment" | "cash" | "confirm" | "done" | "human" | "reuse";
+  "location" | "address" | "address_choice" | "address_confirm" | "delivery_details" | "notes" | "payment" | "cash" | "confirm" | "done" | "human" | "reuse";
 export type Session = {
   step: Step; checkoutId: string; catalog: Product[]; items: Item[];
   closedPendingConfirmation?: boolean;
@@ -46,6 +47,7 @@ export type Session = {
   deliveryReference?: string;
   pending?: Item; selected?: Product; modifierIndex?: number; name?: string;
   type?: "PICKUP" | "DELIVERY"; lat?: number; lng?: number; address?: string;
+  facade?: string; deliveryPhone?: string;
   notes?: string; cashAmount?: number; fee?: number; total?: number; orderNumber?: number;
   aiProposal?: { step: Step; code: string; label: string; expiresAt: number };
   confirmation?: { code: string; expiresAt: number };
@@ -77,6 +79,8 @@ const isGreeting = (text: string) => /^(?:(?:hola+|ola|holi|buenas|buen dia|buen
 const browsesMenu = (text: string) => /\bque (?:venden|ofrecen)\b/.test(text) || /\b(?:menu|catalogo|carta)\b/.test(text) && /\b(?:ver|pasas|pasar|mandas|mandame|muestras|mostrar|tienes|tienen|consultar|conocer)\b/.test(text) || /^(?:el |tu )?(?:menu|catalogo|carta)[.!?¿¡\s]*$/.test(text);
 const asksMenu = (text: string) => /^(?:pedir|nuevo|menu|quiero pedir|quiero hacer un pedido|me pasas el menu|mandame el menu|me mandas el menu|tienes menu|puedo ver el menu)$/.test(text.replace(/[.!?¿¡]/g, "").trim());
 const help = "\n\nEscribe ASESOR para atención personal o CANCELAR para descartar este borrador.";
+const incomingDetails = (input: Incoming, step: string) =>
+  isQuestion(input.text) || asksCurrentService(input.text) ? null : parseDeliveryDetails(input.text, step, input.phone);
 
 // Do not interpret group IDs or privacy LIDs as phone numbers. Some versions
 // provide remoteJidAlt for a LID; only use it when it is a genuine phone JID.
@@ -182,6 +186,14 @@ function checkoutPrompt(s: Session): string {
   if (!s.type) { s.step = "type"; return "¿Pasas a recoger o te lo llevamos?\n1. Recoger en el local\n2. A domicilio"; }
   if (s.type === "DELIVERY" && (s.lat === undefined || s.lng === undefined)) { s.step = "location"; return "Compárteme tu ubicación para revisar el envío."; }
   if (s.type === "DELIVERY" && !s.address) { s.step = "address"; return "Ya tengo tu ubicación. Sólo me faltan la calle, el número y las referencias de entrega."; }
+  if (s.type === "DELIVERY" && (!s.facade || !s.deliveryPhone)) {
+    s.step = "delivery_details";
+    return !s.facade ? "¿Cómo identificamos tu fachada? Puede ser el color de la puerta, el portón o el letrero del local." : "¿A qué teléfono te contactamos para la entrega? Puedes decir ESTE NÚMERO si usamos el de este chat.";
+  }
+  if (s.notes !== undefined) {
+    s.step = "payment";
+    return "¿Pagas en efectivo? Escribe EFECTIVO para seguir. Si prefieres otro medio de pago, escribe ASESOR y lo revisas con el equipo.";
+  }
   s.step = "notes"; return "¿Cómo te lo preparamos? Déjame tus indicaciones o escribe SIN NOTAS.";
 }
 function nextModifier(s: Session): string {
@@ -272,7 +284,8 @@ export class WhatsAppBot {
     // validation, payment, personal data collection or final confirmation.
     if (!s || input.fromMe || input.location || input.catalogSelection || input.buttonId || input.unsupportedMedia || !text || asksIdentity(text) || requestsHuman(text) || needsHumanReview(text) || requestsOrderChange(text) ||
         /^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text) ||
-        ["human", "done", "confirm", "name", "address", "notes", "payment", "cash", "location"].includes(s.step) ||
+        ["human", "done", "confirm", "name", "address", "delivery_details", "notes", "payment", "cash", "location"].includes(s.step) ||
+        !!incomingDetails(input, s.step) ||
         ["cancelar", "asesor", "ayuda", "persona", "recoger", "menu", "omitir"].includes(text)) {
       if (s) delete s.aiProposal;
       return this.advance(s, input);
@@ -338,8 +351,10 @@ export class WhatsAppBot {
       case "quantity": return `De ${s.selected!.name}, ¿cuántos te anoto?`;
       case "variant": return "Sólo falta elegir la presentación:\n" + s.selected!.variants!.map((v,i)=>`${i+1}. ${v.label} — ${money(v.price)}`).join("\n");
       case "modifier": return modifierPrompt(s);
-      case "name": return "¿A qué nombre lo ponemos?";
       case "menu": return "Dime qué te gustaría pedir.";
+      case "more": return "¿Algo más? Escribe MÁS para agregar o LISTO para seguir.";
+      case "address_confirm": return this.addressPrompt(s.candidate!);
+      case "address_choice": return "¿Cuál de estas direcciones es la tuya?\n" + s.addressCandidates!.map((c,i)=>`${i+1}. ${c.address}`).join("\n") + "\nResponde con el número o escribe CORREGIR.";
       default: return checkoutPrompt(s);
     }
   }
@@ -435,6 +450,15 @@ export class WhatsAppBot {
     if (!availability.accepting) {
       return this.unavailable(s, "", availability).text;
     }
+    if (s.type === "DELIVERY" && !(await getStoreConfig(this.app)).deliveryActive) {
+      delete s.confirmation; s.step = "delivery_details";
+      return "Por ahora no tenemos entrega a domicilio. Conservé tu pedido; escribe RECOGER si puedes pasar por él o ASESOR para revisarlo con el equipo.";
+    }
+    if (s.type === "DELIVERY" && (!s.name || !s.address || !s.facade || !s.deliveryPhone || s.lat === undefined || s.lng === undefined)) return checkoutPrompt(s);
+    if ((deliveryAddress(s)?.length ?? 0) > 500 || orderNotes(s).length > 500) {
+      s.step = "human"; delete s.confirmation;
+      return "Tus datos de entrega necesitan revisión del equipo para guardarlos completos. Conservé el pedido; todavía no está confirmado.";
+    }
     // Revalidate choices and prices from DB, including modifiers. Never trust
     // the saved menu or any price supplied in a customer's message.
     const catalog = await this.catalog();
@@ -459,7 +483,7 @@ export class WhatsAppBot {
     return "Así va tu pedido:\n" + s.items.map(i =>
       `${i.qty} × ${i.name}${i.variant ? " (" + i.variant + ")" : ""} — ${money(itemTotal(i))}` +
       i.modifiers.map(m => `\n  ${m.name}: ${m.qty} × ${m.option}`).join("")
-    ).join("\n") + `\nNombre: ${s.name}\n${s.type === "DELIVERY" ? "Entrega: " + s.address + "\nEnvío: " + money(s.fee) : "Recoger en sucursal"}` +
+    ).join("\n") + `\nNombre: ${s.name}\n${s.type === "DELIVERY" ? "Entrega: " + deliveryAddress(s) + "\nTeléfono para entrega: " + s.deliveryPhone + "\nEnvío: " + money(s.fee) : "Recoger en sucursal"}` +
       (s.notes ? `\nNotas: ${s.notes}` : "") + `\nPago en efectivo${s.cashAmount ? " con " + money(s.cashAmount) : " exacto"}\n*Total: ${money(s.total)}*` +
       "\n\nPulsa Confirmar pedido. Si no aparecen botones, mantén presionado ESTE resumen, elige Responder y escribe CONFIRMAR. El resumen vence en 10 minutos." + help;
   }
@@ -587,13 +611,53 @@ export class WhatsAppBot {
     }
     // A native location can arrive before product options, name or delivery type.
     // Retain the draft and validate the point with the same coverage/pricing service.
-    if (input.location && s && ["bundle", "menu", "quantity", "variant", "modifier", "more", "name", "type"].includes(s.step)) {
+    if (input.location && s && !["human", "done", "reuse"].includes(s.step)) {
       if (!(await getStoreConfig(this.app)).deliveryActive) return respond("Por ahora no tenemos entrega a domicilio. Conservé tu pedido; puedes seguir para recoger o escribir ASESOR.");
       const delivery = await new DeliveryService(this.app).calculate(input.location.lat, input.location.lng);
-      if (!delivery.available) return respond((delivery.reason || "Esa ubicación queda fuera de cobertura.") + " Conservé tu pedido. Puedes compartir otra ubicación.");
+      if (!delivery.available) {
+        delete s.lat; delete s.lng; delete s.fee; delete s.confirmation;
+        if (["notes", "payment", "cash", "confirm", "address_confirm", "address_choice"].includes(s.step)) s.step = "location";
+        return respond((delivery.reason || "Esa ubicación queda fuera de cobertura.") + " Conservé tu pedido. Puedes compartir otra ubicación.");
+      }
       s.type = "DELIVERY"; s.lat = input.location.lat; s.lng = input.location.lng; s.fee = delivery.fee ?? 0;
-      delete s.address; delete s.candidate; delete s.addressCandidates;
+      delete s.candidate; delete s.addressCandidates; delete s.confirmation; delete s.aiProposal;
       return respond(`Ya tengo tu ubicación. El envío cuesta ${money(s.fee)}.\n` + (s.step === "bundle" ? await this.bundlePrompt(s) : this.pendingPrompt(s)));
+    }
+    // Delivery details often arrive in separate messages, before the question
+    // for that particular field. Keep them apart from product choices and notes.
+    if (s && s.type !== "PICKUP" && !["human", "done", "reuse"].includes(s.step)) {
+      const details = incomingDetails(input, s.step);
+      if (details) {
+        if (details.error) return respond(details.error);
+        if ((details.address || details.facade) && !(await getStoreConfig(this.app)).deliveryActive) return respond("Por ahora no tenemos entrega a domicilio. Conservé tu pedido; puedes seguir para recoger o escribir ASESOR.");
+        // Preserve Google address selection when the customer explicitly chose
+        // written-address checkout and has not shared a native point yet.
+        if (details.address && ["location", "address_choice", "address_confirm"].includes(s.step) && s.lat === undefined && !details.phone && !details.name) {
+          if (s.address !== details.address) delete s.facade;
+          s.address = details.address;
+          delete s.candidate; delete s.addressCandidates; s.step = "location";
+          if (details.facade) s.facade = details.facade;
+          return respond(await this.findAddress(s, input));
+        }
+        const proposed = { ...s, ...details, ...(details.phone ? { deliveryPhone: details.phone } : {}) };
+        if ((deliveryAddress(proposed)?.length ?? 0) > 500) return respond("¿Me mandas la dirección y la referencia juntas en máximo 500 caracteres? Conservé los datos anteriores.");
+        if (orderNotes(proposed).length > 500) return respond("Las indicaciones y los datos de entrega son demasiado largos para guardarlos completos. Escribe ASESOR para revisarlos con el equipo; conservé el pedido.");
+        if (details.name) s.name = details.name;
+        if (details.phone) s.deliveryPhone = details.phone;
+        if (details.address) {
+          if (s.address && normalize(s.address) !== normalize(details.address)) {
+            delete s.lat; delete s.lng; delete s.fee; delete s.facade;
+          }
+          s.address = details.address; s.type = "DELIVERY";
+          if (["address_choice", "address_confirm"].includes(s.step)) {
+            delete s.candidate; delete s.addressCandidates; s.step = "location";
+          }
+        }
+        if (details.facade) { s.facade = details.facade; s.type = "DELIVERY"; }
+        delete s.confirmation; delete s.aiProposal;
+        const acknowledgement = details.phone ? "Ya tengo el teléfono para la entrega." : details.address ? "Ya tengo la dirección escrita." : details.facade ? "Anoté la referencia de tu fachada." : "Gracias.";
+        return respond(acknowledgement + "\n" + (s.step === "bundle" ? await this.bundlePrompt(s) : this.pendingPrompt(s)));
+      }
     }
     if (s?.step === "bundle" && s.textOrder) {
       const previousQuote=s.textOrder.quote;
@@ -666,7 +730,7 @@ export class WhatsAppBot {
       return respond(menu(s));
     }
     if (s.step === "done") return respond(`Tu pedido #${s.orderNumber} ya está registrado. Escribe PEDIR para uno nuevo, RECORDAR PEDIDO para guardarlo como habitual o ASESOR.`);
-    if (text === "recoger" && ["location", "address", "address_choice", "address_confirm"].includes(s.step)) { s.type = "PICKUP"; s.step = "notes"; delete s.candidate; return respond("¿Alguna indicación para tu pedido? Escribe SIN NOTAS si no tienes, o USAR PREFERENCIA si ya guardaste una."); }
+    if (text === "recoger" && ["location", "address", "address_choice", "address_confirm", "delivery_details"].includes(s.step)) { s.type = "PICKUP"; s.step = "notes"; delete s.candidate; return respond("¿Alguna indicación para tu pedido? Escribe SIN NOTAS si no tienes, o USAR PREFERENCIA si ya guardaste una."); }
     if (input.location && ["address_choice", "address_confirm"].includes(s.step)) { s.step = "location"; delete s.candidate; }
     switch (s.step) {
       case "reuse":
@@ -713,7 +777,7 @@ export class WhatsAppBot {
         if (text !== "listo") return respond("¿Algo más? Escribe MÁS para agregar o LISTO para seguir.");
         return respond(checkoutPrompt(s));
       case "name":
-        if (input.text.trim().length < 2 || input.text.trim().length > 80) return respond("Escribe un nombre de 2 a 80 caracteres.");
+        if (!validRecipient(input.text.trim())) return respond("¿A qué nombre lo ponemos? La dirección y el teléfono los guardo por separado.");
         s.name = input.text.trim(); return respond(checkoutPrompt(s));
       case "type":
         if (!["1", "2", "recoger", "domicilio"].includes(text)) return respond("Responde 1 para recoger o 2 para domicilio.");
@@ -743,15 +807,16 @@ export class WhatsAppBot {
         const candidate = s.candidate!;
         const delivery = await new DeliveryService(this.app).calculate(candidate.lat, candidate.lng);
         if (!delivery.available) { s.step = "location"; delete s.candidate; return respond((delivery.reason || "Fuera de cobertura.") + " Escribe otra dirección o RECOGER."); }
-        s.lat = candidate.lat; s.lng = candidate.lng; s.address = candidate.address; s.fee = delivery.fee ?? 0;
-        delete s.candidate; delete s.addressCandidates; s.step = "notes";
-        return respond(`Dirección confirmada. Envío: ${money(s.fee)}.\nEscribe referencias de entrega e indicaciones, SIN NOTAS o USAR PREFERENCIA.`);
+        s.lat = candidate.lat; s.lng = candidate.lng; s.address ??= candidate.address; s.fee = delivery.fee ?? 0;
+        delete s.candidate; delete s.addressCandidates;
+        return respond(`Dirección confirmada. Envío: ${money(s.fee)}.\n` + checkoutPrompt(s));
       }
       case "address":
-        if (input.text.trim().length < 8 || input.text.length > 500) return respond("Escribe tu dirección completa y referencias (de 8 a 500 caracteres).");
-        s.address = input.text.trim(); s.step = "notes"; return respond("¿Cómo te lo preparamos? Déjame tus indicaciones o escribe SIN NOTAS.");
+        return respond("¿Me escribes la calle y el número, además de una referencia de tu fachada?");
+      case "delivery_details":
+        return respond(checkoutPrompt(s));
       case "notes":
-        if (!text || input.text.length > 350) return respond("Escribe tus indicaciones (máximo 350 caracteres) o SIN NOTAS.");
+        if (!text || input.text.length > 350 || orderNotes({ ...s, notes: input.text.trim() }).length > 500) return respond(`Escribe tus indicaciones (máximo ${Math.min(350, 498 - orderNotes({ ...s, notes: "" }).length)} caracteres) o SIN NOTAS.`);
         s.notes = text === "sin notas" ? "" : input.text.trim(); s.step = "payment";
         return respond("¿Pagas en efectivo? Escribe EFECTIVO para seguir. Si prefieres otro medio de pago, escribe ASESOR y lo revisas con el equipo.");
       case "payment":
@@ -787,8 +852,8 @@ export class WhatsAppBot {
           const customer = await this.app.prisma.customer.upsert({ where: { phone: input.phone }, update: {}, create: { phone: input.phone, name: s.name } });
           const data = createOrderSchema.parse({
             type: s.type, paymentMethod: "CASH", cashAmount: s.cashAmount,
-            address: s.address, deliveryAddress: s.address, deliveryLat: s.lat, deliveryLng: s.lng,
-            notes: `[WhatsApp] A nombre de: ${s.name}${s.notes ? ". " + s.notes : ""}`,
+            address: deliveryAddress(s), deliveryAddress: deliveryAddress(s), deliveryLat: s.lat, deliveryLng: s.lng,
+            notes: orderNotes(s),
             items: s.items.map(i => ({ productId: i.productId, qty: i.qty, variant: i.variant, modifiers: i.modifiers })),
           });
           try {
@@ -846,6 +911,8 @@ export class WhatsAppBot {
       const text = normalize(input.text);
       let informational: string | null = null;
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
+        !incomingDetails(input, session?.step || "") &&
+        !/^(?:usar direccion|corregir)[.! ]*$/.test(text) &&
         !(session?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) && !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text) && !(session?.step === "bundle" && (!isQuestion(input.text) || !!session.textOrder && applySideSizes(structuredClone(session.textOrder), input.text))) && !((!session || ["menu", "more"].includes(session.step)) && isTextOrderCandidate(input.text));
       // Let the classifier understand free-form conversation, not just regex matches.
@@ -855,7 +922,7 @@ export class WhatsAppBot {
         !/^\d+(?:\s*,\s*\d+)*$/.test(text) &&
         !/^(?:elegir|listo|recoger|omitir|exacto|efectivo|transferencia|tarjeta|si|no|ok|okay|sale|entendido|perfecto|gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|sin notas|usar direccion|corregir)[.! ]*$/.test(text) &&
         !/^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text) &&
-        !["name", "address", "notes", "payment", "cash", "confirm", "address_confirm"].includes(session?.step || "");
+        !["name", "address", "delivery_details", "notes", "payment", "cash", "confirm", "address_confirm"].includes(session?.step || "");
       if (informationalAllowed && asksCurrentService(input.text)) {
         informational = await answerQuestion(this.app, input.text, recent);
       } else if (informationalAllowed && (knownQuestion || semanticCandidate)) {
