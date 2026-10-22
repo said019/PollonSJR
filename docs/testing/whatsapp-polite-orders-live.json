@@ -1,0 +1,24 @@
+{
+  "syntheticOnly": true,
+  "aiCalls": 4,
+  "aiSuccess": 4,
+  "publicProductionCatalog": true,
+  "shippingZone": "synthetic $60",
+  "ordersCreated": 0,
+  "realMessagesSent": 0,
+  "passed": true,
+  "turns": [
+    {
+      "customer": "Te puedo encargar por favor un pedido:\n6 Piezas de pollo\n1 Orden de Huesitos",
+      "reply": "Tengo anotado: Te puedo encargar por favor un pedido:\n6 Piezas de pollo\n1 Orden de Huesitos\nNo encuentro «orden de huesitos» en el catálogo actual. Necesito que el equipo confirme su disponibilidad y precio; escribe ASESOR para revisarlo por aquí.",
+      "step": "bundle",
+      "items": 0
+    },
+    {
+      "customer": "Voy a recogerlo en 25 min",
+      "reply": "Lo anoté para recoger. El tiempo de preparación todavía no está confirmado.\nTengo anotado: Te puedo encargar por favor un pedido:\n6 Piezas de pollo\n1 Orden de Huesitos\nNo encuentro «orden de huesitos» en el catálogo actual. Necesito que el equipo confirme su disponibilidad y precio; escribe ASESOR para revisarlo por aquí.",
+      "step": "bundle",
+      "items": 0
+    }
+  ]
+}

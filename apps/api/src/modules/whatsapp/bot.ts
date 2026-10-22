@@ -48,6 +48,7 @@ export type Session = {
   pending?: Item; selected?: Product; modifierIndex?: number; name?: string;
   type?: "PICKUP" | "DELIVERY"; lat?: number; lng?: number; address?: string;
   facade?: string; deliveryPhone?: string;
+  pickupRequest?: string;
   notes?: string; cashAmount?: number; fee?: number; total?: number; orderNumber?: number;
   aiProposal?: { step: Step; code: string; label: string; expiresAt: number };
   confirmation?: { code: string; expiresAt: number };
@@ -81,6 +82,7 @@ const asksMenu = (text: string) => /^(?:pedir|nuevo|menu|quiero pedir|quiero hac
 const help = "\n\nEscribe ASESOR para atención personal o CANCELAR para descartar este borrador.";
 const incomingDetails = (input: Incoming, step: string) =>
   isQuestion(input.text) || asksCurrentService(input.text) ? null : parseDeliveryDetails(input.text, step, input.phone);
+const pickupRequest = (text: string) => /^(?:voy a|paso a|ire a|voy por|paso por) (?:recoger(?:lo|los| el pedido)?|el pedido)(?: en \d{1,3} (?:min|minutos?))?[.! ]*$/.test(normalize(text));
 
 // Do not interpret group IDs or privacy LIDs as phone numbers. Some versions
 // provide remoteJidAlt for a LID; only use it when it is a genuine phone JID.
@@ -285,7 +287,7 @@ export class WhatsAppBot {
     if (!s || input.fromMe || input.location || input.catalogSelection || input.buttonId || input.unsupportedMedia || !text || asksIdentity(text) || requestsHuman(text) || needsHumanReview(text) || requestsOrderChange(text) ||
         /^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text) ||
         ["human", "done", "confirm", "name", "address", "delivery_details", "notes", "payment", "cash", "location"].includes(s.step) ||
-        !!incomingDetails(input, s.step) ||
+        !!incomingDetails(input, s.step) || pickupRequest(input.text) ||
         ["cancelar", "asesor", "ayuda", "persona", "recoger", "menu", "omitir"].includes(text)) {
       if (s) delete s.aiProposal;
       return this.advance(s, input);
@@ -484,6 +486,7 @@ export class WhatsAppBot {
       `${i.qty} × ${i.name}${i.variant ? " (" + i.variant + ")" : ""} — ${money(itemTotal(i))}` +
       i.modifiers.map(m => `\n  ${m.name}: ${m.qty} × ${m.option}`).join("")
     ).join("\n") + `\nNombre: ${s.name}\n${s.type === "DELIVERY" ? "Entrega: " + deliveryAddress(s) + "\nTeléfono para entrega: " + s.deliveryPhone + "\nEnvío: " + money(s.fee) : "Recoger en sucursal"}` +
+      (s.type === "PICKUP" && s.pickupRequest ? `\nSolicitud del cliente: ${s.pickupRequest}. Hora de preparación no confirmada.` : "") +
       (s.notes ? `\nNotas: ${s.notes}` : "") + `\nPago en efectivo${s.cashAmount ? " con " + money(s.cashAmount) : " exacto"}\n*Total: ${money(s.total)}*` +
       "\n\nPulsa Confirmar pedido. Si no aparecen botones, mantén presionado ESTE resumen, elige Responder y escribe CONFIRMAR. El resumen vence en 10 minutos." + help;
   }
@@ -608,6 +611,12 @@ export class WhatsAppBot {
       if (!availability.accepting) {
         return this.unavailable(s, input.text, availability);
       }
+    }
+    if (s && !["human", "done", "reuse"].includes(s.step) && pickupRequest(input.text)) {
+      s.type = "PICKUP"; s.pickupRequest = input.text.trim();
+      delete s.confirmation; delete s.aiProposal; delete s.candidate; delete s.addressCandidates;
+      if (["address_choice", "address_confirm"].includes(s.step)) s.step = "name";
+      return respond("Lo anoté para recoger. El tiempo de preparación todavía no está confirmado.\n" + (s.step === "bundle" ? await this.bundlePrompt(s) : this.pendingPrompt(s)));
     }
     // A native location can arrive before product options, name or delivery type.
     // Retain the draft and validate the point with the same coverage/pricing service.
@@ -912,6 +921,7 @@ export class WhatsAppBot {
       let informational: string | null = null;
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !incomingDetails(input, session?.step || "") &&
+        !pickupRequest(input.text) &&
         !/^(?:usar direccion|corregir)[.! ]*$/.test(text) &&
         !(session?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) && !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text) && !(session?.step === "bundle" && (!isQuestion(input.text) || !!session.textOrder && applySideSizes(structuredClone(session.textOrder), input.text))) && !((!session || ["menu", "more"].includes(session.step)) && isTextOrderCandidate(input.text));

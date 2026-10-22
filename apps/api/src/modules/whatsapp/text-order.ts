@@ -4,22 +4,28 @@ export type CatalogProduct = { id: string; name: string; price: number; variants
 export type TextOrderLine = { qty:number; phrase:string; kind:"pieces"|"side"|"product"; flavor?:"pure"|"ensalada"|"sopa"; size?:"chico"|"grande"; productId?:string };
 export type TextOrderDraft = { source:string; lines:TextOrderLine[]; issue?:string; unknownPhrase?:string; unknownStart?:number; quote?:string };
 export type QueuedProduct = { productId:string; qty:number; variant?:string; skipOptional?:boolean; modifiers?:Array<{name:string;option:string;price:number;qty:number}> };
-const norm=(s:string)=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[-]/g," ").replace(/\s+/g," ").trim();
+const norm=(s:string)=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[¿?]/g,"").replace(/[-]/g," ").replace(/\s+/g," ").trim();
 const words:Record<string,number>={un:1,una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20};
 const quantity=`(?:\\d+|${Object.keys(words).join("|")})`;
 export const isTextOrderCandidate=(message:string)=>{
  const text=norm(message);
- if(/[?¿]|\b(?:cuanto|cuesta|precio|tienes|tienen|hay|horario|incluye|incluyen)\b/.test(text))return false;
+ if(/\b(?:cuanto|cuesta|precio|tienes|tienen|hay|horario|incluye|incluyen)\b/.test(text))return false;
+ if(/[?¿]/.test(message)&&! /\b(?:encargar|encargo|quiero|quisiera|prepararme|preparar)\b/.test(text))return false;
  return new RegExp(`\\b${quantity}\\s+piezas?\\b`).test(text) || [...text.matchAll(new RegExp(`\\b${quantity}\\s+[a-z]`,"g"))].length>=2;
 };
-const clean=(s:string)=>norm(s).replace(/[,;.!]+/g," ").replace(/\bpor favor\b/g,"").replace(/(?:\s+(?:y|con|mas))+$|^(?:y|con|mas)\s+/g,"").trim();
+const clean=(s:string)=>norm(s).replace(/[,;:.!]+/g," ").replace(/\bpor favor\b/g,"").replace(/(?:\s+(?:y|con|mas))+$|^(?:y|con|mas)\s+/g,"").replace(/\s+/g," ").trim();
 const singular=(s:string)=>norm(s).split(" ").map(w=>w.length>3&&w.endsWith("s")?w.slice(0,-1):w).join(" ");
 export function parseTextOrder(source:string,catalog:CatalogProduct[]):TextOrderDraft|null {
  if(!isTextOrderCandidate(source))return null;
- const text=norm(source),matches=[...text.matchAll(new RegExp(`\\b(${quantity})\\s+`,"g"))];
+ // A polite introduction is not an item: in particular, "un pedido" must
+ // not be read as quantity one. Offsets remain relative to the original text.
+ const text=norm(source);
+ const intro=/^(?:(?:hola|buenas tardes|buen dia|buenas noches)[, ]+)?(?:te puedo encargar|puedo encargar|te encargo|me harian el favor de prepararme|un pedido|me puedes preparar|quisiera hacer|quiero hacer|quiero realizar)(?: por favor)?(?: un pedido)?\s*[:,]?\s*/.exec(text);
+ const offset=intro?.[0].length??0;
+ const matches=[...text.slice(offset).matchAll(new RegExp(`\\b(${quantity})\\s+`,"g"))].map(m=>{m.index=m.index!+offset;return m;});
  if(!matches.length)return null;
- const prefix=clean(text.slice(0,matches[0].index));
- if(prefix&&!/^(?:(?:hola|buenas|tardes|buenos|dias|buen|dia|noches|quiero|quisiera|ocupo|necesito|dame|mandame|me|puedes|dar|traer|por|favor)\s*)+$/.test(prefix))return null;
+ const prefix=clean(text.slice(offset,matches[0].index));
+ if(prefix&&!/^(?:(?:hola|buenas|tardes|buenos|dias|buen|dia|noches|quiero|quisiera|ocupo|necesito|dame|mandame|me|puedes|dar|traer|por|favor)\s*)+$/.test(prefix))return {source,lines:[],issue:"Tengo tu mensaje, pero necesito aclarar cómo quieres el pedido. El equipo puede revisarlo contigo si escribes ASESOR."};
  const draft:TextOrderDraft={source,lines:[]};
  for(let i=0;i<matches.length;i++){
   const match=matches[i],qty=words[match[1]]??Number(match[1]);
@@ -28,11 +34,15 @@ export function parseTextOrder(source:string,catalog:CatalogProduct[]):TextOrder
   if(/^piezas?(?: de pollo)?$/.test(phrase)){draft.lines.push({qty,phrase,kind:"pieces"});continue;}
   const side=/^(pures?(?: de papa)?|ensaladas?(?: de (?:col|zanahoria)(?: con (?:col|zanahoria))?)?|sopas?(?: de codito)?)(?: (chicos?|grandes?))?$/.exec(phrase);
   if(side){draft.lines.push({qty,phrase,kind:"side",flavor:side[1].startsWith("pure")?"pure":side[1].startsWith("ensalada")?"ensalada":"sopa",...(side[2]?{size:side[2].startsWith("chico")?"chico" as const:"grande" as const}:{})});continue;}
-  const products=catalog.filter(p=>singular(p.name)===singular(phrase));
+  const productName=(s:string)=>singular(s).replace(/^orden(?:es)? de /,"");
+  const products=catalog.filter(p=>productName(p.name)===productName(phrase));
   if(products.length===1&&qty<=20){draft.lines.push({qty,phrase,kind:"product",productId:products[0].id});continue;}
   // Keep the entire original request. Never silently discard an unknown item,
   // preparation clause, typo, or another instruction in a compound request.
-  draft.issue=`Necesito aclarar «${phrase}» para no cambiar lo que pediste. Dime a qué producto te refieres.`;draft.unknownPhrase=phrase;draft.unknownStart=text.indexOf(phrase,match.index!+match[0].length);break;
+  draft.issue=/^orden(?:es)? de /.test(phrase)
+   ? `No encuentro «${phrase}» en el catálogo actual. Necesito que el equipo confirme su disponibilidad y precio; escribe ASESOR para revisarlo por aquí.`
+   : `Necesito aclarar «${phrase}» para no cambiar lo que pediste. Dime a qué producto te refieres.`;
+  draft.unknownPhrase=phrase;draft.unknownStart=text.indexOf(phrase,match.index!+match[0].length);break;
  }
  return draft;
 }

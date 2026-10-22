@@ -233,3 +233,40 @@ test("phone and facade arriving during Google address confirmation are retained 
  assert.equal(f.session().step,"address_confirm");assert.equal(f.session().lat,undefined);assert.equal(f.session().deliveryPhone,syntheticContact);assert.equal(f.session().facade,"Puerta azul");
  await send("usar dirección");assert.equal(f.session().step,"notes",JSON.stringify({session:f.session(),last:f.queue.at(-1)}));assert.equal(f.session().lat,candidate.lat);assert.equal(f.session().address,"Avenida Prueba 64");assert.equal(f.creates(),0);
 });
+
+const politeOrder="Te puedo encargar por favor un pedido:\n6 Piezas de pollo\n1 Orden de Huesitos";
+test("screenshot: polite multiline order is retained and pickup time does not replace unknown products",async()=>{
+ const f=setup();const first=await f.send(politeOrder);
+ assert.doesNotMatch(first,/Menú de Pollón/);assert.equal(f.session().step,"bundle");assert.equal(f.session().textOrder.source,politeOrder);
+ assert.equal(f.session().textOrder.lines[0].qty,6);assert.match(f.session().textOrder.unknownPhrase,/huesitos/);assert.match(first,/catálogo actual/);assert.doesNotMatch(first,/Dime a qué producto/);
+ const checkout=f.session().checkoutId;
+ const response=await f.send("Voy a recogerlo en 25 min");
+ assert.match(response,/tiempo de preparación todavía no está confirmado/);assert.doesNotMatch(response,/Menú de Pollón/);
+ assert.equal(f.session().type,"PICKUP");assert.equal(f.session().checkoutId,checkout);assert.equal(f.session().textOrder.source,politeOrder);
+ assert.match(f.session().textOrder.unknownPhrase,/huesitos/);assert.equal(f.creates(),0);
+ await f.send("si");assert.equal(f.session().items.length,0);assert.equal(f.creates(),0);
+});
+
+test("polite order resolves only catalog products and pickup intent survives through final confirmation",async()=>{
+ const f=setup();const products=[...bundleProducts,productSchema.parse({id:"huesitos",name:"Huesitos",price:7900,variants:null,modifiers:[]})];
+ f.app.prisma.product.findMany=async({where}:any)=>where?.id?.in?products.filter(p=>where.id.in.includes(p.id)):products;
+ for(const message of [politeOrder,"Voy a recogerlo en 25 min","si","Cliente Prueba","sin notas","efectivo","exacto"])await f.send(message);
+ assert.equal(f.session().step,"confirm");assert.equal(f.session().items.length,2);assert.equal(f.session().total,22400);
+ const summary=JSON.parse(f.queue.at(-1)!).params.text;assert.match(summary,/Hora de preparación no confirmada/);assert.match(summary,/Recoger en sucursal/);
+ assert.equal(f.creates(),0);const s=f.session();await f.send("",{buttonId:`wa_confirm:${s.checkoutId}:${s.confirmation.code}`});
+ assert.equal(f.creates(),1);assert.match([...f.orders.values()][0].notes,/Voy a recogerlo en 25 min \(hora no confirmada\)/);
+});
+
+test("unsupported introductions preserve the original request instead of dumping the menu",async()=>{
+ for(const prefix of ["Me harían el favor de prepararme:","Buenas tardes te encargo:","Un pedido por favor:"]){
+  const f=setup();const source=prefix+"\n6 piezas de pollo\n1 orden de Huesitos";const reply=await f.send(source);
+  assert.doesNotMatch(reply,/Menú de Pollón/);assert.equal(f.session().textOrder.source,source);assert.equal(f.creates(),0);
+ }
+});
+
+test("polite requests phrased as questions are still drafts, while price questions remain questions",async()=>{
+ const f=setup();const source="¿Te puedo encargar por favor un pedido: 6 piezas de pollo y 1 orden de Huesitos?";
+ const reply=await f.send(source);assert.doesNotMatch(reply,/Menú de Pollón/);assert.equal(f.session().textOrder.source,source);
+ assert.equal(f.session().textOrder.lines[0].qty,6);assert.equal(f.creates(),0);
+ assert.equal(parseTextOrder("¿Cuánto cuestan 6 piezas y 1 orden de Huesitos?",bundleProducts),null);
+});

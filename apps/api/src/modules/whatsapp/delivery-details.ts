@@ -63,6 +63,6 @@ export function deliveryAddress(s: { address?: string; facade?: string }): strin
   if (!s.address) return undefined;
   return s.facade && !s.address.includes(s.facade) ? `${s.address}. Fachada: ${s.facade}` : s.address;
 }
-export function orderNotes(s: { name?: string; deliveryPhone?: string; type?: string; notes?: string }): string {
-  return `[WhatsApp] A nombre de: ${s.name}${s.type === "DELIVERY" && s.deliveryPhone ? `. Teléfono para entrega: ${s.deliveryPhone}` : ""}${s.notes ? ". " + s.notes : ""}`;
+export function orderNotes(s: { name?: string; deliveryPhone?: string; type?: string; notes?: string; pickupRequest?: string }): string {
+  return `[WhatsApp] A nombre de: ${s.name}${s.type === "DELIVERY" && s.deliveryPhone ? `. Teléfono para entrega: ${s.deliveryPhone}` : ""}${s.type === "PICKUP" && s.pickupRequest ? `. Solicitud: ${s.pickupRequest} (hora no confirmada)` : ""}${s.notes ? ". " + s.notes : ""}`;
 }
