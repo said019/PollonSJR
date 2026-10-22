@@ -25,6 +25,20 @@ const cases = [
   ["¿Dónde viene el repartidor?", "existing_order"],
   ["Ya pagué, va mi comprobante", "existing_order"],
   ["Ya transferí", "existing_order"],
+  ["Hola buen día una disculpa pedí pago en efectivo será posible mejor transferir?", "payment_change"],
+  ["Puse efectivo pero quiero transferir", "payment_change"],
+  ["Seleccioné efectivo, ¿puedo pagar con tarjeta?", "payment_change"],
+  ["Marqué pago en efectivo y ahora prefiero transferencia", "payment_change"],
+  ["Había elegido transferencia, mejor efectivo", "payment_change"],
+  ["¿Se puede cambiar el método de pago?", "payment_change"],
+  ["¿Puedo cambiar a transferencia?", "payment_change"],
+  ["Mejor les transfiero", "payment_change"],
+  ["¿Puedo transferir en vez de efectivo?", "payment_change"],
+  ["En lugar de efectivo, puedo hacer trasferencia?", "payment_change"],
+  ["Ya hice mi pedido, puedo pagar por transferencia?", "payment_change"],
+  ["Acabo de pedir en la app, puedo transferir", "payment_change"],
+  ["Mi pedido dice efectivo pero no tengo cambio", "payment_change"],
+  ["Me equivoqué en la forma de pago", "payment_change"],
   ["Me cobraron de más", "existing_order"],
   ["Quiero un reembolso", "existing_order"],
   ["Me faltaron las papas", "existing_order"],
@@ -58,9 +72,46 @@ for (const [message, topic] of cases) test(`manual topic: ${message}`, async () 
 });
 
 test("food buying and ordinary menu/delivery/payment questions are not classified as manual work", () => {
+  for (const text of ["¿Hay mejor precio pagando en efectivo?", "¿Aceptan tarjetas?", "¿Cómo puedo pagar?", "Si pido en efectivo, ¿necesito cambio exacto?", "¿Puedo hacer un pedido y pagar con transferencia?"]) assert.equal(manualTopic(text), null, text);
   for (const text of ["Quiero pollo para mi trabajo", "¿Tienen servicio?", "¿Hay repartidor?", "¿Cuánto cuesta el envío?", "¿Puedo pagar con transferencia?", "¿Tienen promociones?", "Quiero un pollo", "Un pedido para recoger", "¿Qué horario tienen?", "¿Puedo ver el menú para mañana?", "Sin cebolla", "¿El pollo lleva papas?", "Quiero pagar en efectivo"]) {
     assert.equal(manualTopic(text), null, text);
   }
+});
+
+test("payment change bypasses FAQ and sales AI, hands off once and preserves human silence", async t => {
+  const originalFetch = globalThis.fetch;
+  const saved = { WHATSAPP_AI_ENABLED: process.env.WHATSAPP_AI_ENABLED, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, OWNER_PHONES: process.env.OWNER_PHONES };
+  Object.assign(process.env, { WHATSAPP_AI_ENABLED: "true", ANTHROPIC_API_KEY: "test-not-real", OWNER_PHONES: "4270000099" });
+  const tools: string[] = [];
+  globalThis.fetch = (async (_url, init) => {
+    tools.push(JSON.parse(String(init?.body)).tool_choice.name);
+    return new Response("{}", { status: 503 });
+  }) as typeof fetch;
+  t.after(() => { globalThis.fetch = originalFetch; for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  for (const step of [null, "menu", "payment", "confirm", "done"] as const) {
+    for (const open of [true, false]) {
+      const f = createSimulationFixture();
+      f.storage.set("store:config", JSON.stringify({ ...f.config, isOpen: open }));
+      if (step) f.storage.set(`wa:bot:${phone}:session`, JSON.stringify({ step, checkoutId: "payment-change", catalog: [], items: [], confirmation: { code: "STALE", expiresAt: Date.now() + 60000 } }));
+      const bot = new WhatsAppBot(f.app, async () => { throw new Error("Payment change cannot reach sales interpreter"); });
+      await bot.handle(input("Hola buen día una disculpa pedí pago en efectivo será posible mejor transferir?"));
+      const messages = f.queue.map(q => JSON.parse(q));
+      const customer = messages.filter(q => q.to === phone);
+      assert.equal(customer.length, 1);
+      assert.match(customer[0].params.text, /forma de pago/);
+      assert.match(customer[0].params.text, /confirmación del equipo/);
+      assert.doesNotMatch(customer[0].params.text, /escribe asesor|precios y horarios|dato no está|cambio (?:aplicado|confirmado)/i);
+      assert.equal(messages.filter(q => q.staffNotification).length, 1);
+      assert.equal(JSON.parse(f.storage.get(`wa:bot:${phone}:session`)!).confirmation, undefined);
+      for (const text of ["Asesor", "Comentaba si puedo realizar el pago por trasferencia", "?", "hola", "activar bot", "confirmar"]) await bot.handle(input(text));
+      await bot.handle({ ...input("sí claro", "staff-answer"), fromMe: true });
+      await bot.handle(input("Ya transferí", "customer-paid"));
+      assert.equal(f.queue.length, messages.length);
+      assert.equal(f.creates(), 0);
+    }
+  }
+  assert.ok(tools.length > 0);
+  assert.ok(tools.every(name => name === "redactar"), "FAQ classifier must not intercept the payment change");
 });
 
 test("manual intent preempts menu and pending confirmation, including a malicious AI suggestion", async t => {
