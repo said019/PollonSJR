@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { answerQuestion, isQuestion } from "./questions";
+import { answerQuestion, isQuestion, asksCurrentService } from "./questions";
 import { writeReply } from "./reply-writer";
 import { requestPolicyReply } from "./request-policy";
 import { settledAttentionState, attentionKeys, generation } from "./attention";
@@ -247,9 +247,6 @@ export class WhatsAppBot {
           isGreeting(text) || asksMenu(text) || /^\d+$/.test(text) || ["elegir", "confirmar"].includes(text) ||
           process.env.WHATSAPP_AI_ENABLED !== "true" || !process.env.ANTHROPIC_API_KEY) return initial;
       const reply = await this.advanceWithAI(draft, input);
-      if (reply.session?.step === "menu" && !reply.session.aiProposal && !reply.text.includes(catalogUrl())) {
-        reply.text += "\n\n" + menu(reply.session);
-      }
       return reply;
     }
     // No model call may bypass an operator pause, explicit command, location
@@ -289,7 +286,9 @@ export class WhatsAppBot {
     const decision = validateDecision(await this.interpret(context).catch(() => null), context);
     if (!decision) return this.advance(s, input);
     if (decision.action === "human") return this.advance(s, { ...input, text: "asesor" });
-    if (decision.action === "clarify") return { session: s, text: "No me queda clara esa parte. ¿Cuál de las opciones quieres? Si necesitas ayuda, escribe ASESOR. Tu pedido sigue igual." };
+    if (decision.action === "clarify") return { session: s, text: s.step === "menu" && !s.items.length
+      ? "¿Quieres consultar algo del menú o hacer un pedido?"
+      : "¿Cuál de las opciones prefieres? Todavía no he cambiado tu pedido." };
     const choice = choices.find(c => c.code === decision.code)!;
     s.aiProposal = { step: s.step, code: choice.code, label: choice.label, expiresAt: Date.now() + 300000 };
     return { session: s, text: `¿Te refieres a esto?\n${this.selectionLabel(s, choice)}\n\nEscribe ELEGIR si está bien, o dime otra opción. Al final revisamos y confirmas el pedido completo.` };
@@ -761,11 +760,21 @@ export class WhatsAppBot {
       const informationalAllowed = !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !(session?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) && !manualTopic(input.text) && !requestPolicyReply(input.text) && !asksIdentity(text) && !requestsHuman(text) && !needsHumanReview(text) && !requestsCancel(text) && !requestsOrderChange(text) &&
         !/^(preferencia:|guardar|recordar|borrar preferencias|confirmar|asesor|cancelar|elegir)/.test(text) && !browsesMenu(text);
-      if (informationalAllowed && isQuestion(input.text)) {
+      // Let the classifier understand free-form conversation, not just regex matches.
+      // Explicit choices and personal checkout fields retain their existing handling.
+      const knownQuestion = isQuestion(input.text);
+      const semanticCandidate = !!text && !isGreeting(text) && !asksMenu(text) &&
+        !/^\d+(?:\s*,\s*\d+)*$/.test(text) &&
+        !/^(?:elegir|listo|recoger|omitir|exacto|efectivo|transferencia|tarjeta|si|no|ok|okay|sale|entendido|perfecto|gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|sin notas|usar direccion|corregir)[.! ]*$/.test(text) &&
+        !/^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text) &&
+        !["name", "address", "notes", "payment", "cash", "confirm", "address_confirm"].includes(session?.step || "");
+      if (informationalAllowed && asksCurrentService(input.text)) {
+        informational = await answerQuestion(this.app, input.text, recent);
+      } else if (informationalAllowed && (knownQuestion || semanticCandidate)) {
         const rateKey = `${prefix}:questions:${Math.floor(Date.now() / 600000)}`;
         const count = await this.app.redis.incr(rateKey); await this.app.redis.expire(rateKey, 660);
         if (count <= 20) informational = await answerQuestion(this.app, input.text, recent);
-        else informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
+        else if (knownQuestion) informational = "Puedes consultar el catálogo mientras tanto: " + catalogUrl() + ". Para más detalles, escribe ASESOR.";
       }
       if (informationalAllowed && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = session && session.step !== "done" ? "¡Con gusto!" : "";
       const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);

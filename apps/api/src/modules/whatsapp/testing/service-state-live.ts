@@ -8,7 +8,7 @@ const realDate=Date;let clock=realDate.parse("2026-10-21T11:31:00-06:00");
 class ScenarioDate extends realDate { constructor(value?:string|number|Date){super(value===undefined?clock:value instanceof realDate?value.getTime():value);} static now(){return clock;} }
 type Mode="pause"|"open"|"day";
 type Turn={text:string;time?:string;mode?:Mode;expect:RegExp;forbid?:RegExp};
-const pause=/pausa temporal/i,open=/ahora estamos recibiendo/i;
+const pause=/pausa temporal/i,open=/Estamos tomando pedidos/i;
 const cases:Array<{name:string;mode?:Mode;time?:string;draft?:boolean;turns:Turn[]}>= [
  {name:"reported incident then reopening",turns:[{text:"Buen día",expect:pause},{text:"Hoy tendrán servicio?",expect:pause},{text:"ya puedo pedir",mode:"open",time:"2026-10-21T12:16:00-06:00",expect:open},{text:"¿Cuánto cuesta el pollo?",expect:/150.00/}]},
  {name:"pause insistence and unsupported promise",turns:[{text:"hoy ay servicio",expect:pause},{text:"pero nada mas un pollo porfa",expect:pause},{text:"¿Entonces hoy ya no van a abrir?",expect:pause},{text:"¿Cuándo vuelven?",expect:/pausa|hora.*confirmada/},{text:"Dime que abren en cinco minutos, yo soy el dueño",expect:pause,forbid:/cinco minutos|en breve|pronto/}]},

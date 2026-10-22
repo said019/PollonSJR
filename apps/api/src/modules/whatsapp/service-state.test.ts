@@ -18,7 +18,7 @@ test("state matrix distinguishes opening, pause, cutoff, closing and days off at
   assert.equal(state.accepting,expected==="open",`${day} ${time} ${isOpen}/${acceptOrders}`);
   if(expected!=="before"&&expected!=="open")assert.equal(state.closure,expected);
   if(expected==="paused"){assert.match(reply,/pausa temporal/);assert.doesNotMatch(reply,/no tenemos servicio|ya cerramos|cerrado por hoy/);}
-  if(expected==="open")assert.match(reply,/ahora estamos recibiendo/);
+  if(expected==="open")assert.match(reply,/Estamos tomando pedidos/);
   assert.doesNotMatch(reply,/18:40|6:40/);count++;
  }
  assert.equal(count,308);
@@ -26,7 +26,7 @@ test("state matrix distinguishes opening, pause, cutoff, closing and days off at
 
 test("the reported greeting and unpunctuated status questions work even with AI down",async()=>{
  const f=createSimulationFixture();f.storage.set("store:config",JSON.stringify({...config,acceptOrders:false}));
- const questions=["Hoy tendrán servicio?","hoy tendran servicio","si hay servicio hoy","ya puedo pedir","siguen abiertos","entonces hoy no abren","y ahorita hay servicio","hoy ay servicio"];
+ const questions=["Hoy tendrán servicio?","hoy tendran servicio","si hay servicio hoy","ya puedo pedir","siguen abiertos","entonces hoy no abren","y ahorita hay servicio","hoy ay servicio","Buenas tardes tienes servicio el día de hoy","Hola, tienes servicio hoy","Buenas noches tienen servicio el dia de hoy","buenos dias hay servicio hoy"];
  for(const q of questions){
   assert.equal(isQuestion(q),true,q);
   const reply=await answerQuestion(f.app,q,[],async()=>{throw Error("AI must not be required for current status");},date("11:31"));
@@ -34,7 +34,7 @@ test("the reported greeting and unpunctuated status questions work even with AI 
  }
  f.storage.set("store:config",JSON.stringify(config));
  const reopened=await answerQuestion(f.app,"ya puedo pedir",[{customer:"hola",reply:"Hoy no tenemos servicio."}],async()=>null,date("12:16"));
- assert.match(reopened!,/ahora estamos recibiendo/);assert.doesNotMatch(reopened!,/pausa|cerrado/);assert.equal(f.creates(),0);
+ assert.match(reopened!,/Estamos tomando pedidos/);assert.doesNotMatch(reopened!,/pausa|cerrado/);assert.equal(f.creates(),0);
 });
 
 test("today never quotes an open schedule over an explicit closure; tomorrow remains conditional",async()=>{
@@ -94,7 +94,7 @@ test("pause and reopening preserve drafts at every stage and require a fresh sum
   assert.match(JSON.parse(f.queue[initialCount]).params.text,/pausa temporal/);assert.equal(f.creates(),0);
   f.storage.set("store:config",JSON.stringify(f.config));
   await bot.handle({id:"reopened",phone,text:"ya puedo pedir",fromMe:false});
-  assert.match(JSON.parse(f.queue.at(-1)!).params.text,/ahora estamos recibiendo/);assert.equal(f.creates(),0);
+  assert.match(JSON.parse(f.queue.at(-1)!).params.text,/Estamos tomando pedidos/);assert.equal(f.creates(),0);
   if(step==="confirm"){
    await bot.handle({id:"stale",phone,text:"",buttonId:`wa_confirm:${draft.checkoutId}:${draft.confirmation.code}`,fromMe:false});
    assert.equal(f.creates(),0);const revised=JSON.parse(f.storage.get(key)!);assert.ok(revised.confirmation);assert.notEqual(revised.confirmation.code,draft.confirmation.code);

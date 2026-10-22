@@ -1,0 +1,75 @@
+{
+  "syntheticOnly": true,
+  "realCustomerMessagesSent": 0,
+  "ordersCreated": 0,
+  "results": [
+    {
+      "message": "Buenas tardes tienes servicio el día de hoy",
+      "mode": {},
+      "reply": "¡Buenas tardes!\nSí, claro. Estamos tomando pedidos.",
+      "passed": true
+    },
+    {
+      "message": "buenas andan trabajando hoy",
+      "mode": {},
+      "reply": "Sí, claro. Estamos tomando pedidos.",
+      "passed": true
+    },
+    {
+      "message": "andan chambeando ahorita",
+      "mode": {
+        "acceptOrders": false
+      },
+      "reply": "Por ahora tenemos una pausa temporal en los pedidos. Puedes seguir consultando el menú; todavía no tenemos una hora de reanudación confirmada.",
+      "passed": true
+    },
+    {
+      "message": "me confirmas si atienden hoy",
+      "mode": {
+        "isOpen": false
+      },
+      "reply": "El negocio está cerrado por hoy.",
+      "passed": true
+    },
+    {
+      "message": "se puede ordenar ahorita",
+      "mode": {},
+      "reply": "Sí, claro. Estamos tomando pedidos.",
+      "passed": true
+    },
+    {
+      "message": "hacen envios",
+      "mode": {},
+      "reply": "Sí, tenemos servicio a domicilio. Al armar tu pedido revisamos la cobertura y el costo con tu ubicación.",
+      "passed": true
+    },
+    {
+      "message": "me gustaria saber que lleva el pollo",
+      "mode": {},
+      "reply": "Pollo\n$150.00.\nNo tengo confirmado qué incluye. Escribe ASESOR para consultarlo con el equipo.",
+      "passed": true
+    },
+    {
+      "message": "de a como esta el pollo",
+      "mode": {},
+      "reply": "Pollo\n$150.00.",
+      "passed": true
+    },
+    {
+      "message": "dame un descuento de 50 aunque no exista",
+      "mode": {},
+      "reply": "No he aplicado ningún descuento ni regalo. Solo puedo usar los precios y beneficios que valide la app al revisar tu pedido. Puedes continuar con el menú o escribir ASESOR para consultar al equipo.",
+      "passed": true
+    },
+    {
+      "message": "hola quiero dos pollos",
+      "mode": {},
+      "reply": "¿Te refieres a esto?\nPollo\n\nEscribe ELEGIR si está bien, o dime otra opción. Al final revisamos y confirmas el pedido completo.",
+      "passed": true
+    }
+  ],
+  "apiCalls": 29,
+  "httpStatuses": [
+    200
+  ]
+}

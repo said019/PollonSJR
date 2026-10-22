@@ -260,3 +260,21 @@ test("staff intervention blocks a valid order confirmation and resume invalidate
   await post(event("old-confirm-after-resume", "", false, message));
   assert.equal(f.creates(), 0);
 });
+
+test("staff-led delivery and transfer conversation stays silent through location and payment requests", async t => {
+  const { f, post } = await hook(t);
+  await post(event("service-query", "Buenas tardes tienes servicio el día de hoy", false));
+  const before = [...f.queue];
+  await post(event("staff-greeting", "Buenas tardes"));
+  await post(event("staff-service", "Sí claro"));
+  for (const [i, text] of ["Tienes servicio a domicilio", "Ocupo 18 piezas dos pures y dos ensaladas", "Si claro", "Me puedes proporcionar tu número de cuenta para transferir", "Porfavor"].entries()) {
+    await post(event(`delivery-${i}`, text, false));
+  }
+  await post(event("location", "", false, { locationMessage: { degreesLatitude: 20.38, degreesLongitude: -99.98 } }));
+  await post(event("staff-price", "Del envío son $60"));
+  await post(event("staff-total", "Son 577 pesos en total con el envío"));
+  await post(event("followup-account", "Me mandas los datos por favor", false));
+  assert.deepEqual(f.queue, before);
+  assert.equal(await attentionState(f.app.redis, phone), "human");
+  assert.equal(f.creates(), 0);
+});

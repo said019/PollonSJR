@@ -5,7 +5,7 @@ test("writer protects money, confirmation, commands and outcomes verbatim", () =
  const source = "¡Hola!\nTotal: $150.00\nEscribe CONFIRMAR.\nTu pedido no quedó registrado.";
  const p = protect(source);
  assert.equal(p.lines.length, 4);
- assert.equal(restore("Gracias por escribirnos.\n[[P0]]\n[[P1]]\n[[P2]]\n[[P3]]", source, p.lines), "Gracias por escribirnos.\n¡Hola!\nTotal: $150.00\nEscribe CONFIRMAR.\nTu pedido no quedó registrado.");
+ assert.equal(restore("Con gusto te ayudo.\n[[P0]]\n[[P1]]\n[[P2]]\n[[P3]]", source, p.lines), "Con gusto te ayudo.\n¡Hola!\nTotal: $150.00\nEscribe CONFIRMAR.\nTu pedido no quedó registrado.");
  for (const text of ["[[P0]]", "[[P1]][[P0]][[P2]]", "[[P0]][[P1]][[P2]] Gratis", "[[P0]][[P1]][[P2]] a las 6:40", "[[P0]][[P1]][[P2]] https://otro.com"]) assert.equal(restore(text, source, p.lines), null);
 });
 test("all response stages use writing and semantic review; rejected or unavailable AI preserves rules", async t => {
@@ -32,7 +32,7 @@ test("closed greeting passes through AI in the real handler, deduplicates and ke
  const f=createSimulationFixture(); f.storage.set("store:config",JSON.stringify({...f.config,acceptOrders:false}));
  f.app.redis.incr=async(k:string)=>{const n=Number(f.storage.get(k)||0)+1;f.storage.set(k,String(n));return n;};f.app.redis.expire=async()=>1;
  let calls=0;const histories:unknown[]=[];
- globalThis.fetch=async(_url,init)=>{calls++;const b=JSON.parse(init!.body as string),name=b.tool_choice.name;if(name==="redactar")histories.push(JSON.parse(b.messages[0].content).historial);return new Response(JSON.stringify({stop_reason:"tool_use",content:[{type:"tool_use",name,input:name==="redactar"?{text:"¡Hola! Gracias por escribirnos.\n"+JSON.parse(b.messages[0].content).respuesta_autorizada}:{valid:true}}]}));};
+ globalThis.fetch=async(_url,init)=>{calls++;const b=JSON.parse(init!.body as string),name=b.tool_choice.name;if(name==="redactar")histories.push(JSON.parse(b.messages[0].content).historial);return new Response(JSON.stringify({stop_reason:"tool_use",content:[{type:"tool_use",name,input:name==="redactar"?{text:JSON.parse(b.messages[0].content).respuesta_autorizada}:{valid:true}}]}));};
  const bot=new WhatsAppBot(f.app);const input={id:"first",phone:"4270000001",text:"hola",fromMe:false};
  await bot.handle(input);await bot.handle(input);
  assert.equal(calls,2);assert.equal(f.queue.length,1);assert.match(JSON.parse(f.queue[0]).params.text,/¡Hola! Gracias/);assert.equal(f.creates(),0);

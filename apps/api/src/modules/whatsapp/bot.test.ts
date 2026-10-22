@@ -151,7 +151,7 @@ test("AI ambiguity, expiry, API failure and call budget leave the basket unchang
   const f = fixture(); let calls = 0;
   const bot = new WhatsAppBot(f.app, async () => { calls++; return { action: "clarify", code: "", evidence: "" }; });
   const s = (await bot.advance(null, input("pedir"))).session!;
-  assert.match((await bot.advanceWithAI(s, input("tal vez ese o el otro"))).text, /No me queda clara/);
+  assert.match((await bot.advanceWithAI(s, input("tal vez ese o el otro"))).text, /Quieres consultar algo del menú/);
   assert.equal(s.items.length, 0);
   s.aiProposal = { step: "menu", code: "1", label: "Pollo", expiresAt: 0 };
   await bot.advanceWithAI(s, input("elegir")); assert.equal(s.step, "menu");
@@ -348,7 +348,7 @@ test("first inbound message is understood without repeating a welcome; greetings
   assert.equal((await bot.advanceWithAI(null, input("quiero pollo"))).session, null); assert.equal(contexts.length, 1);
 });
 
-test("first-message compound requests keep all conditions and show options when clarification is needed", async t => {
+test("first-message compound requests keep all conditions and clarify without an unsolicited menu", async t => {
   const oldEnabled = process.env.WHATSAPP_AI_ENABLED; const oldKey = process.env.ANTHROPIC_API_KEY;
   process.env.WHATSAPP_AI_ENABLED = "true"; process.env.ANTHROPIC_API_KEY = "test-only-key";
   t.after(() => {
@@ -358,5 +358,5 @@ test("first-message compound requests keep all conditions and show options when 
   const f = fixture(); const bot = new WhatsAppBot(f.app, async () => ({ action: "choice", code: "1", evidence: "pollo" }));
   const response = await bot.advanceWithAI(null, input("pollo sin cebolla"));
   assert.equal(response.session?.aiProposal, undefined); assert.equal(response.session?.items.length, 0);
-  assert.match(response.text, /No me queda clara/); assert.match(response.text, /1\. Pollo/); assert.equal(f.creates(), 0);
+  assert.match(response.text, /Quieres consultar algo del menú/); assert.doesNotMatch(response.text, /1\. Pollo|Tu pedido sigue igual/); assert.equal(f.creates(), 0);
 });

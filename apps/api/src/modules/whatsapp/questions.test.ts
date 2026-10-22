@@ -20,16 +20,16 @@ test("informational questions remain useful through every closed state without o
    const d=q.includes("cuesta")?decision({topics:["products"],productIds:["pollo"],detail:"price"}):q.includes("incluye")?decision({topics:["products"],productIds:["pollo"],detail:"contents"}):q.includes("domicilio")?decision({topics:["delivery"]}):decision({day:q.includes("mañana")?"tomorrow":"schedule"});
    const reply=await answerQuestion(f.app,q,[],async()=>d,now);assert.ok(reply);assert.notEqual(reply,"No estamos aceptando pedidos en este momento.");assert.equal(f.creates(),0);assert.equal(f.storage.get("store:config"),before);
    if(q.includes("cuesta"))assert.match(reply!,/\$150.00/);
-   if(q.includes("incluye"))assert.match(reply!,/No hay una descripción/);
+   if(q.includes("incluye"))assert.match(reply!,/No tengo confirmado qué incluye/);
   }
  }
 });
 test("ambiguity, unknown details and AI failure clarify rather than fabricate",async()=>{
  const f=createSimulationFixture();
  const ambiguous=await answerQuestion(f.app,"¿y el otro?",[],async()=>decision({topics:["products"]}),now);assert.match(ambiguous!,/qué producto/);
- const unknown=await answerQuestion(f.app,"¿Dónde están?",[],async()=>decision({topics:["unknown"]}),now);assert.match(unknown!,/no está confirmado/);
+ const unknown=await answerQuestion(f.app,"¿Dónde están?",[],async()=>decision({topics:["unknown"]}),now);assert.match(unknown!,/confirmártelo el equipo/);
  const fallback=await answerQuestion(f.app,"¿a qué hora abren?",[],async()=>null,now);assert.match(fallback!,/Horario habitual/);
- assert.equal(await answerQuestion(f.app,"quiero pedir",[],async()=>{throw Error("not a question")}),null);
+ assert.equal(await answerQuestion(f.app,"quiero pedir",[],async()=>decision({topics:["none"]})),null);
  for(const q of ["y mañana?","a que hora","que incluye","cuanto cuesta","¿y ese?"])assert.equal(isQuestion(q),true);
 });
 
