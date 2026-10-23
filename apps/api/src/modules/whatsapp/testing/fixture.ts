@@ -6,6 +6,8 @@ const product = productSchema.parse({ id: "pollo", name: "Pollo", price: 15000, 
 export function createSimulationFixture() {
   const storage = new Map<string, string>();
   const queue: string[] = [];
+  const lists = new Map<string, string[]>();
+  const list = (key: string) => { if (key === "notifications:queue") return queue; if (!lists.has(key)) lists.set(key, []); return lists.get(key)!; };
   const sets = new Map<string, Set<string>>();
   const orders = new Map<string, any>();
   const preferences = new Map<string, any>();
@@ -21,8 +23,26 @@ export function createSimulationFixture() {
       if (options?.NX && storage.has(key)) return null;
       storage.set(key, value); return "OK";
     },
+    lIndex: async (key: string, index: number) => list(key)[index] ?? null,
+    sMembers: async (key: string) => [...(sets.get(key) || [])],
     sCard: async (key: string) => sets.get(key)?.size || 0,
     eval: async (_script: string, options: any) => {
+      if (_script.includes("whatsapp-inbox-enqueue")) {
+        if (storage.has(options.keys[2])) return 0;
+        if (list(options.keys[0]).length >= 100) throw Error("Inbox capacity exceeded");
+        list(options.keys[0]).push(options.arguments[0]);storage.set(options.keys[2],"1");
+        const values=sets.get(options.keys[1])||new Set<string>();values.add(options.arguments[1]);sets.set(options.keys[1],values);return 1;
+      }
+      if (_script.includes("whatsapp-inbox-renew")) return storage.get(options.keys[0])===options.arguments[0]?1:0;
+      if (_script.includes("whatsapp-inbox-ack")) {
+        if(storage.get(options.keys[1])!==options.arguments[1]||list(options.keys[0])[0]!==options.arguments[0])return 0;
+        list(options.keys[0]).shift();return 1;
+      }
+      if (_script.includes("whatsapp-inbox-flush")) {
+        if(storage.get(options.keys[3])!==options.arguments[1]||list(options.keys[0]).length)return 0;
+        const reply=storage.get(options.keys[2]);if(reply){queue.push(...JSON.parse(reply));storage.delete(options.keys[2]);}
+        sets.get(options.keys[1])?.delete(options.arguments[0]);return 1;
+      }
       if (_script.includes("attention-state")) {
         if (storage.has(options.keys[0])) return 1;
         if (!sets.get(options.keys[1])?.size) return 0;
@@ -37,14 +57,14 @@ export function createSimulationFixture() {
       }
       if (storage.get(options.keys[0]) === options.arguments[0]) storage.delete(options.keys[0]);
     },
-    rPush: async (_key: string, value: string) => queue.push(value),
+    rPush: async (key: string, value: string) => list(key).push(value),
     multi: () => {
       const actions: Array<() => void> = [];
       const tx: any = {
         set: (k: string, v: string) => { actions.push(() => { storage.set(k, v); }); return tx; },
         del: (k: string) => { actions.push(() => { storage.delete(k); sets.delete(k); }); return tx; },
         sRem: (k: string, member: string) => { actions.push(() => { sets.get(k)?.delete(member); }); return tx; },
-        rPush: (_k: string, v: string) => { actions.push(() => { queue.push(v); }); return tx; },
+        rPush: (k: string, v: string) => { actions.push(() => { list(k).push(v); }); return tx; },
         exec: async () => { actions.forEach(fn => fn()); },
       };
       return tx;
@@ -81,5 +101,5 @@ export function createSimulationFixture() {
       $queryRaw: async () => [{ seq: 1 }],
     },
   };
-  return { app, storage, sets, queue, orders, preferences, links, config, creates: () => creates };
+  return { app, storage, sets, queue, lists, orders, preferences, links, config, creates: () => creates };
 }

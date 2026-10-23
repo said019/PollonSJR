@@ -1,3 +1,4 @@
+import { inboxKeys } from "./inbox";
 import { planWithClaude, applyPlan, type OrderPlanner, type PlanContext } from "./order-planner";
 import { catalogComplements } from "./catalog-complements";
 import { startsOrder, parsePriceRequest, pricedPackages, parseSideRequest, reviseSides, type PriceRequest, type SideRequest } from "./conversational-order";
@@ -1166,7 +1167,7 @@ export class WhatsAppBot {
     return respond("Escribe ASESOR para recibir ayuda.");
   }
 
-  async handle(input: Incoming) {
+  async handle(input: Incoming, deferReply = false) {
     if (isExcludedContact(input.phone)) return;
     const prefix = `wa:bot:${input.phone}`;
     const sessionKey = `${prefix}:session`;
@@ -1230,7 +1231,7 @@ export class WhatsAppBot {
       if (!input.fromMe && !input.location && !input.buttonId && !input.catalogSelection && !input.unsupportedMedia && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "";
       if (informational && session?.textOrder) delete session.textOrder.quote;
       const result: BotReply = informational !== null ? { session, text: informational } : planned ?? await this.advanceWithAI(session, input, true);
-      if (informational === null && !input.fromMe && result.text && result.session &&
+      if (informational === null && !input.fromMe && result.text && result.session && previousState === JSON.stringify(result.session) &&
           !["confirm", "done", "human"].includes(result.session.step) && !browsesMenu(text) &&
           recent.length >= 2 && recent.slice(-2).every(turn => turn.reply.trim() === result.text.trim())) {
         result.session.step = "human"; delete result.session.confirmation; delete result.session.aiProposal;
@@ -1267,11 +1268,15 @@ export class WhatsAppBot {
       tx.set(seen, "1", { EX: 604800 });
       const confirmation = result.session?.step === "confirm" && result.session.confirmation && result.session.confirmation.code !== previousConfirmation
         ? { checkoutId: result.session.checkoutId, code: result.session.confirmation.code } : undefined;
-      const enqueue = (to: string, text: string, summary = false, staffNotification = false) => tx.rPush("notifications:queue", JSON.stringify({
+      const deferred: string[] = [];
+      const enqueue = (to: string, text: string, summary = false, staffNotification = false) => { const job = JSON.stringify({
         id: crypto.randomUUID(), type: "whatsapp", to, template: "bot_reply", params: { text }, attempts: 0, createdAt: new Date().toISOString(),
         ...(summary && confirmation ? { confirmation } : {}),
         ...(staffNotification ? { staffNotification: true } : { automation: { generation: replyGeneration, ...(informational === null && revision && result.session?.step !== "done" ? { revision } : {}), ...(result.handoff ? { handoffId: input.id } : {}) } }),
-      }));
+      });
+        if (deferReply && !staffNotification) deferred.push(job);
+        else tx.rPush("notifications:queue", job);
+      };
       if (result.text) {
         // Keep menus and summaries below WhatsApp's text payload size.
         let remaining = result.text;
@@ -1289,6 +1294,7 @@ export class WhatsAppBot {
         const phones = (process.env.OWNER_PHONES || "").split(",").map(p => normalizarTelefono(p)).filter((p): p is string => Boolean(p));
         for (const phone of new Set(phones)) enqueue(phone, `Atención por WhatsApp solicitada: ${input.phone}. Revisa el chat del negocio. La asistencia automática está pausada para este cliente.`, false, true);
       }
+      if (deferred.length) tx.set(inboxKeys(input.phone).reply, JSON.stringify(deferred), { EX: 86400 });
       await tx.exec();
     } finally {
       await this.app.redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", { keys: [lock], arguments: [token] });

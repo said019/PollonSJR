@@ -1,3 +1,4 @@
+import { WhatsAppInbox, startInboxRecovery } from "../whatsapp/inbox";
 import { FastifyInstance } from "fastify";
 import { adminOnly } from "../../middlewares/admin-only";
 import { timingSafeEqual } from "node:crypto";
@@ -134,6 +135,8 @@ export async function evolutionRoutes(app: FastifyInstance) {
  */
 export async function evolutionWebhookRoutes(app: FastifyInstance) {
   const bot = new WhatsAppBot(app);
+  const inbox = new WhatsAppInbox(app, (input, defer) => bot.handle(input, defer));
+  startInboxRecovery(app, inbox);
   app.post("/", async (request, reply) => {
     const payload = request.body as any;
     const { event, instance, data } = payload || {};
@@ -181,7 +184,7 @@ export async function evolutionWebhookRoutes(app: FastifyInstance) {
           if (["pausar bot", "activar bot"].includes(incoming.text.trim().toLowerCase()) &&
               !await app.redis.get(attentionKeys(incoming.phone).sending)) await bot.handle(incoming);
         }
-        for (const incoming of incomingMessages.filter(m => !m.fromMe)) await bot.handle(incoming);
+        await inbox.receive(incomingMessages.filter(m => !m.fromMe));
         break;
 
       case "send.message":

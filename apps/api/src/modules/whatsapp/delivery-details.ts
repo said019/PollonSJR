@@ -10,7 +10,7 @@ export function hasFacade(text: string): boolean {
 export function validRecipient(text: string): boolean {
   const n = normalize(text);
   return text.length >= 2 && text.length <= 80 && /^[\p{L}][\p{L} .’'\-]*$/u.test(text) &&
-    !/\b(?:hola|buenas|buenos|gracias|claro|listo|efectivo|exacto|notas|pedido|piezas|pure|ensalada|domicilio|recoger|envio|calle|avenida|telefono|numero|ubicacion|asesor|confirmar|cancelar|si|no|ok)\b/.test(n);
+    !/\b(?:hola|buenas|buenos|gracias|claro|listo|efectivo|exacto|notas|pedidos?|piezas?|pures?|ensaladas?|sopas?|complementos?|hamburguesas?|cruji|crujiente|pollo|alitas?|boneless|papas|refrescos?|coca|combos?|paquetes?|quiero|quisiera|agrega|agregame|tambien|ademas|uno|una|dos|tres|cuatro|cinco|seis|ocho|doce|domicilio|recoger|envio|calle|avenida|telefono|numero|ubicacion|asesor|confirmar|cancelar|si|no|ok)\b/.test(n);
 }
 
 // Extract only explicitly recognizable customer data. Never infer coordinates,
