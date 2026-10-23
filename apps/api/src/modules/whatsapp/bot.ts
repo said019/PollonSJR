@@ -293,7 +293,7 @@ export class WhatsAppBot {
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
     if (!input.fromMe && ((s?.step === "bundle" || s?.step === "catalog_recovery") || ((!s || ["menu", "more"].includes(s.step)) && isTextOrderCandidate(input.text)))) return this.advance(s, input);
     if (s && !input.fromMe && ["menu", "more", "modifier", "variant"].includes(s.step) &&
-        exactCatalogRequest(input.text, s.catalog)) return this.advance(s, input);
+        exactCatalogRequest(input.text, await this.catalog())) return this.advance(s, input);
     if (!s && !input.fromMe) {
       // Initialize through the usual store/catalog/command checks, then use
       // the customer's actual first message instead of asking them to repeat it.
@@ -1018,7 +1018,7 @@ export class WhatsAppBot {
       const exactModifier = session?.step === "modifier" && session.selected &&
         selectModifiers(input.text, session.selected.modifiers[session.modifierIndex ?? 0]);
       const exactRequest = session && ["menu", "more", "modifier", "variant"].includes(session.step) &&
-        exactCatalogRequest(input.text, session.catalog);
+        exactCatalogRequest(input.text, await this.catalog());
       const informationalAllowed = session?.step !== "catalog_recovery" && !exactModifier && !exactRequest && !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !incomingDetails(input, session?.step || "") &&
         !pickupRequest(input.text) &&

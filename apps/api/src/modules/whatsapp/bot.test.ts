@@ -447,3 +447,25 @@ test("unreadable single-item native cart recovers from the customer's descriptio
   unclear = (await bot.advance(unclear, input("ese mismo"))).session!;
   assert.equal(unclear.step, "human"); assert.equal(f.creates(), 0);
 });
+
+test("an active cart can add a newly published product without restarting", async t => {
+  const enabled = process.env.WHATSAPP_AI_ENABLED, key = process.env.ANTHROPIC_API_KEY;
+  process.env.WHATSAPP_AI_ENABLED = "true"; process.env.ANTHROPIC_API_KEY = "synthetic-only";
+  t.after(() => { if (enabled === undefined) delete process.env.WHATSAPP_AI_ENABLED; else process.env.WHATSAPP_AI_ENABLED = enabled;
+    if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key; });
+  const f = fixture();
+  const wings = productSchema.parse({ id: "wings", name: "Alitas", price: 12000, variants: null,
+    modifiers: [{ name: "Salsa", required: true, minSelect: 1, maxSelect: 1, totalQuota: null, options: [{ label: "BBQ", price: 0 }] }] });
+  const soda = productSchema.parse({ id: "soda", name: "Coca-Cola 600 ml", price: 3500, variants: null, modifiers: [] });
+  f.app.prisma.product.findMany = async () => [wings];
+  let calls = 0;
+  const bot = new WhatsAppBot(f.app, async () => { calls++; return { action: "clarify", code: "", evidence: "" }; });
+  let s = (await bot.advance(null, input("una Alitas"))).session!;
+  assert.equal(s.step, "modifier");
+  const checkout = s.checkoutId;
+  f.app.prisma.product.findMany = async () => [wings, soda];
+  s = (await bot.advanceWithAI(s, input("Y una coca de 600 por favor"))).session!;
+  assert.equal(calls, 0); assert.equal(s.checkoutId, checkout);
+  assert.equal(s.pending?.productId, "wings"); assert.equal(s.queuedProducts?.[0].productId, "soda");
+  assert.equal(f.creates(), 0);
+});
