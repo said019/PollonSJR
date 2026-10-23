@@ -69,3 +69,15 @@ test("plural price followup quotes all previously shown products rather than cho
  const reply=await answerQuestion(f.app,"¿Y cuánto cuestan?",[{customer:"tienen boneless?",reply:"Boneless\nPrecio actual: $85.00.\nHamburguesa de Boneless\nPrecio actual: $109.00."}],async()=>{throw Error("No guessing or AI required")},now);
  assert.match(reply!,/85.00/);assert.match(reply!,/109.00/);assert.equal(f.creates(),0);
 });
+
+ test("drink presentation questions never substitute 355 ml for requested 600 ml",async()=>{
+ const f=createSimulationFixture();
+ f.app.prisma.product.findMany=async()=>[{id:"soda",name:"Refresco",description:"Coca-Cola, Pepsi, Jarritos u otra. 355ml.",price:3000,modifiers:[],variants:null,soldOut:false}] as any;
+ for(const q of ["Tiene refresco de 600?","¿Hay Coca de 600 ml?","¿Tienen refresco de 0.6 litros?","refresco de 600 mililitros?"]){
+ const reply=await answerQuestion(f.app,q,[],async()=>decision({topics:["products"],productIds:["soda"],detail:"availability"}),now);
+ assert.match(reply!,/De 600 ml no tengo disponibilidad confirmada/);assert.match(reply!,/355 ml/);
+ assert.doesNotMatch(reply!,/\$30|disponibilidad se verifica/);assert.equal(f.creates(),0);
+ }
+ const exact=await answerQuestion(f.app,"¿Hay refresco de 355 ml?",[],async()=>decision({topics:["products"],productIds:["soda"],detail:"availability"}),now);
+ assert.match(exact!,/\$30/);assert.doesNotMatch(exact!,/no tengo disponibilidad confirmada/);
+ });

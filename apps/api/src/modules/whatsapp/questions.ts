@@ -25,6 +25,17 @@ Para preguntas sobre si pueden pedir ahora, si seguimos abiertos o si habrá ser
  return parsed.data;
  }catch{return null;}
 };
+// Sizes are constraints, not permission to substitute a different presentation.
+function drinkVolume(text: string, implicit = false): number | undefined {
+ const n = norm(text);
+ const match = n.match(/\b(\d+(?:[.,]\d+)?)\s*(ml|mililitros?|litros?|lts?|l)\b/);
+ if (match) return Number(match[1].replace(",", ".")) * (/^(?:ml|mililitro)/.test(match[2]) ? 1 : 1000);
+ if (implicit && /\b(?:refresco|coca(?: cola)?|pepsi|jarritos|bebida|agua)\b/.test(n)) {
+  const size = n.match(/\bde\s+(250|355|400|500|600|750)\b/);
+  if (size) return Number(size[1]);
+ }
+ return undefined;
+}
 const days=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
 const dayCodes=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
 const money=(c:number)=>`$${(c/100).toFixed(2)}`;
@@ -57,8 +68,17 @@ export async function answerQuestion(app:FastifyInstance,message:string,recent:D
   blocks.push(decision.day === "today" ? renderCurrentService(config, now, message, recent) : renderHours(config,decision.day,now));
  }
  if(decision.topics.includes("products")){
-  const selected=products.filter(p=>decision.productIds.includes(p.id));
-  if(!selected.length && !promotionQuestion)blocks.push(`¿De qué producto quieres saber? Puedes decirme su nombre o verlo aquí: ${catalogUrl()}`);
+  let selected=products.filter(p=>decision.productIds.includes(p.id));
+  const requestedVolume = drinkVolume(message, true);
+  if (requestedVolume !== undefined && selected.length) {
+   const matching = selected.filter(p => drinkVolume(`${p.name} ${p.description || ""}`) === requestedVolume);
+   if (!matching.length) {
+    const known = [...new Set(selected.map(p => drinkVolume(`${p.name} ${p.description || ""}`)).filter((v): v is number => v !== undefined))];
+    blocks.push(`De ${requestedVolume} ml no tengo disponibilidad confirmada.${known.length ? ` En el menú aparece de ${known.map(v => `${v} ml`).join(" y ")}.` : ""} El equipo puede confirmarte si tienen la presentación que buscas.`);
+    selected = [];
+   } else selected = matching;
+  }
+  if(!selected.length && (requestedVolume === undefined || !decision.productIds.length) && !promotionQuestion)blocks.push(`¿De qué producto quieres saber? Puedes decirme su nombre o verlo aquí: ${catalogUrl()}`);
   for(const p of selected){
    const variants=z.array(z.object({label:z.string(),price:z.number()})).safeParse(p.variants);
    const pricing=variants.success&&variants.data.length?variants.data.map(v=>`${v.label}: ${money(v.price)}`).join("; "):money(p.price);
