@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { adminOnly } from "../../middlewares/admin-only";
-import { catalogUrl, evolutionBusinessRead, sellerPhone } from "./catalog";
+import { catalogUrl, readOwnCatalog, sellerPhone } from "./catalog";
 
 export async function whatsappCatalogRoutes(app: FastifyInstance) {
   app.get("/catalog/links", { preHandler: [adminOnly] }, async () => {
@@ -13,9 +13,7 @@ export async function whatsappCatalogRoutes(app: FastifyInstance) {
   });
   app.get("/catalog/source", { preHandler: [adminOnly] }, async (_request, reply) => {
     try {
-      const raw = await evolutionBusinessRead("getCatalog", { number: process.env.WHATSAPP_CATALOG_PHONE || "5214428219534", limit: 100 });
-      const parsed = z.object({ catalog: z.array(z.object({ id: z.string(), name: z.string(), retailerId: z.string().optional() })).max(1000) }).parse(raw);
-      return { products: parsed.catalog };
+      return { products: await readOwnCatalog() };
     } catch { return reply.status(503).send({ error: "No se pudo consultar el catálogo. Revisa la conexión de WhatsApp; también puedes vincular un ID manualmente." }); }
   });
   app.put("/catalog/links", { preHandler: [adminOnly] }, async (request, reply) => {

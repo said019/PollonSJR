@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseGeocodingResponse, geocodeAddress } from "./geocoder";
 import { createSimulationFixture } from "./testing/fixture";
-import { resolveCatalog } from "./catalog";
+import { resolveCatalog, readOwnCatalog } from "./catalog";
 import { sendWhatsAppEvolution, type NotificationJob } from "../notifications/whatsapp.service";
 
 const candidate = {
@@ -84,3 +84,12 @@ test("sender never marks failed sends as delivered or falls back after ambiguous
   assert.equal(f.storage.has("wa:summary:4271234567:checkout:ABC123"), false);
   assert.equal(calls, 1);
 });
+
+ test("catalog source verifies connected seller and rejects incomplete results",async t=>{
+ env(t,{EVOLUTION_API_URL:"https://evolution.example",EVOLUTION_API_KEY:"test",EVOLUTION_INSTANCE:"test",WHATSAPP_CATALOG_PHONE:"5214428219534"});
+ let response:any={wuid:"5214428219534@s.whatsapp.net",catalog:[{id:"native",name:"Alitas crujientes"}]};
+ t.mock.method(globalThis,"fetch",async(url:string,options:RequestInit)=>{assert.equal(url,"https://evolution.example/business/getOwnCatalog/test");assert.deepEqual(JSON.parse(options.body as string),{});return new Response(JSON.stringify(response));});
+ assert.deepEqual(await readOwnCatalog(),response.catalog);
+ response={...response,wuid:"5211111111111@s.whatsapp.net"};await assert.rejects(readOwnCatalog(),/otro negocio/);
+ response={...response,wuid:"5214428219534@s.whatsapp.net",nextPageCursor:"more"};await assert.rejects(readOwnCatalog(),/incompleto/);
+ });

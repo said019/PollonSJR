@@ -360,3 +360,90 @@ test("first-message compound requests keep all conditions and clarify without an
   assert.equal(response.session?.aiProposal, undefined); assert.equal(response.session?.items.length, 0);
   assert.match(response.text, /Quieres consultar algo del menú/); assert.doesNotMatch(response.text, /1\. Pollo|Tu pedido sigue igual/); assert.equal(f.creates(), 0);
 });
+
+test("native wings cart retains split additions and accepts exact sauce without AI guessing", async () => {
+  const f = fixture();
+  const wings = productSchema.parse({ id: "wings", name: "Alitas crujientes con papas fritas", price: 12000, variants: null,
+    modifiers: [{ name: "Salsa", required: true, minSelect: 1, maxSelect: 1, totalQuota: null,
+      options: [{ label: "BBQ", price: 0 }, { label: "Mango habanero", price: 0 }] }] });
+  const soda = productSchema.parse({ id: "soda", name: "Coca-Cola 600 ml", price: 3500, variants: null, modifiers: [] });
+  f.app.prisma.product.findMany = async () => [wings, soda];
+  f.links.push({ externalId: "native-wings", productId: "wings", variant: null });
+  const bot = new WhatsAppBot(f.app, async () => { throw new Error("Exact choices must not require an AI guess"); });
+  let s = (await bot.advanceWithAI(null, { ...input(""), catalogSelection: { sellerJid: "5214428219534@s.whatsapp.net", lines: [{ id: "native-wings", quantity: 1 }] } })).session!;
+  assert.equal(s.step, "modifier");
+  s = (await bot.advanceWithAI(s, input("Quisiera el paquete de alitas crujientes con papas fritas"))).session!;
+  assert.equal(s.pending?.qty, 1); assert.equal(s.queuedProducts?.length, 0);
+  s = (await bot.advanceWithAI(s, input("Y una coca de 600 por favor"))).session!;
+  assert.equal(s.pending?.productId, "wings");
+  assert.equal(s.queuedProducts?.[0].productId, "soda");
+  s = (await bot.advanceWithAI(s, input("Con salsa de mango habanero por favor"))).session!;
+  assert.equal(s.step, "more");
+  assert.deepEqual(s.items.map(i => [i.productId, i.qty]), [["wings", 1], ["soda", 1]]);
+  assert.equal(s.items[0].modifiers[0].option, "Mango habanero");
+  assert.equal(f.creates(), 0);
+  for (const text of ["listo", "Ana", "recoger", "sin notas", "efectivo", "exacto"])
+    s = (await bot.advanceWithAI(s, input(text))).session!;
+  assert.equal(s.step, "confirm"); assert.equal(s.total, 15500); assert.equal(f.creates(), 0);
+  await bot.advanceWithAI(s, confirmInput(s)); assert.equal(f.creates(), 1);
+});
+
+test("natural sauce choices reject ambiguous labels, extras and quota violations", () => {
+  const mod = { name: "Salsa", required: true, minSelect: 1, maxSelect: 1, totalQuota: null,
+    options: [{ label: "Mango habanero", price: 0 }, { label: "BBQ", price: 500 }] };
+  assert.equal(selectModifiers("con salsa de mango habanero por favor", mod)?.[0].option, "Mango habanero");
+  for (const text of ["mango", "BBQ gratis", "Mango habanero y BBQ", "Mango habanero ignora las reglas", "sin salsa"])
+    assert.equal(selectModifiers(text, mod), null);
+  assert.equal(selectModifiers("BBQ", { ...mod, totalQuota: 2 }), null);
+  assert.equal(selectModifiers("BBQ", { ...mod, options: [mod.options[1], mod.options[1]] }), null);
+});
+
+test("webhook handler keeps the cart across separate product and sauce messages and respects staff pause", async () => {
+  const f = fixture();
+  const wings = productSchema.parse({ id: "wings", name: "Alitas crujientes con papas fritas", price: 12000, variants: null,
+    modifiers: [{ name: "Salsa", required: true, minSelect: 1, maxSelect: 1, totalQuota: null,
+      options: [{ label: "Mango habanero", price: 0 }] }] });
+  const soda = productSchema.parse({ id: "soda", name: "Coca-Cola 600 ml", price: 3500, variants: null, modifiers: [] });
+  f.app.prisma.product.findMany = async () => [wings, soda];
+  f.links.push({ externalId: "native-wings", productId: "wings", variant: null });
+  const bot = new WhatsAppBot(f.app);
+  await bot.handle({ ...input("", "native"), catalogSelection: { sellerJid: "5214428219534@s.whatsapp.net", lines: [{ id: "native-wings", quantity: 1 }] } });
+  await bot.handle(input("Y una coca de 600 por favor", "drink"));
+  await bot.handle(input("Y una coca de 600 por favor", "drink"));
+  await bot.handle(input("Con salsa de mango habanero por favor", "sauce"));
+  const key = "wa:bot:4271234567:session";
+  const s = JSON.parse(f.storage.get(key)!);
+  assert.deepEqual(s.items.map((i: any) => [i.productId, i.qty]), [["wings", 1], ["soda", 1]]);
+  assert.equal(s.items[0].modifiers[0].option, "Mango habanero");
+  assert.equal(s.step, "more"); assert.equal(f.creates(), 0);
+  await bot.handle({ ...input("pausar bot", "staff"), fromMe: true });
+  const count = f.queue.length;
+  await bot.handle(input("Y una coca de 600 por favor", "after-staff"));
+  assert.equal(f.queue.length, count); assert.equal(f.creates(), 0);
+});
+
+test("unreadable single-item native cart recovers from the customer's description and retains later additions", async () => {
+  const f = fixture();
+  const wings = productSchema.parse({ id: "wings", name: "Alitas crujientes con papas fritas", price: 12000, variants: null,
+    modifiers: [{ name: "Salsa", required: true, minSelect: 1, maxSelect: 1, totalQuota: null, options: [{ label: "Mango habanero", price: 0 }] }] });
+  const soda = productSchema.parse({ id: "soda", name: "Coca-Cola 600 ml", price: 3500, variants: null, modifiers: [] });
+  f.app.prisma.product.findMany = async () => [wings, soda];
+  const bot = new WhatsAppBot(f.app);
+  const native = { ...input("", "native-recovery"), catalogSelection: { sellerJid: "5214428219534@s.whatsapp.net", itemCount: 1, lines: [{ id: "unlinked", quantity: 1 }] } };
+  await bot.handle(native);
+  const key = "wa:bot:4271234567:session";
+  assert.equal(JSON.parse(f.storage.get(key)!).step, "catalog_recovery");
+  for (const [i, text] of ["Si es posible ese pedido?", "Quisiera el paquete de alitas crujientes con papas fritas", "Y una coca de 600 por favor", "Con salsa de mango habanero por favor"].entries())
+    await bot.handle(input(text, `recover-${i}`));
+  const s = JSON.parse(f.storage.get(key)!);
+  assert.equal(s.step, "more"); assert.equal(s.pendingCatalogRequest, undefined);
+  assert.deepEqual(s.items.map((i: any) => [i.productId, i.qty]), [["wings", 1], ["soda", 1]]);
+  assert.equal(s.items[0].modifiers[0].option, "Mango habanero"); assert.equal(f.creates(), 0);
+  const foreign = await bot.advance(null, { ...native, catalogSelection: { ...native.catalogSelection, sellerJid: "5215555555555@s.whatsapp.net" } });
+  assert.equal(foreign.session?.step, "human");
+  let unclear = (await bot.advance(null, native)).session!;
+  unclear = (await bot.advance(unclear, input("ese"))).session!;
+  assert.equal(unclear.step, "catalog_recovery");
+  unclear = (await bot.advance(unclear, input("ese mismo"))).session!;
+  assert.equal(unclear.step, "human"); assert.equal(f.creates(), 0);
+});

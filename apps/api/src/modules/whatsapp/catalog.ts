@@ -4,11 +4,11 @@ import { normalizarTelefono } from "../../utils/phone";
 
 export const catalogLineSchema = z.object({ id: z.string().min(1).max(100), quantity: z.number().int().min(1).max(20) });
 export type CatalogLine = z.infer<typeof catalogLineSchema>;
-export type CatalogSelection = { sellerJid: string; lines?: CatalogLine[]; orderId?: string; token?: string; singleProduct?: boolean };
+export type CatalogSelection = { sellerJid: string; lines?: CatalogLine[]; orderId?: string; token?: string; singleProduct?: boolean; itemCount?: number };
 export const sellerPhone = () => normalizarTelefono(process.env.WHATSAPP_CATALOG_PHONE || "5214428219534")!;
 export const catalogUrl = () => `https://wa.me/c/${process.env.WHATSAPP_CATALOG_PHONE || "5214428219534"}`;
 
-export async function evolutionBusinessRead(path: "getCatalog" | "getOrderDetails", body: object) {
+export async function evolutionBusinessRead(path: "getCatalog" | "getOwnCatalog" | "getOrderDetails", body: object) {
   const url = process.env.EVOLUTION_API_URL?.replace(/\/$/, "");
   const key = process.env.EVOLUTION_API_KEY;
   const instance = process.env.EVOLUTION_INSTANCE;
@@ -19,6 +19,18 @@ export async function evolutionBusinessRead(path: "getCatalog" | "getOrderDetail
   });
   if (!res.ok) throw new Error(`Consulta de catálogo no disponible (${res.status})`);
   return res.json();
+}
+
+export async function readOwnCatalog() {
+  const raw = await evolutionBusinessRead("getOwnCatalog", {});
+  const parsed = z.object({
+    wuid: z.string().regex(/^\d{11,15}@s\.whatsapp\.net$/),
+    catalog: z.array(z.object({ id: z.string().min(1), name: z.string().min(1), retailerId: z.string().optional() })).max(1000),
+    nextPageCursor: z.string().nullish(),
+  }).parse(raw);
+  if (normalizarTelefono(parsed.wuid.split("@")[0]) !== sellerPhone()) throw new Error("Catálogo de otro negocio");
+  if (parsed.nextPageCursor) throw new Error("Catálogo incompleto: requiere paginación");
+  return parsed.catalog;
 }
 
 export async function resolveCatalog(app: FastifyInstance, selection: CatalogSelection) {
