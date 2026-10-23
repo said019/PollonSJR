@@ -1,3 +1,4 @@
+import { startsOrder, parsePriceRequest, pricedPackages, parseSideRequest, reviseSides, type PriceRequest, type SideRequest } from "./conversational-order";
 import { exactCatalogRequest } from "./catalog-request";
 import crypto from "node:crypto";
 import { parseDeliveryDetails, validRecipient, deliveryAddress, orderNotes, hasFacade } from "./delivery-details";
@@ -35,7 +36,7 @@ type Item = {
   modifiers: Array<{ name: string; option: string; price: number; qty: number }>;
   configuration: string;
 };
-type Step = "catalog_recovery" | "bundle" | "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "type" |
+type Step = "price_choice" | "catalog_recovery" | "bundle" | "menu" | "quantity" | "variant" | "modifier" | "more" | "name" | "type" |
   "location" | "location_check" | "address" | "address_choice" | "address_confirm" | "delivery_details" | "notes" | "payment" | "cash" | "confirm" | "done" | "human" | "reuse";
 export type Session = {
   step: Step; checkoutId: string; catalog: Product[]; items: Item[];
@@ -59,6 +60,8 @@ export type Session = {
   queuedProducts?: QueuedProduct[];
   catalogVariant?: string;
   catalogRecoveryAttempts?: number;
+  priceRequest?: PriceRequest & { candidates: string[] };
+  pendingSideRequest?: SideRequest;
   pendingCatalogRequest?: { messageId: string; sellerJid: string; orderId?: string; lines?: CatalogSelection["lines"] };
   reuseItems?: Item[];
   pendingMemory?: { note?: string; basket?: RememberedBasket; expiresAt: number };
@@ -290,6 +293,7 @@ export class WhatsAppBot {
     if (!input.fromMe && requestPolicyReply(input.text)) return this.advance(s, input);
     if (!input.fromMe && s?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) return this.advance(s, input);
     if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
+    if (!input.fromMe && (startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) || s?.step === "price_choice" || s?.pendingSideRequest)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
     if (!input.fromMe && ((s?.step === "bundle" || s?.step === "catalog_recovery") || ((!s || ["menu", "more"].includes(s.step)) && isTextOrderCandidate(input.text)))) return this.advance(s, input);
     if (s && !input.fromMe && ["menu", "more", "modifier", "variant"].includes(s.step) &&
@@ -381,6 +385,7 @@ export class WhatsAppBot {
     switch(s.step) {
       case "quantity": return `De ${s.selected!.name}, ¿cuántos te anoto?`;
       case "variant": return "Sólo falta elegir la presentación:\n" + s.selected!.variants!.map((v,i)=>`${i+1}. ${v.label} — ${money(v.price)}`).join("\n");
+      case "price_choice": return this.priceChoicePrompt(s);
       case "catalog_recovery": return "¿Cuál es el nombre del paquete que elegiste? Con eso seguimos con tu pedido.";
       case "modifier": return modifierPrompt(s);
       case "menu": return "Dime qué te gustaría pedir.";
@@ -397,6 +402,55 @@ export class WhatsAppBot {
       include: { modifiers: { orderBy: { sortOrder: "asc" } } },
     });
     return products.map(p => productSchema.parse(p));
+  }
+
+  private priceChoicePrompt(s: Session) {
+    return `Tengo estos paquetes de ${money(s.priceRequest!.amount)}. ¿Cuál prefieres?\n` +
+      s.priceRequest!.candidates.map((id, i) => `${i + 1}. ${s.catalog.find(p => p.id === id)!.name}`).join("\n");
+  }
+
+  private startPricedPackage(s: Session, product: Product, request: PriceRequest) {
+    if (s.items.length >= 30 || s.items.filter(i => i.productId === product.id).reduce((n, i) => n + i.qty, 0) + request.qty > 20)
+      return "Conservé tu pedido. Esa cantidad necesita revisión del equipo.";
+    delete s.priceRequest; delete s.confirmation; delete s.aiProposal;
+    s.queuedProducts = [{ productId: product.id, qty: request.qty, skipOptional: true }];
+    s.batchOrder = true;
+    return `Te anoto ${request.qty} × ${product.name}, ${money(product.price * request.qty)}.` +
+      (request.destination ? ` Tengo como destino: ${request.destination}. Falta verificar la ubicación y el envío.` : "") +
+      "\n" + beginQueuedProduct(s);
+  }
+
+  private async changeSides(s: Session, request: SideRequest): Promise<string> {
+    if (s.step === "done") { s.step = "human"; delete s.confirmation; return "Ese pedido ya está registrado. El equipo debe revisar el cambio contigo."; }
+    const catalog = await this.catalog();
+    const choices = [...s.items, ...(s.pending ? [s.pending] : [])].flatMap(item => {
+      const product = catalog.find(p => p.id === item.productId);
+      if (!product || request.target && normalize(item.name) !== normalize(request.target)) return [];
+      return product.modifiers.map((mod, index) => ({ item, product, mod, index }))
+        .filter(({ mod }) => /complement/i.test(mod.name) && mod.required &&
+          mod.options.some(o => normalize(o.label).startsWith(request.flavor)));
+    });
+    if (choices.length !== 1) {
+      if (choices.length > 1) s.pendingSideRequest = request;
+      return choices.length ? "¿En cuál paquete quieres cambiar los complementos? " + [...new Set(choices.map(c => c.item.name))].join(" o ") + "."
+        : "No encuentro ese complemento en las opciones del producto actual. Conservé tu pedido; dime en qué paquete quieres el cambio.";
+    }
+    const { item, product, mod, index } = choices[0];
+    if (JSON.stringify(product) !== item.configuration) return "Las opciones o el precio de ese paquete cambiaron. Conservé tu pedido; el equipo debe revisar ese cambio contigo.";
+    const picks = reviseSides(request, mod, item.modifiers);
+    if (!picks) return `Ese paquete lleva ${mod.totalQuota ?? mod.maxSelect} complementos por paquete. ¿Cómo quieres repartirlos? Puedes elegir: ${mod.options.map(o => o.label).join(", ")}.`;
+    const next = [...item.modifiers.filter(m => m.name !== mod.name), ...picks];
+    delete s.pendingSideRequest;
+    if (JSON.stringify(next) === JSON.stringify(item.modifiers)) return "";
+    item.modifiers = next;
+    const previousStep = s.step;
+    delete s.confirmation; delete s.aiProposal; delete s.total;
+    const acknowledgement = "Claro, los complementos de " + item.name + " quedan: " + picks.map(p => `${p.qty} × ${p.option}${p.price ? ` (+${money(p.price)} cada uno)` : ""}`).join(", ") + ".";
+    if (item === s.pending && s.step === "modifier" && s.modifierIndex === index) {
+      s.modifierIndex++; return acknowledgement + "\n" + nextModifier(s);
+    }
+    if (previousStep === "confirm") return acknowledgement + "\n" + await this.summary(s);
+    return acknowledgement + "\n" + (previousStep === "cash" ? "¿Con cuánto vas a pagar? Puedes decir EXACTO." : this.pendingPrompt(s));
   }
 
   private restoreBasket(basket: RememberedBasket, catalog: Product[]): Item[] {
@@ -642,6 +696,55 @@ export class WhatsAppBot {
         return this.unavailable(s, input.text, availability);
       }
     }
+    if (startsOrder(input.text)) {
+      const availability = await isAcceptingOrders(this.app);
+      if (!availability.accepting) return this.unavailable(s, input.text, availability);
+      if (!s || s.step === "done") s = { step: "menu", checkoutId: crypto.randomUUID(), catalog: await this.catalog(), items: [] };
+      return respond(s.step === "menu" && !s.items.length ? "Claro, ¿qué te gustaría pedir?" : this.pendingPrompt(s));
+    }
+    const priceRequest = parsePriceRequest(input.text);
+    if (priceRequest) {
+      const availability = await isAcceptingOrders(this.app);
+      if (!availability.accepting) return this.unavailable(s, input.text, availability);
+      const catalog = await this.catalog();
+      if (!s || s.step === "done") s = { step: "menu", checkoutId: crypto.randomUUID(), catalog, items: [] };
+      if (!["menu", "more", "price_choice"].includes(s.step)) return respond("Conservé el paquete que ya estamos preparando. " + this.pendingPrompt(s));
+      if (priceRequest.destination) {
+        if (s.address && s.address !== priceRequest.destination && s.lat !== undefined) s.locationNeedsCheck = true;
+        s.address = priceRequest.destination; s.type = "DELIVERY";
+      }
+      s.catalog = catalog;
+      const candidates = pricedPackages(priceRequest, catalog);
+      delete s.confirmation; delete s.aiProposal;
+      if (!candidates.length) {
+        delete s.priceRequest; s.step = "menu";
+        return respond(`No encuentro un paquete disponible de ${money(priceRequest.amount)}. ¿Cómo se llama el que quieres?`);
+      }
+      if (candidates.length > 1) {
+        s.step = "price_choice"; s.priceRequest = { ...priceRequest, candidates: candidates.map(p => p.id) };
+        return respond(this.priceChoicePrompt(s));
+      }
+      return respond(this.startPricedPackage(s, candidates[0], priceRequest));
+    }
+    if (s?.step === "price_choice" && s.priceRequest && !input.location && !incomingDetails(input, s.step)) {
+      const request = s.priceRequest;
+      const index = parseSelection(text, request.candidates.length);
+      const byName = request.candidates.filter(id => normalize(s!.catalog.find(p => p.id === id)!.name) === text.replace(/^el /, ""));
+      const id = index !== null ? request.candidates[index] : byName.length === 1 ? byName[0] : undefined;
+      if (!id) return respond(this.priceChoicePrompt(s));
+      const catalog = await this.catalog();
+      const product = pricedPackages(request, catalog).find(p => p.id === id);
+      if (!product) {
+        delete s.priceRequest; s.step = "menu";
+        return respond("Ese paquete cambió de precio o ya no está disponible. Conservé el destino; dime qué otro paquete te gustaría.");
+      }
+      s.catalog = catalog;
+      return respond(this.startPricedPackage(s, product, request));
+    }
+    const sideRequest = parseSideRequest(input.text) ?? (s?.pendingSideRequest &&
+      [...s.items, ...(s.pending ? [s.pending] : [])].some(i => normalize(i.name) === text.replace(/^el /, ""))
+      ? { ...s.pendingSideRequest, target: text.replace(/^el /, "") } : null);
+    if (s && sideRequest && (s.items.length || s.pending)) return respond(await this.changeSides(s, sideRequest));
     if (s && !["human", "done", "reuse"].includes(s.step) && pickupRequest(input.text)) {
       s.type = "PICKUP"; s.pickupRequest = input.text.trim();
       delete s.confirmation; delete s.aiProposal; delete s.candidate; delete s.addressCandidates;
@@ -1019,7 +1122,8 @@ export class WhatsAppBot {
         selectModifiers(input.text, session.selected.modifiers[session.modifierIndex ?? 0]);
       const exactRequest = session && ["menu", "more", "modifier", "variant"].includes(session.step) &&
         exactCatalogRequest(input.text, await this.catalog());
-      const informationalAllowed = session?.step !== "catalog_recovery" && !exactModifier && !exactRequest && !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
+      const conversationalOrder = startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) || session?.pendingSideRequest || session?.step === "price_choice";
+      const informationalAllowed = !conversationalOrder && session?.step !== "catalog_recovery" && !exactModifier && !exactRequest && !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !incomingDetails(input, session?.step || "") &&
         !pickupRequest(input.text) &&
         !/^(?:usar direccion|corregir)[.! ]*$/.test(text) && !(session?.step === "location_check" && /^(?:si|si claro|es la misma|la misma|correcto|no|es otra|otra)[.! ]*$/.test(text)) &&
