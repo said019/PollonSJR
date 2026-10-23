@@ -268,7 +268,7 @@ test("catalog cart walks all variants and required modifiers; a linked presentat
   s = (await bot.advance(s, input("1"))).session!;
   assert.equal(s.step, "modifier"); assert.equal(s.items.length, 0);
   s = (await bot.advance(s, input("1"))).session!;
-  assert.equal(s.step, "more");
+  assert.equal(s.step, "name");
   assert.deepEqual(s.items.map(i => [i.productId, i.qty, i.unitPrice]), [["pollo", 2, 16000], ["papas", 3, 5000]]);
   assert.equal(s.items[0].modifiers[0].option, "BBQ"); assert.equal(f.creates(), 0);
   f.links[0].variant = "Entero";
@@ -378,11 +378,11 @@ test("native wings cart retains split additions and accepts exact sauce without 
   assert.equal(s.pending?.productId, "wings");
   assert.equal(s.queuedProducts?.[0].productId, "soda");
   s = (await bot.advanceWithAI(s, input("Con salsa de mango habanero por favor"))).session!;
-  assert.equal(s.step, "more");
+  assert.equal(s.step, "name");
   assert.deepEqual(s.items.map(i => [i.productId, i.qty]), [["wings", 1], ["soda", 1]]);
   assert.equal(s.items[0].modifiers[0].option, "Mango habanero");
   assert.equal(f.creates(), 0);
-  for (const text of ["listo", "Ana", "recoger", "sin notas", "efectivo", "exacto"])
+  for (const text of ["Ana", "recoger", "sin notas", "efectivo", "exacto"])
     s = (await bot.advanceWithAI(s, input(text))).session!;
   assert.equal(s.step, "confirm"); assert.equal(s.total, 15500); assert.equal(f.creates(), 0);
   await bot.advanceWithAI(s, confirmInput(s)); assert.equal(f.creates(), 1);
@@ -415,7 +415,7 @@ test("webhook handler keeps the cart across separate product and sauce messages 
   const s = JSON.parse(f.storage.get(key)!);
   assert.deepEqual(s.items.map((i: any) => [i.productId, i.qty]), [["wings", 1], ["soda", 1]]);
   assert.equal(s.items[0].modifiers[0].option, "Mango habanero");
-  assert.equal(s.step, "more"); assert.equal(f.creates(), 0);
+  assert.equal(s.step, "name"); assert.equal(f.creates(), 0);
   await bot.handle({ ...input("pausar bot", "staff"), fromMe: true });
   const count = f.queue.length;
   await bot.handle(input("Y una coca de 600 por favor", "after-staff"));

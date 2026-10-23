@@ -1,3 +1,4 @@
+import { catalogComplements } from "./catalog-complements";
 import { startsOrder, parsePriceRequest, pricedPackages, parseSideRequest, reviseSides, type PriceRequest, type SideRequest } from "./conversational-order";
 import { exactCatalogRequest } from "./catalog-request";
 import crypto from "node:crypto";
@@ -293,10 +294,11 @@ export class WhatsAppBot {
     if (!input.fromMe && requestPolicyReply(input.text)) return this.advance(s, input);
     if (!input.fromMe && s?.imageRequest && (isDeliveryReference(input.text) || repeatsImageReference(input.text))) return this.advance(s, input);
     if (!input.fromMe && browsesMenu(text)) return this.advance(s, input);
+    if (!input.fromMe && s?.pending && s.selected && catalogComplements(input.text, s.selected, s.pending.qty)) return this.advance(s, input);
     if (!input.fromMe && (startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) || s?.step === "price_choice" || s?.pendingSideRequest)) return this.advance(s, input);
     if (!input.fromMe && requestsCancel(text)) return this.advance(s, { ...input, text: "cancelar" });
     if (!input.fromMe && ((s?.step === "bundle" || s?.step === "catalog_recovery") || ((!s || ["menu", "more"].includes(s.step)) && isTextOrderCandidate(input.text)))) return this.advance(s, input);
-    if (s && !input.fromMe && ["menu", "more", "modifier", "variant"].includes(s.step) &&
+    if (s && !input.fromMe && (["menu", "more", "modifier", "variant"].includes(s.step) || ["name", "type", "location", "address", "delivery_details", "notes", "payment", "cash", "confirm"].includes(s.step) && /^(?:y |ademas |agrega |agregame )/.test(text)) &&
         exactCatalogRequest(input.text, await this.catalog())) return this.advance(s, input);
     if (!s && !input.fromMe) {
       // Initialize through the usual store/catalog/command checks, then use
@@ -741,6 +743,16 @@ export class WhatsAppBot {
       s.catalog = catalog;
       return respond(this.startPricedPackage(s, product, request));
     }
+    if (s?.pending && s.selected && s.step === "modifier") {
+      const distribution = catalogComplements(input.text, s.selected, s.pending.qty);
+      if (distribution) {
+        const original = s.pending;
+        const [first, ...rest] = distribution;
+        s.pending = { ...original, qty: 1, modifiers: [first] };
+        s.queuedProducts = [...rest.map(pick => ({ productId: original.productId, qty: 1, modifiers: [pick], skipOptional: true })), ...(s.queuedProducts || [])];
+        return respond("Claro, uno de cada uno: " + distribution.map(p => p.option).join(", ") + ".\n" + nextModifier(s));
+      }
+    }
     const sideRequest = parseSideRequest(input.text) ?? (s?.pendingSideRequest &&
       [...s.items, ...(s.pending ? [s.pending] : [])].some(i => normalize(i.name) === text.replace(/^el /, ""))
       ? { ...s.pendingSideRequest, target: text.replace(/^el /, "") } : null);
@@ -849,7 +861,7 @@ export class WhatsAppBot {
         return respond(await this.bundlePrompt(s));
       }
     }
-    if ((!s || ["menu", "more", "modifier", "variant"].includes(s.step)) && !input.catalogSelection && !input.location) {
+    if ((!s || (["menu", "more", "modifier", "variant"].includes(s.step) || ["name", "type", "location", "address", "delivery_details", "notes", "payment", "cash", "confirm"].includes(s.step) && /^(?:y |ademas |agrega |agregame )/.test(text))) && !input.catalogSelection && !input.location) {
       const catalog = await this.catalog();
       const entry = exactCatalogRequest(input.text, catalog);
       if (entry) {
@@ -866,9 +878,11 @@ export class WhatsAppBot {
           .filter(item => item.productId === entry.productId).reduce((total, item) => total + item.qty, 0);
         if (existingQuantity + entry.qty > 20)
           return respond("Conservé tu pedido. Esa cantidad supera el límite por producto; necesitamos que la revise el equipo.");
+        const continuingCheckout = !["menu", "more", "modifier", "variant"].includes(s.step);
+        if (continuingCheckout) { s.batchOrder = true; delete s.total; }
         s.catalog = catalog;
         s.queuedProducts ??= [];
-        s.queuedProducts.push(entry);
+        s.queuedProducts.push({ ...entry, ...(continuingCheckout ? { skipOptional: true } : {}) });
         delete s.confirmation; delete s.aiProposal;
         if (s.pending) {
           const next = s.step === "modifier"
@@ -899,7 +913,9 @@ export class WhatsAppBot {
         }
         if ((s?.step === "done" ? 0 : s?.items.length ?? 0) + entries.length > 30) throw new Error("Demasiados productos");
         if (!s || s.step === "done") s = { step: "menu", checkoutId: crypto.randomUUID(), catalog, items: [] };
-        s.catalog = catalog; s.queuedProducts = entries; delete s.confirmation;
+        s.catalog = catalog; s.queuedProducts = entries.map(entry => ({ ...entry, skipOptional: true }));
+        if (!input.catalogSelection.singleProduct) s.batchOrder = true;
+        delete s.confirmation;
         if (input.catalogSelection.singleProduct) {
           const entry = s.queuedProducts.shift()!;
           s.catalogVariant = entry.variant;
@@ -1122,7 +1138,7 @@ export class WhatsAppBot {
         selectModifiers(input.text, session.selected.modifiers[session.modifierIndex ?? 0]);
       const exactRequest = session && ["menu", "more", "modifier", "variant"].includes(session.step) &&
         exactCatalogRequest(input.text, await this.catalog());
-      const conversationalOrder = startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) || session?.pendingSideRequest || session?.step === "price_choice";
+      const conversationalOrder = Boolean(session?.pending && session.selected && catalogComplements(input.text, session.selected, session.pending.qty)) || startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) || session?.pendingSideRequest || session?.step === "price_choice";
       const informationalAllowed = !conversationalOrder && session?.step !== "catalog_recovery" && !exactModifier && !exactRequest && !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !incomingDetails(input, session?.step || "") &&
         !pickupRequest(input.text) &&

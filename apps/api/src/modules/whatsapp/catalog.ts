@@ -1,3 +1,4 @@
+import { readPublicCatalog } from "./public-catalog";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { normalizarTelefono } from "../../utils/phone";
@@ -22,7 +23,9 @@ export async function evolutionBusinessRead(path: "getCatalog" | "getOwnCatalog"
 }
 
 export async function readOwnCatalog() {
-  const raw = await evolutionBusinessRead("getOwnCatalog", {});
+  let raw: unknown;
+  try { raw = await evolutionBusinessRead("getOwnCatalog", {}); }
+  catch { return readPublicCatalog((process.env.WHATSAPP_CATALOG_PHONE || "5214428219534") + "@s.whatsapp.net"); }
   const parsed = z.object({
     wuid: z.string().regex(/^\d{11,15}@s\.whatsapp\.net$/),
     catalog: z.array(z.object({ id: z.string().min(1), name: z.string().min(1), retailerId: z.string().optional() })).max(1000),
@@ -45,6 +48,7 @@ export async function resolveCatalog(app: FastifyInstance, selection: CatalogSel
     lines = z.object({ products: z.array(catalogLineSchema).min(1).max(30) }).parse(result).products;
   }
   lines = z.array(catalogLineSchema).min(1).max(30).parse(lines);
+  if (selection.itemCount !== undefined && lines.reduce((n, line) => n + line.quantity, 0) !== selection.itemCount) throw new Error("Carrito incompleto");
   const unique = new Map<string, number>();
   for (const line of lines) unique.set(line.id, (unique.get(line.id) ?? 0) + line.quantity);
   if ([...unique.values()].some(qty => qty > 20)) throw new Error("Cantidad fuera de límite");
