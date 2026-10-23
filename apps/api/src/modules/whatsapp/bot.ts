@@ -1,3 +1,4 @@
+import { planWithClaude, applyPlan, type OrderPlanner, type PlanContext } from "./order-planner";
 import { catalogComplements } from "./catalog-complements";
 import { startsOrder, parsePriceRequest, pricedPackages, parseSideRequest, reviseSides, type PriceRequest, type SideRequest } from "./conversational-order";
 import { exactCatalogRequest } from "./catalog-request";
@@ -42,6 +43,7 @@ type Step = "price_choice" | "catalog_recovery" | "bundle" | "menu" | "quantity"
 export type Session = {
   step: Step; checkoutId: string; catalog: Product[]; items: Item[];
   closedPendingConfirmation?: boolean;
+  pendingPlan?: { messages: string[]; question: string };
   textOrder?: TextOrderDraft;
   lastTextOrder?: string;
   batchOrder?: boolean;
@@ -67,7 +69,7 @@ export type Session = {
   reuseItems?: Item[];
   pendingMemory?: { note?: string; basket?: RememberedBasket; expiresAt: number };
 };
-export type BotReply = { session: Session | null; text: string; handoff?: boolean };
+export type BotReply = { session: Session | null; text: string; handoff?: boolean; plannerUnavailable?: boolean };
 export type Incoming = {
   id: string; phone: string; text: string; fromMe: boolean;
   location?: { lat: number; lng: number };
@@ -257,7 +259,7 @@ function beginQueuedProduct(s: Session): string {
 }
 
 export class WhatsAppBot {
-  constructor(private app: FastifyInstance, private interpret: Interpreter = interpretWithClaude, private geocode: Geocoder = geocodeAddress) {}
+  constructor(private app: FastifyInstance, private interpret: Interpreter = interpretWithClaude, private geocode: Geocoder = geocodeAddress, private planner: OrderPlanner | null = interpret === interpretWithClaude ? planWithClaude : null) {}
 
   private selectionLabel(s: Session, choice: Choice): string {
     // Model-facing labels explain workflow constraints. Customer copy should
@@ -288,7 +290,70 @@ export class WhatsAppBot {
     }
   }
 
-  async advanceWithAI(s: Session | null, input: Incoming): Promise<BotReply> {
+  private async planOrder(s: Session | null, input: Incoming): Promise<BotReply | null> {
+    const text = normalize(input.text);
+    if (!this.planner || process.env.WHATSAPP_AI_ENABLED !== "true" || !process.env.ANTHROPIC_API_KEY ||
+        input.fromMe || input.location || input.catalogSelection || input.buttonId || input.unsupportedMedia || input.hasImage ||
+        isExcludedContact(input.phone) || ["human", "done", "reuse", "catalog_recovery"].includes(s?.step || "") ||
+        manualTopic(input.text) || requestPolicyReply(input.text) || asksIdentity(text) || requestsHuman(text) || needsHumanReview(text) || requestsCancel(text) ||
+        isGreeting(text) || asksMenu(text) || browsesMenu(text) || asksCurrentService(input.text) || !text || input.text.length > 2000 ||
+        /^(?:asesor|ayuda|persona|cancelar|confirmar|elegir|listo|mas|recoger|omitir|exacto|efectivo|transferencia|tarjeta|gracias|sin notas|usar direccion|corregir)[.! ]*$/.test(text) ||
+        /^(?:\d+(?:\s*,\s*\d+)*|si|no|ok)[.! ]*$/.test(text) && !s?.pendingPlan ||
+        /^(preferencia:|guardar|recordar|mis preferencias|borrar preferencias|usar preferencia|lo de siempre|repetir pedido)/.test(text)) return null;
+    // Complete, already-supported data/commands retain their verified flow.
+    // Compound messages do not match these anchored parsers and reach the AI.
+    if (!s?.pendingPlan && (startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) ||
+        incomingDetails(input, s?.step || "") || pickupRequest(input.text) ||
+        s?.imageRequest || s?.pending && s.selected && catalogComplements(input.text, s.selected, s.pending.qty))) return null;
+    if (await settledAttentionState(this.app.redis, input.phone) !== "automatic") return { session: s, text: "" };
+    if (s && await this.app.prisma.order.findUnique({ where: { whatsappCheckoutId: s.checkoutId } })) return null;
+    const status = await isAcceptingOrders(this.app);
+    if (!status.accepting) return null;
+    const key = `wa:ai:plan:${input.phone}:${Math.floor(Date.now() / 600000)}`;
+    const count = Number(await this.app.redis.get(key) || "0");
+    if (count >= 20) return null;
+    await this.app.redis.set(key, String(count + 1), { EX: 660 });
+    const catalog = await this.catalog();
+    const basket = [...(s?.items || []).map((i, n) => ({ ...i, ref: `item:${n}` })),
+      ...(s?.pending ? [{ ...s.pending, ref: "pending" }] : []),
+      ...(s?.queuedProducts || []).map((i, n) => ({ ...i, ref: `queue:${n}` }))];
+    const messages = [...(s?.pendingPlan?.messages || (s?.textOrder?.source ? [s.textOrder.source] : [])), input.text];
+    if (messages.length > 6 || messages.join("").length > 6000) return { session: s, text: "Conservé tu pedido. Necesito que el equipo revise este cambio contigo." };
+    const context: PlanContext = { catalog, basket: basket.map(b => ({ ref: b.ref, productId: b.productId, qty: b.qty, variant: b.variant, modifiers: b.modifiers })), messages, question: s?.pendingPlan?.question };
+    const plan = await this.planner(context).catch(() => null);
+    if (!plan && (s?.pendingPlan || basket.length || !isQuestion(input.text))) {
+      const draft: Session = s ? structuredClone(s) : { step: "menu", checkoutId: crypto.randomUUID(), catalog, items: [] };
+      draft.pendingPlan = { messages, question: s?.pendingPlan?.question || "Revisar el cambio completo" };
+      delete draft.confirmation; delete draft.aiProposal;
+      return { session: draft, plannerUnavailable: true, text: "Conservé tu pedido y el cambio que pediste. No pude revisarlo en este momento; inténtalo de nuevo en un momento." };
+    }
+    if (!plan || plan.action === "unrelated") return null;
+    const draft: Session = s ? structuredClone(s) : { step: "menu", checkoutId: crypto.randomUUID(), catalog, items: [] };
+    if (plan.action === "clarify" && plan.question.trim() && !plan.operations.length) {
+      draft.pendingPlan = { messages, question: plan.question };
+      delete draft.confirmation; delete draft.aiProposal;
+      return { session: draft, text: plan.question };
+    }
+    const entries = applyPlan(plan, context);
+    if (!entries?.length) {
+      draft.pendingPlan = { messages, question: "¿Qué presentación o complemento quieres cambiar?" };
+      delete draft.confirmation;
+      return { session: draft, text: "Conservé lo que pediste, pero no pude validar todas las opciones del cambio. ¿Qué presentación o complemento quieres cambiar?" };
+    }
+    // One atomic draft replacement, after validating every operation. Keep all
+    // delivery/contact fields and checkout identity; only rotate confirmation.
+    draft.catalog = catalog; draft.items = []; draft.queuedProducts = entries; draft.batchOrder = true;
+    delete draft.pending; delete draft.selected; delete draft.modifierIndex;
+    delete draft.confirmation; delete draft.aiProposal; delete draft.total; delete draft.pendingPlan;
+    delete draft.textOrder; delete draft.priceRequest; delete draft.pendingSideRequest;
+    const reply = beginQueuedProduct(draft);
+    // An edit of an uncommitted summary needs a fresh total and confirmation,
+    // not another request for the payment/contact details already collected.
+    return { session: draft, text: s?.step === "confirm" && draft.step === "payment" ? await this.summary(draft) : reply };
+  }
+
+  async advanceWithAI(s: Session | null, input: Incoming, skipPlan = false): Promise<BotReply> {
+    if (!skipPlan) { const planned = await this.planOrder(s, input); if (planned) return planned; }
     const text = normalize(input.text);
     if (isExcludedContact(input.phone) || (!input.fromMe && manualTopic(input.text))) return this.advance(s, input);
     if (!input.fromMe && requestPolicyReply(input.text)) return this.advance(s, input);
@@ -1133,13 +1198,14 @@ export class WhatsAppBot {
       const historyKey = `${prefix}:dialogue`;
       const recent: Array<{ customer: string; reply: string }> = JSON.parse(await this.app.redis.get(historyKey) || "[]");
       const text = normalize(input.text);
+      const planned = await this.planOrder(session, input);
       let informational: string | null = null;
       const exactModifier = session?.step === "modifier" && session.selected &&
         selectModifiers(input.text, session.selected.modifiers[session.modifierIndex ?? 0]);
       const exactRequest = session && ["menu", "more", "modifier", "variant"].includes(session.step) &&
         exactCatalogRequest(input.text, await this.catalog());
       const conversationalOrder = Boolean(session?.pending && session.selected && catalogComplements(input.text, session.selected, session.pending.qty)) || startsOrder(input.text) || parsePriceRequest(input.text) || parseSideRequest(input.text) || session?.pendingSideRequest || session?.step === "price_choice";
-      const informationalAllowed = !conversationalOrder && session?.step !== "catalog_recovery" && !exactModifier && !exactRequest && !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
+      const informationalAllowed = (!planned || planned.plannerUnavailable) && !conversationalOrder && session?.step !== "catalog_recovery" && !exactModifier && !exactRequest && !input.fromMe && session?.step !== "human" && !input.buttonId && !input.location && !input.catalogSelection && !input.unsupportedMedia &&
         !incomingDetails(input, session?.step || "") &&
         !pickupRequest(input.text) &&
         !/^(?:usar direccion|corregir)[.! ]*$/.test(text) && !(session?.step === "location_check" && /^(?:si|si claro|es la misma|la misma|correcto|no|es otra|otra)[.! ]*$/.test(text)) &&
@@ -1163,7 +1229,7 @@ export class WhatsAppBot {
       }
       if (!input.fromMe && !input.location && !input.buttonId && !input.catalogSelection && !input.unsupportedMedia && /^(?:gracias|muchas gracias|ok gracias|sale gracias|perfecto gracias|ok|okay|sale|entendido|perfecto)[.! ]*$/.test(text)) informational = "";
       if (informational && session?.textOrder) delete session.textOrder.quote;
-      const result: BotReply = informational !== null ? { session, text: informational } : await this.advanceWithAI(session, input);
+      const result: BotReply = informational !== null ? { session, text: informational } : planned ?? await this.advanceWithAI(session, input, true);
       if (informational === null && !input.fromMe && result.text && result.session &&
           !["confirm", "done", "human"].includes(result.session.step) && !browsesMenu(text) &&
           recent.length >= 2 && recent.slice(-2).every(turn => turn.reply.trim() === result.text.trim())) {

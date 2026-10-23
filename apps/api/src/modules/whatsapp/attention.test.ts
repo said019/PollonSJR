@@ -144,11 +144,14 @@ test("manual intervention while AI is working cancels its result before enqueue"
   environment(t); process.env.WHATSAPP_AI_ENABLED = "true";
   const key = process.env.ANTHROPIC_API_KEY; process.env.ANTHROPIC_API_KEY = "synthetic";
   t.after(() => { if (key === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = key; });
-  const f = createSimulationFixture(); const bot = new WhatsAppBot(f.app);
+  const f = createSimulationFixture();
   let started!: () => void, finish!: () => void;
   const entered = new Promise<void>(resolve => { started = resolve; });
   const pending = new Promise<void>(resolve => { finish = resolve; });
-  bot.advanceWithAI = async () => { started(); await pending; return { session: null, text: "Respuesta que debe descartarse" }; };
+  const bot = new WhatsAppBot(f.app, undefined, undefined, async () => {
+    started(); await pending;
+    return { action: "edit", question: "", operations: [{ target: null, evidence: "pollo", lines: [{ productId: "pollo", qty: 1, variant: null, modifiers: [] }] }] };
+  });
   t.mock.method(globalThis, "fetch", async () => { throw new Error("No network"); });
   const processing = bot.handle(input("pollo por favor")); await entered;
   await observeOutbound(f.app.redis, phone, "staff"); finish(); await processing;
