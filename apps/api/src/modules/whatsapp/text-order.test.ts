@@ -294,3 +294,18 @@ test("repeated clarification failure stops the loop with a single human handoff"
  await f.send("si");assert.equal(f.session().items.length,4);assert.equal(f.session().step,"name");assert.equal(f.creates(),0);
  }
  });
+
+ test("unresolved native cart hands off once instead of losing the customer's multi-message request",async()=>{
+ for(const missingLink of [true,false]){
+ const f=setup();await f.send("hola");
+ const original=f.session().checkoutId;
+ await f.send("",{id:"native-cart",catalogSelection:{sellerJid:"5214428219534@s.whatsapp.net",...(missingLink?{lines:[{id:"wings-not-linked",quantity:1}]}:{orderId:"synthetic-cart",token:"synthetic-read-token"})}});
+ assert.equal(f.session().step,"human");assert.equal(f.session().checkoutId,original);
+ assert.equal(f.session().pendingCatalogRequest.messageId,"native-cart");
+ assert.doesNotMatch(JSON.stringify(f.session()),/synthetic-read-token/);
+ const reply=JSON.parse(f.queue.at(-1)!).params.text;assert.match(reply,/no necesitas enviarlo de nuevo/);assert.doesNotMatch(reply,/ASESOR|aclarar|qué producto|consultar algo/);
+ const count=f.queue.length;
+ for(const message of ["Si es posible ese pedido?","Quisiera el paquete de alitas crujientes con papas fritas","Y una coca de 600 por favor","Con salsa de mango habanero por favor","ASESOR"])await f.send(message);
+ assert.equal(f.queue.length,count);assert.equal(f.session().step,"human");assert.equal(f.creates(),0);
+ }
+ });

@@ -194,9 +194,9 @@ test("native catalog product asks quantity; cart maps IDs and never trusts Whats
   s = (await bot.advance(s, input("2"))).session!;
   assert.equal(s.items[0].unitPrice, 15000); assert.equal(s.items[0].qty, 2);
   const failure = await bot.advance(s, { ...input(""), catalogSelection: { sellerJid: "5214428219534@s.whatsapp.net", lines: [{ id: "missing", quantity: 1 }] } });
-  assert.match(failure.text, /No agregué ninguno/); assert.equal(s.items.length, 1);
+  assert.equal(failure.handoff, true); assert.match(failure.text, /no necesitas enviarlo de nuevo/); assert.equal(s.items.length, 1);
   const other = await bot.advance(null, { ...input(""), catalogSelection: { sellerJid: "5214420000000@s.whatsapp.net", lines: [{ id: "external-pollo", quantity: 1 }] } });
-  assert.equal(other.session, null); assert.equal(f.creates(), 0);
+  assert.equal(other.session?.step, "human"); assert.equal(other.handoff, true); assert.equal(f.creates(), 0);
 });
 
 test("written addresses require choosing and confirming a precise result; fee uses confirmed coordinates", async () => {

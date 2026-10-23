@@ -57,6 +57,7 @@ export type Session = {
   candidate?: AddressCandidate;
   queuedProducts?: QueuedProduct[];
   catalogVariant?: string;
+  pendingCatalogRequest?: { messageId: string; sellerJid: string; orderId?: string; lines?: CatalogSelection["lines"] };
   reuseItems?: Item[];
   pendingMemory?: { note?: string; basket?: RememberedBasket; expiresAt: number };
 };
@@ -739,7 +740,10 @@ export class WhatsAppBot {
         }
         return respond("Ya tengo tu selección del catálogo. Vamos a revisar las opciones y el precio antes de confirmar.\n\n" + beginQueuedProduct(s));
       } catch {
-        return respond("No pude relacionar todo ese carrito con productos disponibles. No agregué ninguno. Puedes escribir el nombre del producto o ASESOR para que el equipo revise la selección.");
+        s ??= { step: "human", checkoutId: crypto.randomUUID(), catalog, items: [] };
+        s.pendingCatalogRequest = { messageId: input.id, sellerJid: input.catalogSelection.sellerJid, orderId: input.catalogSelection.orderId, lines: input.catalogSelection.lines };
+        s.step = "human"; delete s.confirmation; delete s.aiProposal;
+        return respond("Recibí tu solicitud del catálogo. El equipo sigue contigo por aquí para revisar ese pedido; no necesitas enviarlo de nuevo.", true);
       }
     }
     if (!s || (s.step === "done" && ["pedir", "nuevo", "menu"].includes(text))) {
